@@ -1,0 +1,70 @@
+package com.sja.system.service;
+
+import com.sja.system.common.PageResult;
+import com.sja.system.dto.FeeAuditDTO;
+import com.sja.system.dto.FeeSubmitDTO;
+import com.sja.system.vo.FeeDetailVO;
+import com.sja.system.vo.FeeListVO;
+
+import javax.servlet.http.HttpServletResponse;
+
+/**
+ * Fee (remuneration) management service interface.
+ * Handles submission, listing, detail retrieval, auditing, and export
+ * for editorial, photography, video, and visual works.
+ */
+public interface FeeService {
+
+    /**
+     * Submit a new fee record for a piece of work.
+     *
+     * @param userId    submitting user
+     * @param username  submitting user's login name
+     * @param realName  submitting user's real name
+     * @param deptCode  submitting user's department code
+     * @param dto       fee submission data (work info + contributors)
+     */
+    void submitFee(Long userId, String username, String realName, String deptCode, FeeSubmitDTO dto);
+
+    /**
+     * List fee records with optional filters.
+     *
+     * @param deptCode filter by department (nullable)
+     * @param month    filter by month in "yyyy-MM" format (nullable)
+     * @param status   filter by status (nullable)
+     * @param pageNum  page number (1-based)
+     * @param pageSize page size
+     * @return paginated fee list
+     */
+    PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, Integer pageNum, Integer pageSize);
+
+    /**
+     * Get detailed information for a specific work's fee record.
+     *
+     * @param id       work primary key
+     * @param workType one of EDITORIAL, PHOTO, VIDEO, VISUAL
+     * @return full fee detail including contributors
+     */
+    FeeDetailVO getFeeDetail(Long id, String workType);
+
+    /**
+     * Audit (approve/reject) a fee record.
+     *
+     * @param id           work primary key
+     * @param workType     one of EDITORIAL, PHOTO, VIDEO, VISUAL
+     * @param dto          audit decision and opinion
+     * @param auditorId    auditor user ID
+     * @param auditorName  auditor display name
+     * @param auditorRole  auditor role name
+     */
+    void auditFee(Long id, String workType, FeeAuditDTO dto, Long auditorId, String auditorName, String auditorRole);
+
+    /**
+     * Export fee records to an Excel file written to the HTTP response.
+     *
+     * @param deptCode filter by department (nullable)
+     * @param month    filter by month in "yyyy-MM" format (nullable)
+     * @param response HTTP response to write the Excel file to
+     */
+    void exportFee(String deptCode, String month, HttpServletResponse response);
+}

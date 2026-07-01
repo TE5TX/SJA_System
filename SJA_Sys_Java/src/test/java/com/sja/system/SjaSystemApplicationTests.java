@@ -1,10 +1,10 @@
-package org.example.sja_sys_java;
+package com.sja.system;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class SjaSysJavaApplicationTests {
+class SjaSystemApplicationTests {
 
     @Test
     void contextLoads() {
