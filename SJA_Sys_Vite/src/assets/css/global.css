@@ -1,0 +1,157 @@
+/* ============================================
+   校记者团综合管理系统 - 全局样式
+   参考 NiceAdmin 模板设计风格
+   ============================================ */
+
+/* 根变量定义 */
+:root {
+  --primary-color: #4154f1;
+  --primary-hover: #717ff5;
+  --secondary-color: #012970;
+  --background-color: #f6f9ff;
+  --card-shadow: 0px 0 30px rgba(1, 41, 112, 0.1);
+  --header-shadow: 0px 2px 20px rgba(1, 41, 112, 0.1);
+  --sidebar-width: 260px;
+  --header-height: 60px;
+}
+
+/* 全局重置 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Open Sans', sans-serif;
+  background: var(--background-color);
+  color: #444444;
+  line-height: 1.6;
+}
+
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--primary-hover);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Nunito', sans-serif;
+  color: var(--secondary-color);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #aab7cf;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #899bbd;
+}
+
+/* 页面标题 */
+.page-title {
+  margin-bottom: 20px;
+}
+
+.page-title h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--secondary-color);
+  margin-bottom: 10px;
+}
+
+/* 卡片样式 */
+.el-card {
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: var(--card-shadow) !important;
+  margin-bottom: 20px;
+}
+
+.el-card__header {
+  border-bottom: 1px solid #ebeef4 !important;
+  background-color: #fff;
+  padding: 15px 20px !important;
+}
+
+.el-card__body {
+  padding: 20px !important;
+}
+
+/* 按钮样式 */
+.el-button--primary {
+  background-color: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+}
+
+.el-button--primary:hover {
+  background-color: var(--primary-hover) !important;
+  border-color: var(--primary-hover) !important;
+}
+
+/* 表格样式 */
+.el-table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.el-table thead th {
+  background-color: #f6f6fe !important;
+  color: var(--secondary-color);
+  font-weight: 600;
+}
+
+/* 表单样式 */
+.el-input__wrapper {
+  border-radius: 4px;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 10px 0 rgba(65, 84, 241, 0.15);
+}
+
+/* 描述列表 */
+.el-descriptions {
+  background: #fff;
+}
+
+.el-descriptions__label {
+  color: var(--secondary-color);
+  font-weight: 500;
+}
+
+/* 动画效果 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .page-title h1 {
+    font-size: 20px;
+  }
+
+  .el-card__body {
+    padding: 15px !important;
+  }
+}

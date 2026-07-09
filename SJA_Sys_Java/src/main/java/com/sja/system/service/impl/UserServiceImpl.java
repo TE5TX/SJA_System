@@ -68,22 +68,99 @@ public class UserServiceImpl implements UserService {
         SysUser update = new SysUser();
         update.setId(userId);
 
-        if (StringUtils.hasText(dto.getPhone())) {
-            update.setPhone(dto.getPhone());
+        StringBuilder changedFields = new StringBuilder();
+
+        // 真实姓名
+        if (StringUtils.hasText(dto.getRealName()) && !dto.getRealName().equals(user.getRealName())) {
+            update.setRealName(dto.getRealName());
+            changedFields.append("realName; ");
         }
-        if (StringUtils.hasText(dto.getDormAddress())) {
+
+        // 性别
+        if (dto.getGender() != null && !dto.getGender().equals(user.getGender())) {
+            update.setGender(dto.getGender());
+            changedFields.append("gender; ");
+        }
+
+        // 照片URL
+        if (dto.getPhoto() != null && !dto.getPhoto().equals(user.getPhoto())) {
+            update.setPhoto(dto.getPhoto());
+            changedFields.append("photo; ");
+        }
+
+        // 身份证号
+        if (dto.getIdCard() != null && !dto.getIdCard().equals(user.getIdCard())) {
+            // 检查身份证号是否已被其他用户使用
+            QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
+            idCardCheck.eq("id_card", dto.getIdCard()).ne("id", userId).eq("is_valid", 1);
+            if (sysUserMapper.selectCount(idCardCheck) > 0) {
+                throw new RuntimeException("该身份证号已被其他用户使用");
+            }
+            update.setIdCard(dto.getIdCard());
+            changedFields.append("idCard; ");
+        }
+
+        // 学号（修改时自动同步更新 username 账号）
+        if (StringUtils.hasText(dto.getStudentNo()) && !dto.getStudentNo().equals(user.getStudentNo())) {
+            // 检查学号是否已被其他用户使用
+            QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
+            studentNoCheck.eq("student_no", dto.getStudentNo()).ne("id", userId).eq("is_valid", 1);
+            if (sysUserMapper.selectCount(studentNoCheck) > 0) {
+                throw new RuntimeException("该学号已被其他用户使用");
+            }
+            update.setStudentNo(dto.getStudentNo());
+            // 核心逻辑：学号改变时，账号(username)自动同步为新的学号
+            update.setUsername(dto.getStudentNo());
+            changedFields.append("studentNo+username; ");
+        }
+
+        // 学院
+        if (dto.getCollege() != null && !dto.getCollege().equals(user.getCollege())) {
+            update.setCollege(dto.getCollege());
+            changedFields.append("college; ");
+        }
+
+        // 班级
+        if (dto.getClassName() != null && !dto.getClassName().equals(user.getClassName())) {
+            update.setClassName(dto.getClassName());
+            changedFields.append("className; ");
+        }
+
+        // 宿舍地址
+        if (dto.getDormAddress() != null && !dto.getDormAddress().equals(user.getDormAddress())) {
             update.setDormAddress(dto.getDormAddress());
+            changedFields.append("dormAddress; ");
         }
-        if (StringUtils.hasText(dto.getBankCard())) {
+
+        // 手机号
+        if (dto.getPhone() != null && !dto.getPhone().equals(user.getPhone())) {
+            update.setPhone(dto.getPhone());
+            changedFields.append("phone; ");
+        }
+
+        // 银行卡号
+        if (dto.getBankCard() != null && !dto.getBankCard().equals(user.getBankCard())) {
             update.setBankCard(dto.getBankCard());
+            changedFields.append("bankCard; ");
+        }
+
+        // 如果没有需要更新的字段，直接返回
+        if (changedFields.length() == 0) {
+            return;
         }
 
         sysUserMapper.updateById(update);
 
-        operationLogService.log(userId, user.getRealName(), "", "UPDATE",
-                "USER", userId, "更新个人资料", "");
+        // 记录操作日志
+        String logDetail = String.format("更新个人资料，修改字段: %s", changedFields.toString().trim());
+        if (update.getUsername() != null && !update.getUsername().equals(user.getUsername())) {
+            logDetail += String.format("（账号已从 [%s] 同步更新为 [%s]）", user.getUsername(), update.getUsername());
+        }
 
-        log.info("User {} updated profile", userId);
+        operationLogService.log(userId, user.getRealName(), "", "UPDATE",
+                "USER", userId, logDetail, "");
+
+        log.info("User {} updated profile, changed: {}", userId, changedFields);
     }
 
     @Override
