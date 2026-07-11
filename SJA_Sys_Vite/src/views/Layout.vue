@@ -59,6 +59,41 @@
             <el-icon><User /></el-icon>
             <template #title>个人管理</template>
           </el-menu-item>
+
+          <el-sub-menu index="fee">
+            <template #title>
+              <el-icon><Document /></el-icon>
+              <span>稿费管理</span>
+            </template>
+            <el-menu-item index="/app/fee-submit">
+              <el-icon><EditPen /></el-icon>
+              <template #title>稿费提交</template>
+            </el-menu-item>
+            <el-menu-item index="/app/fee-audit">
+              <el-icon><CircleCheck /></el-icon>
+              <template #title>审核与导出</template>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-sub-menu index="system">
+            <template #title>
+              <el-icon><Setting /></el-icon>
+              <span>系统管理</span>
+            </template>
+            <el-menu-item index="/app/users">
+              <el-icon><UserFilled /></el-icon>
+              <template #title>人员信息</template>
+            </el-menu-item>
+            <el-menu-item index="/app/logs">
+              <el-icon><Tickets /></el-icon>
+              <template #title>操作日志</template>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-menu-item index="/app/sujia">
+            <el-icon><Files /></el-icon>
+            <template #title>素拓名单</template>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 

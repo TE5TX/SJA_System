@@ -24,6 +24,36 @@ const routes = [
         name: 'Profile',
         component: () => import('@/views/Profile.vue'),
         meta: { title: '个人管理' }
+      },
+      {
+        path: 'fee-submit',
+        name: 'FeeSubmit',
+        component: () => import('@/views/FeeSubmit.vue'),
+        meta: { title: '稿费提交' }
+      },
+      {
+        path: 'fee-audit',
+        name: 'FeeAudit',
+        component: () => import('@/views/FeeAudit.vue'),
+        meta: { title: '稿费审核与导出' }
+      },
+      {
+        path: 'users',
+        name: 'UserManagement',
+        component: () => import('@/views/UserManagement.vue'),
+        meta: { title: '人员信息' }
+      },
+      {
+        path: 'logs',
+        name: 'OperationLogs',
+        component: () => import('@/views/OperationLogs.vue'),
+        meta: { title: '操作日志' }
+      },
+      {
+        path: 'sujia',
+        name: 'SujiaTool',
+        component: () => import('@/views/SujiaTool.vue'),
+        meta: { title: '素拓名单' }
       }
     ]
   }

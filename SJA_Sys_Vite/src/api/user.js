@@ -25,3 +25,21 @@ export function getUserList(params) {
     params
   })
 }
+
+// 更新用户信息（管理员）
+export function updateUser(id, data) {
+  return request({
+    url: `/v1/users/${id}`,
+    method: 'put',
+    data
+  })
+}
+
+// 启用/禁用用户（管理员）
+export function updateUserStatus(id, status) {
+  return request({
+    url: `/v1/users/${id}/status`,
+    method: 'put',
+    data: { status }
+  })
+}
