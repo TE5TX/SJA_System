@@ -26,6 +26,7 @@
         <el-table-column prop="realName" label="姓名" width="110" fixed />
         <el-table-column prop="studentNo" label="学号" min-width="130" />
         <el-table-column prop="phone" label="手机号" min-width="130" />
+        <el-table-column prop="idCard" label="身份证号" min-width="180" show-overflow-tooltip />
         <el-table-column prop="college" label="学院" min-width="170" show-overflow-tooltip />
         <el-table-column prop="className" label="班级" min-width="130" show-overflow-tooltip />
         <el-table-column label="部门" min-width="150" show-overflow-tooltip>
@@ -41,7 +42,7 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" :icon="Edit" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="primary" :icon="Edit" @click="openEdit(row)" class="edit-btn">编辑</el-button>
             <el-button
               link
               :type="row.isValid === 1 ? 'danger' : 'success'"
@@ -112,11 +113,45 @@
         <el-form-item label="宿舍地址">
           <el-input v-model="editForm.dormAddress" />
         </el-form-item>
+        <el-form-item label="照片">
+          <el-upload
+            class="avatar-upload"
+            :show-file-list="false"
+            :before-upload="beforeAvatarUpload"
+            :http-request="handleAvatarUpload"
+          >
+            <el-avatar v-if="editForm.photo" :src="editForm.photo" :size="52" />
+            <el-button v-else type="primary">上传照片</el-button>
+            <el-button v-if="editForm.photo" class="change-avatar" type="primary" link>重新上传</el-button>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="身份证号">
+          <el-input v-model="editForm.idCard" />
+        </el-form-item>
         <el-form-item label="银行卡号">
           <el-input v-model="editForm.bankCard" />
         </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="所属部门" required>
+              <el-select v-model="editForm.deptIds" multiple filterable placeholder="请选择部门">
+                <el-option v-for="dept in depts" :key="dept.id" :label="dept.deptName" :value="dept.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="角色" required>
+              <el-select v-model="editForm.roleIds" multiple filterable placeholder="请选择角色">
+                <el-option v-for="role in roles" :key="role.id" :label="role.roleName" :value="role.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-form-item label="备注">
           <el-input v-model="editForm.remark" type="textarea" :rows="3" maxlength="500" show-word-limit />
+        </el-form-item>
+        <el-form-item label="账号状态">
+          <el-switch v-model="editForm.isValid" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="禁用" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -133,6 +168,7 @@ import { Edit, Refresh, Search, SwitchButton } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUserList, updateUser, updateUserStatus } from '@/api/user'
 import { getDeptList, getRoleList } from '@/api/system'
+import { uploadAvatar } from '@/api/upload'
 
 const query = reactive({ realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', pageNum: 1, pageSize: 10 })
 const users = ref([])
@@ -148,10 +184,15 @@ const editForm = reactive({
   gender: 0,
   studentNo: '',
   phone: '',
+  photo: '',
+  idCard: '',
   college: '',
   className: '',
   dormAddress: '',
   bankCard: '',
+  deptIds: [],
+  roleIds: [],
+  isValid: 1,
   remark: ''
 })
 
@@ -185,16 +226,30 @@ const openEdit = row => {
     gender: row.gender ?? 0,
     studentNo: row.studentNo || '',
     phone: row.phone || '',
+    photo: row.photo || '',
+    idCard: row.idCard || '',
     college: row.college || '',
     className: row.className || '',
     dormAddress: row.dormAddress || '',
     bankCard: row.bankCard || '',
+    deptIds: Array.isArray(row.deptIds) && row.deptIds.length ? row.deptIds : idsByNames(depts.value, row.deptNames, 'deptName'),
+    roleIds: Array.isArray(row.roleIds) && row.roleIds.length ? row.roleIds : idsByNames(roles.value, row.roleNames, 'roleName'),
+    isValid: row.isValid ?? 1,
     remark: row.remark || ''
   })
   editVisible.value = true
 }
 
 const saveEdit = async () => {
+  if (!editForm.deptIds.length) {
+    ElMessage.warning('请至少选择一个部门')
+    return
+  }
+  if (!editForm.roleIds.length) {
+    ElMessage.warning('请至少选择一个角色')
+    return
+  }
+
   saving.value = true
   try {
     await updateUser(editingId.value, { ...editForm })
@@ -204,6 +259,37 @@ const saveEdit = async () => {
   } finally {
     saving.value = false
   }
+}
+
+const beforeAvatarUpload = file => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  if (!allowedTypes.includes(file.type)) {
+    ElMessage.warning('只支持 jpg、png、gif、webp 格式')
+    return false
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('照片大小不能超过 5MB')
+    return false
+  }
+  return true
+}
+
+const handleAvatarUpload = async options => {
+  try {
+    const res = await uploadAvatar(options.file)
+    editForm.photo = res.data?.url || ''
+    ElMessage.success('照片上传成功')
+    options.onSuccess?.(res)
+  } catch (error) {
+    options.onError?.(error)
+  }
+}
+
+const idsByNames = (options, names, nameField) => {
+  if (!Array.isArray(names)) return []
+  return options
+    .filter(item => names.includes(item[nameField]))
+    .map(item => item.id)
 }
 
 const toggleStatus = row => {
@@ -259,11 +345,31 @@ onMounted(() => {
   margin-top: 18px;
 }
 
+:deep(.el-dialog .el-select) {
+  width: 100%;
+}
+
+.avatar-upload :deep(.el-upload) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.change-avatar {
+  margin-left: 0;
+}
+
 @media (max-width: 768px) {
   .filters :deep(.el-input),
   .filters :deep(.el-select),
   .filters .el-button {
     width: 100%;
   }
+}
+
+:deep(.edit-btn) {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: rgb(88, 88, 205) !important;
 }
 </style>

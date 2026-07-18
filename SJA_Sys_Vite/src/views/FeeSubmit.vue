@@ -124,7 +124,7 @@
                     <el-input-number v-model="form.workInfo.authorCount" :min="0" controls-position="right" />
                   </el-form-item>
                 </el-col>
-                <el-col :span="12">
+                <el-col v-if="canManageFeeAmount" :span="12">
                   <el-form-item label="人均金额">
                     <el-input-number v-model="form.workInfo.authorAvgFee" :min="0" :precision="2" controls-position="right" />
                   </el-form-item>
@@ -189,7 +189,7 @@
                   <el-option v-for="role in contributorRoles" :key="role.value" :label="role.label" :value="role.value" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="金额">
+              <el-form-item v-if="canManageFeeAmount" label="金额">
                 <el-input-number v-model="item.feeAmount" :min="0" :precision="2" controls-position="right" />
               </el-form-item>
               <el-form-item label="备注">
@@ -201,11 +201,12 @@
           <el-empty v-if="form.contributors.length === 0" description="请添加至少一位参与人员" />
 
           <div class="submit-panel">
-            <div>
+            <div v-if="canManageFeeAmount">
               <span>合计金额</span>
               <strong>¥{{ totalAmount }}</strong>
             </div>
-            <el-button type="success" size="large" :loading="submitting" @click="handleSubmit">提交稿费</el-button>
+            <span v-else class="amount-hidden">金额由秘书长统一维护</span>
+            <el-button type="success" size="large" :loading="submitting" @click="handleSubmit">提交任务</el-button>
           </div>
         </el-card>
       </el-col>
@@ -214,18 +215,31 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { submitFee } from '@/api/fee'
 import { getUserList } from '@/api/user'
+import { useUserStore } from '@/store/user'
 
-const workTypeOptions = [
+const userStore = useUserStore()
+const allWorkTypeOptions = [
   { label: '采编部', value: 'EDITORIAL' },
   { label: '摄影部', value: 'PHOTO' },
   { label: '视频部', value: 'VIDEO' },
   { label: '视觉部', value: 'VISUAL' }
 ]
+const workTypeDeptMap = { EDITORIAL: 'EDITORIAL', PHOTO: 'PHOTOGRAPHY', VIDEO: 'VIDEO', VISUAL: 'VISUAL' }
+
+const roleCodes = computed(() => userStore.userInfo?.roleCodes || [])
+const deptCodes = computed(() => userStore.userInfo?.deptCodes || [])
+const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...roleCodes.value) : 13)
+const canViewAllTaskTypes = computed(() => [0, 1, 2, 3].includes(highestRoleCode.value))
+const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
+const workTypeOptions = computed(() => {
+  if (canViewAllTaskTypes.value) return allWorkTypeOptions
+  return allWorkTypeOptions.filter(item => deptCodes.value.includes(workTypeDeptMap[item.value]))
+})
 
 const contributorRoles = [
   { label: '作者', value: 'AUTHOR' },
@@ -262,6 +276,7 @@ const createWorkInfo = workType => {
 
 const resetWorkInfo = () => {
   form.workInfo = createWorkInfo(form.workType)
+  loadUsers()
 }
 
 const addContributor = () => {
@@ -299,13 +314,17 @@ const handleSubmit = async () => {
 
   submitting.value = true
   try {
+    const workInfo = { ...form.workInfo }
+    if (!canManageFeeAmount.value) {
+      delete workInfo.authorAvgFee
+    }
     await submitFee({
       workType: form.workType,
-      workInfo: { ...form.workInfo },
+      workInfo,
       contributors: form.contributors.map(item => ({
         userId: Number(item.userId),
         roleInWork: item.roleInWork,
-        feeAmount: Number(item.feeAmount || 0),
+        feeAmount: canManageFeeAmount.value ? Number(item.feeAmount || 0) : 0,
         remark: item.remark
       }))
     })
@@ -320,7 +339,8 @@ const handleSubmit = async () => {
 
 const loadUsers = async () => {
   try {
-    const res = await getUserList({ pageNum: 1, pageSize: 200 })
+    const deptCode = workTypeDeptMap[form.workType]
+    const res = await getUserList({ pageNum: 1, pageSize: 200, deptCode })
     users.value = res.data?.list || []
   } catch {
     users.value = []
@@ -329,7 +349,19 @@ const loadUsers = async () => {
 
 resetWorkInfo()
 addContributor()
-onMounted(loadUsers)
+onMounted(() => {
+  if (!workTypeOptions.value.some(item => item.value === form.workType) && workTypeOptions.value.length) {
+    form.workType = workTypeOptions.value[0].value
+  }
+  loadUsers()
+})
+
+watch(workTypeOptions, options => {
+  if (!options.some(item => item.value === form.workType) && options.length) {
+    form.workType = options[0].value
+    resetWorkInfo()
+  }
+})
 </script>
 
 <style scoped>
@@ -391,6 +423,11 @@ onMounted(loadUsers)
   color: var(--secondary-color);
   font-size: 24px;
   line-height: 1.2;
+}
+
+.amount-hidden {
+  color: #6b7280;
+  font-size: 14px;
 }
 
 @media (max-width: 768px) {

@@ -60,22 +60,22 @@
             <template #title>个人管理</template>
           </el-menu-item>
 
-          <el-sub-menu index="fee">
+          <el-sub-menu v-if="canUseFee" index="fee">
             <template #title>
               <el-icon><Document /></el-icon>
               <span>稿费管理</span>
             </template>
-            <el-menu-item index="/app/fee-submit">
+            <el-menu-item v-if="canSubmitFee" index="/app/fee-submit">
               <el-icon><EditPen /></el-icon>
               <template #title>稿费提交</template>
             </el-menu-item>
-            <el-menu-item index="/app/fee-audit">
+            <el-menu-item v-if="canViewFeeTasks" index="/app/fee-audit">
               <el-icon><CircleCheck /></el-icon>
-              <template #title>审核与导出</template>
+              <template #title>{{ canManageFeeAmount ? '审核与导出' : '本部门任务' }}</template>
             </el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="system">
+          <el-sub-menu v-if="canManageUsers" index="system">
             <template #title>
               <el-icon><Setting /></el-icon>
               <span>系统管理</span>
@@ -90,7 +90,7 @@
             </el-menu-item>
           </el-sub-menu>
 
-          <el-menu-item index="/app/sujia">
+          <el-menu-item v-if="canUseSujia" index="/app/sujia">
             <el-icon><Files /></el-icon>
             <template #title>素拓名单</template>
           </el-menu-item>
@@ -120,6 +120,16 @@ const isCollapse = ref(false)
 const dropdownVisible = ref(false)
 const sidebarWidth = computed(() => isCollapse.value ? '64px' : '260px')
 const activeMenu = computed(() => route.path)
+const roleCodes = computed(() => userStore.userInfo?.roleCodes || [])
+const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...roleCodes.value) : 13)
+const isInfoManager = computed(() => [0, 1, 2, 3].includes(highestRoleCode.value))
+const isMinister = computed(() => roleCodes.value.includes(4))
+const canManageUsers = computed(() => isInfoManager.value)
+const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
+const canSubmitFee = computed(() => canManageFeeAmount.value || isMinister.value)
+const canViewFeeTasks = computed(() => canManageFeeAmount.value || isMinister.value)
+const canUseFee = computed(() => canSubmitFee.value || canViewFeeTasks.value)
+const canUseSujia = computed(() => isInfoManager.value || isMinister.value)
 
 // 部门显示（后端返回 deptNames 数组）
 const deptDisplay = computed(() => {

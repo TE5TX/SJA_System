@@ -2,6 +2,7 @@ package com.sja.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.alibaba.excel.EasyExcel;
 import com.sja.system.common.PageResult;
 import com.sja.system.dto.FeeAuditDTO;
 import com.sja.system.dto.FeeSubmitDTO;
@@ -49,14 +50,17 @@ public class FeeServiceImpl implements FeeService {
     private final BizFeeStandardMapper feeStandardMapper;
     private final SysUserMapper sysUserMapper;
     private final SysDeptMapper sysDeptMapper;
+    private final SysUserDeptMapper sysUserDeptMapper;
     private final OperationLogService operationLogService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void submitFee(Long userId, String username, String realName, String deptCode, FeeSubmitDTO dto) {
+    public void submitFee(Long userId, String username, String realName, Integer roleCode, FeeSubmitDTO dto) {
         String workType = dto.getWorkType();
         Map<String, Object> workInfo = dto.getWorkInfo();
         List<FeeSubmitDTO.ContributorDTO> contributors = dto.getContributors();
+        ensureCanAccessWorkType(userId, roleCode, workType);
+        boolean canSeeAmount = canManageFeeAmount(roleCode);
 
         Long workId;
         BigDecimal totalAmount = BigDecimal.ZERO;
@@ -87,11 +91,11 @@ public class FeeServiceImpl implements FeeService {
                 contributor.setWorkId(workId);
                 contributor.setUserId(c.getUserId());
                 contributor.setRoleInWork(c.getRoleInWork());
-                contributor.setFeeAmount(c.getFeeAmount());
+                contributor.setFeeAmount(canSeeAmount ? c.getFeeAmount() : BigDecimal.ZERO);
                 contributor.setRemark(c.getRemark());
                 contributorMapper.insert(contributor);
 
-                if (c.getFeeAmount() != null) {
+                if (canSeeAmount && c.getFeeAmount() != null) {
                     totalAmount = totalAmount.add(c.getFeeAmount());
                 }
             }
@@ -113,7 +117,8 @@ public class FeeServiceImpl implements FeeService {
 
     @Override
     public PageResult<FeeListVO> getFeeList(String deptCode, String month, String status,
-                                            Integer pageNum, Integer pageSize) {
+                                            Integer pageNum, Integer pageSize,
+                                            Long operatorId, Integer roleCode) {
         int pn = pageNum != null ? pageNum : 1;
         int ps = pageSize != null ? pageSize : 10;
 
@@ -124,6 +129,22 @@ public class FeeServiceImpl implements FeeService {
         allItems.addAll(queryPhotographyList(month));
         allItems.addAll(queryVideoList(month));
         allItems.addAll(queryVisualList(month));
+
+        Set<String> allowedDeptCodes = allowedFeeDeptCodes(operatorId, roleCode);
+        if (StringUtils.hasText(deptCode)) {
+            if (!allowedDeptCodes.contains(deptCode)) {
+                return new PageResult<>(Collections.emptyList(), 0L, (long) pn, (long) ps);
+            }
+            allowedDeptCodes = Collections.singleton(deptCode);
+        }
+        Set<String> finalAllowedDeptCodes = allowedDeptCodes;
+        allItems = allItems.stream()
+                .filter(item -> finalAllowedDeptCodes.contains(workTypeToDeptCode(item.getWorkType())))
+                .collect(Collectors.toList());
+
+        if (!canManageFeeAmount(roleCode)) {
+            allItems.forEach(item -> item.setTotalAmount(null));
+        }
 
         // Sort by createTime desc
         allItems.sort((a, b) -> {
@@ -145,7 +166,9 @@ public class FeeServiceImpl implements FeeService {
     }
 
     @Override
-    public FeeDetailVO getFeeDetail(Long id, String workType) {
+    public FeeDetailVO getFeeDetail(Long id, String workType, Long operatorId, Integer roleCode) {
+        ensureCanAccessWorkType(operatorId, roleCode, workType);
+        boolean canSeeAmount = canManageFeeAmount(roleCode);
         FeeDetailVO vo = new FeeDetailVO();
         vo.setId(id);
         vo.setWorkType(workType);
@@ -204,7 +227,9 @@ public class FeeServiceImpl implements FeeService {
                 workInfo.put("title", entity.getTitle());
                 workInfo.put("category", entity.getCategory());
                 workInfo.put("authorCount", entity.getAuthorCount());
-                workInfo.put("authorAvgFee", entity.getAuthorAvgFee());
+                if (canSeeAmount) {
+                    workInfo.put("authorAvgFee", entity.getAuthorAvgFee());
+                }
                 workInfo.put("publishDate", entity.getPublishDate());
                 workInfo.put("articleLink", entity.getArticleLink());
                 workInfo.put("isPublished", entity.getIsPublished());
@@ -217,7 +242,7 @@ public class FeeServiceImpl implements FeeService {
         }
 
         vo.setWorkInfo(workInfo);
-        vo.setTotalAmount(totalAmount);
+        vo.setTotalAmount(canSeeAmount ? totalAmount : null);
         vo.setStatus("SUBMITTED");
 
         // Load contributors
@@ -229,7 +254,7 @@ public class FeeServiceImpl implements FeeService {
             FeeDetailVO.ContributorVO cvo = new FeeDetailVO.ContributorVO();
             cvo.setUserId(c.getUserId());
             cvo.setRoleInWork(c.getRoleInWork());
-            cvo.setFeeAmount(c.getFeeAmount());
+            cvo.setFeeAmount(canSeeAmount ? c.getFeeAmount() : null);
 
             // Look up real name
             SysUser user = sysUserMapper.selectById(c.getUserId());
@@ -240,6 +265,43 @@ public class FeeServiceImpl implements FeeService {
 
         vo.setContributors(contributorVOs);
         return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateFee(Long id, String workType, FeeSubmitDTO dto, Long operatorId,
+                          String operatorName, String operatorRole, Integer roleCode) {
+        if (!canManageFeeAmount(roleCode)) {
+            throw new RuntimeException("只有秘书长可以修改稿费任务和金额");
+        }
+        if (!workType.equals(dto.getWorkType())) {
+            throw new RuntimeException("作品类型不能变更");
+        }
+
+        updateWorkInfo(workType, id, dto.getWorkInfo());
+
+        QueryWrapper<BizWorkContributor> deleteQuery = new QueryWrapper<>();
+        deleteQuery.eq("work_type", workType).eq("work_id", id);
+        contributorMapper.delete(deleteQuery);
+
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        if (dto.getContributors() != null) {
+            for (FeeSubmitDTO.ContributorDTO c : dto.getContributors()) {
+                BizWorkContributor contributor = new BizWorkContributor();
+                contributor.setWorkType(workType);
+                contributor.setWorkId(id);
+                contributor.setUserId(c.getUserId());
+                contributor.setRoleInWork(c.getRoleInWork());
+                contributor.setFeeAmount(c.getFeeAmount() != null ? c.getFeeAmount() : BigDecimal.ZERO);
+                contributor.setRemark(c.getRemark());
+                contributorMapper.insert(contributor);
+                totalAmount = totalAmount.add(contributor.getFeeAmount());
+            }
+        }
+        updateWorkTotalAmount(workType, id, totalAmount);
+
+        operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
+                "FEE", id, String.format("修改稿费任务 [%s] id=%d，总金额 %.2f", workType, id, totalAmount), "");
     }
 
     @Override
@@ -306,7 +368,10 @@ public class FeeServiceImpl implements FeeService {
     }
 
     @Override
-    public void exportFee(String deptCode, String month, HttpServletResponse response) {
+    public void exportFee(String deptCode, String month, Long operatorId, Integer roleCode, HttpServletResponse response) {
+        if (!canManageFeeAmount(roleCode)) {
+            throw new RuntimeException("只有秘书长可以导出稿费表");
+        }
         try {
             // Set response headers for Excel download
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -320,6 +385,14 @@ public class FeeServiceImpl implements FeeService {
             allItems.addAll(queryPhotographyList(month));
             allItems.addAll(queryVideoList(month));
             allItems.addAll(queryVisualList(month));
+            Set<String> allowedDeptCodes = allowedFeeDeptCodes(operatorId, roleCode);
+            if (StringUtils.hasText(deptCode)) {
+                allowedDeptCodes = Collections.singleton(deptCode);
+            }
+            Set<String> finalAllowedDeptCodes = allowedDeptCodes;
+            allItems = allItems.stream()
+                    .filter(item -> finalAllowedDeptCodes.contains(workTypeToDeptCode(item.getWorkType())))
+                    .collect(Collectors.toList());
 
             // Sort by createTime desc
             allItems.sort((a, b) -> {
@@ -329,22 +402,27 @@ public class FeeServiceImpl implements FeeService {
                 return b.getCreateTime().compareTo(a.getCreateTime());
             });
 
-            // Write a simple CSV-like output since EasyExcel may not be available
-            // In production, use EasyExcel or Apache POI
-            StringBuilder sb = new StringBuilder();
-            sb.append("作品类型,标题,部门,金额,状态,提交人,创建时间\n");
-            for (FeeListVO item : allItems) {
-                sb.append(String.format("%s,%s,%s,%s,%s,%s,%s\n",
-                        item.getWorkType(),
-                        item.getTitle(),
-                        item.getDeptName(),
-                        item.getTotalAmount(),
-                        item.getStatus(),
-                        item.getSubmitterName(),
-                        item.getCreateTime()));
-            }
-            response.getWriter().write(sb.toString());
-            response.getWriter().flush();
+            List<List<String>> head = Arrays.asList(
+                    Collections.singletonList("作品类型"),
+                    Collections.singletonList("标题"),
+                    Collections.singletonList("部门"),
+                    Collections.singletonList("金额"),
+                    Collections.singletonList("状态"),
+                    Collections.singletonList("提交/关联人员"),
+                    Collections.singletonList("创建时间")
+            );
+            List<List<Object>> data = allItems.stream()
+                    .map(item -> Arrays.asList(
+                            (Object) workTypeDisplayName(item.getWorkType()),
+                            item.getTitle(),
+                            item.getDeptName(),
+                            item.getTotalAmount(),
+                            item.getStatus(),
+                            item.getSubmitterName(),
+                            item.getCreateTime()
+                    ))
+                    .collect(Collectors.toList());
+            EasyExcel.write(response.getOutputStream()).head(head).sheet("稿费明细").doWrite(data);
 
         } catch (Exception e) {
             log.error("Failed to export fee data", e);
@@ -444,6 +522,142 @@ public class FeeServiceImpl implements FeeService {
         }
     }
 
+    private void updateWorkInfo(String workType, Long workId, Map<String, Object> info) {
+        switch (workType) {
+            case EDITORIAL: {
+                if (editorialMapper.selectById(workId) == null) throw new RuntimeException("稿件不存在");
+                BizEditorialArticle update = new BizEditorialArticle();
+                update.setId(workId);
+                update.setTitle(getStringVal(info, "title"));
+                update.setPlatform(getStringVal(info, "platform"));
+                update.setCategory(getStringVal(info, "category"));
+                update.setWordCount(getIntVal(info, "wordCount"));
+                update.setReadCount(getIntVal(info, "readCount"));
+                update.setPublishDate(getLocalDateVal(info, "publishDate"));
+                update.setArticleLink(getStringVal(info, "articleLink"));
+                update.setIsPublished(getIntVal(info, "isPublished"));
+                update.setRemark(getStringVal(info, "remark"));
+                editorialMapper.updateById(update);
+                break;
+            }
+            case PHOTO: {
+                if (photographyMapper.selectById(workId) == null) throw new RuntimeException("摄影作品不存在");
+                BizPhotographyWork update = new BizPhotographyWork();
+                update.setId(workId);
+                update.setTitle(getStringVal(info, "title"));
+                update.setPlatform(getStringVal(info, "platform"));
+                update.setPhotoCount(getIntVal(info, "photoCount"));
+                update.setReadCount(getIntVal(info, "readCount"));
+                update.setPublishDate(getLocalDateVal(info, "publishDate"));
+                update.setArticleLink(getStringVal(info, "articleLink"));
+                update.setIsPublished(getIntVal(info, "isPublished"));
+                update.setRemark(getStringVal(info, "remark"));
+                photographyMapper.updateById(update);
+                break;
+            }
+            case VIDEO: {
+                if (videoMapper.selectById(workId) == null) throw new RuntimeException("视频作品不存在");
+                BizVideoWork update = new BizVideoWork();
+                update.setId(workId);
+                update.setVideoTitle(getStringVal(info, "videoTitle"));
+                update.setCategory(getStringVal(info, "category"));
+                update.setVideoDurationSec(getIntVal(info, "videoDurationSec"));
+                update.setLikeCount(getIntVal(info, "likeCount"));
+                update.setReprintStatus(getStringVal(info, "reprintStatus"));
+                update.setPublishDate(getLocalDateVal(info, "publishDate"));
+                update.setVideoLink(getStringVal(info, "videoLink"));
+                update.setIsPublished(getIntVal(info, "isPublished"));
+                update.setRemark(getStringVal(info, "remark"));
+                videoMapper.updateById(update);
+                break;
+            }
+            case VISUAL: {
+                if (visualMapper.selectById(workId) == null) throw new RuntimeException("视觉作品不存在");
+                BizVisualWork update = new BizVisualWork();
+                update.setId(workId);
+                update.setTitle(getStringVal(info, "title"));
+                update.setCategory(getStringVal(info, "category"));
+                update.setAuthorCount(getIntVal(info, "authorCount"));
+                update.setAuthorAvgFee(getBigDecimalVal(info, "authorAvgFee"));
+                update.setPublishDate(getLocalDateVal(info, "publishDate"));
+                update.setArticleLink(getStringVal(info, "articleLink"));
+                update.setIsPublished(getIntVal(info, "isPublished"));
+                update.setRemark(getStringVal(info, "remark"));
+                visualMapper.updateById(update);
+                break;
+            }
+            default:
+                throw new RuntimeException("不支持的作品类型: " + workType);
+        }
+    }
+
+    private void ensureCanAccessWorkType(Long userId, Integer roleCode, String workType) {
+        String deptCode = workTypeToDeptCode(workType);
+        if (!allowedFeeDeptCodes(userId, roleCode).contains(deptCode)) {
+            throw new RuntimeException("不能访问其他部门的稿费任务");
+        }
+    }
+
+    private Set<String> allowedFeeDeptCodes(Long userId, Integer roleCode) {
+        if (isGlobalTaskViewer(roleCode)) {
+            return new HashSet<>(Arrays.asList("EDITORIAL", "PHOTOGRAPHY", "VIDEO", "VISUAL"));
+        }
+        return getUserDeptCodes(userId);
+    }
+
+    private boolean isGlobalTaskViewer(Integer roleCode) {
+        return roleCode != null && (roleCode == 0 || roleCode == 1 || roleCode == 2 || roleCode == 3);
+    }
+
+    private boolean canManageFeeAmount(Integer roleCode) {
+        return roleCode != null && (roleCode == 0 || roleCode == 3);
+    }
+
+    private Set<String> getUserDeptCodes(Long userId) {
+        QueryWrapper<SysUserDept> query = new QueryWrapper<>();
+        query.eq("user_id", userId);
+        List<SysUserDept> userDepts = sysUserDeptMapper.selectList(query);
+        if (userDepts == null || userDepts.isEmpty()) {
+            return Collections.emptySet();
+        }
+        return userDepts.stream()
+                .map(SysUserDept::getDeptId)
+                .map(sysDeptMapper::selectById)
+                .filter(Objects::nonNull)
+                .map(SysDept::getDeptCode)
+                .collect(Collectors.toSet());
+    }
+
+    private String workTypeToDeptCode(String workType) {
+        switch (workType) {
+            case EDITORIAL:
+                return "EDITORIAL";
+            case PHOTO:
+                return "PHOTOGRAPHY";
+            case VIDEO:
+                return "VIDEO";
+            case VISUAL:
+                return "VISUAL";
+            default:
+                throw new RuntimeException("不支持的作品类型: " + workType);
+        }
+    }
+
+    private String workTypeDisplayName(String workType) {
+        switch (workType) {
+            case EDITORIAL:
+                return "采编部";
+            case PHOTO:
+                return "摄影部";
+            case VIDEO:
+                return "视频部";
+            case VISUAL:
+                return "视觉部";
+            default:
+                return workType;
+        }
+    }
+
     private List<FeeListVO> queryEditorialList(String month) {
         QueryWrapper<BizEditorialArticle> query = new QueryWrapper<>();
         if (StringUtils.hasText(month)) {
@@ -464,6 +678,7 @@ public class FeeServiceImpl implements FeeService {
             vo.setId(a.getId());
             vo.setWorkType(EDITORIAL);
             vo.setTitle(a.getTitle());
+            vo.setDeptName(workTypeDisplayName(EDITORIAL));
             vo.setTotalAmount(a.getTotalAmount());
             vo.setStatus("SUBMITTED");
             vo.setCreateTime(a.getCreateTime());
@@ -491,6 +706,7 @@ public class FeeServiceImpl implements FeeService {
             vo.setId(w.getId());
             vo.setWorkType(PHOTO);
             vo.setTitle(w.getTitle());
+            vo.setDeptName(workTypeDisplayName(PHOTO));
             vo.setTotalAmount(w.getTotalAmount());
             vo.setStatus("SUBMITTED");
             vo.setCreateTime(w.getCreateTime());
@@ -517,6 +733,7 @@ public class FeeServiceImpl implements FeeService {
             vo.setId(w.getId());
             vo.setWorkType(VIDEO);
             vo.setTitle(w.getVideoTitle());
+            vo.setDeptName(workTypeDisplayName(VIDEO));
             vo.setTotalAmount(w.getTotalAmount());
             vo.setStatus("SUBMITTED");
             vo.setCreateTime(w.getCreateTime());
@@ -543,6 +760,7 @@ public class FeeServiceImpl implements FeeService {
             vo.setId(w.getId());
             vo.setWorkType(VISUAL);
             vo.setTitle(w.getTitle());
+            vo.setDeptName(workTypeDisplayName(VISUAL));
             vo.setTotalAmount(w.getTotalAmount());
             vo.setStatus("SUBMITTED");
             vo.setCreateTime(w.getCreateTime());
@@ -580,6 +798,18 @@ public class FeeServiceImpl implements FeeService {
         if (val instanceof Number) return ((Number) val).intValue();
         try {
             return Integer.parseInt(val.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private BigDecimal getBigDecimalVal(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        if (val == null) return null;
+        if (val instanceof BigDecimal) return (BigDecimal) val;
+        if (val instanceof Number) return BigDecimal.valueOf(((Number) val).doubleValue());
+        try {
+            return new BigDecimal(val.toString());
         } catch (NumberFormatException e) {
             return null;
         }

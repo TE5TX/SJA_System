@@ -50,12 +50,10 @@ public class FeeController {
             return Result.error(401, "未授权");
         }
 
-        // Get real name and dept code from the token context
-        // In a full implementation, these would come from the user profile
         String realName = username;
-        String deptCode = "";
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
 
-        feeService.submitFee(userId, username, realName, deptCode, dto);
+        feeService.submitFee(userId, username, realName, roleCode, dto);
         return Result.success();
     }
 
@@ -69,9 +67,15 @@ public class FeeController {
             @RequestParam(required = false) String month,
             @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") Integer pageNum,
-            @RequestParam(defaultValue = "10") Integer pageSize) {
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            HttpServletRequest request) {
 
-        PageResult<FeeListVO> result = feeService.getFeeList(deptCode, month, status, pageNum, pageSize);
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) {
+            return Result.error(401, "未授权");
+        }
+        PageResult<FeeListVO> result = feeService.getFeeList(deptCode, month, status, pageNum, pageSize, operatorId, roleCode);
         return Result.success(result);
     }
 
@@ -81,9 +85,32 @@ public class FeeController {
     @GetMapping("/detail/{workType}/{id}")
     @PreAuthorize("hasAuthority('fee:view')")
     public Result<FeeDetailVO> getFeeDetail(@PathVariable String workType,
-                                            @PathVariable Long id) {
-        FeeDetailVO detail = feeService.getFeeDetail(id, workType);
+                                            @PathVariable Long id,
+                                            HttpServletRequest request) {
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) {
+            return Result.error(401, "未授权");
+        }
+        FeeDetailVO detail = feeService.getFeeDetail(id, workType, operatorId, roleCode);
         return Result.success(detail);
+    }
+
+    @PutMapping("/detail/{workType}/{id}")
+    @PreAuthorize("hasAuthority('fee:audit')")
+    public Result<Void> updateFee(@PathVariable String workType,
+                                  @PathVariable Long id,
+                                  @RequestBody @Valid FeeSubmitDTO dto,
+                                  HttpServletRequest request) {
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        String operatorName = securityUtils.getCurrentUsernameFromToken(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        String operatorRole = roleCode != null ? String.valueOf(roleCode) : "";
+        if (operatorId == null) {
+            return Result.error(401, "未授权");
+        }
+        feeService.updateFee(id, workType, dto, operatorId, operatorName, operatorRole, roleCode);
+        return Result.success();
     }
 
     /**
@@ -103,6 +130,9 @@ public class FeeController {
         if (auditorId == null) {
             return Result.error(401, "未授权");
         }
+        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
+            return Result.error(403, "只有管理员或秘书长可以审核和调整稿费金额");
+        }
 
         feeService.auditFee(id, workType, dto, auditorId, auditorName, auditorRole);
         return Result.success();
@@ -115,7 +145,13 @@ public class FeeController {
     @PreAuthorize("hasAuthority('fee:export')")
     public void exportFee(@RequestParam(required = false) String deptCode,
                           @RequestParam(required = false) String month,
+                          HttpServletRequest request,
                           HttpServletResponse response) {
-        feeService.exportFee(deptCode, month, response);
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) {
+            throw new RuntimeException("未授权");
+        }
+        feeService.exportFee(deptCode, month, operatorId, roleCode, response);
     }
 }

@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -290,59 +291,117 @@ public class UserServiceImpl implements UserService {
         StringBuilder detail = new StringBuilder("修改用户信息: ");
         SysUser update = new SysUser();
         update.setId(userId);
+        boolean hasUserFieldUpdate = false;
 
         if (updates.containsKey("realName")) {
             String oldVal = user.getRealName();
             String newVal = (String) updates.get("realName");
             update.setRealName(newVal);
             detail.append(String.format("realName [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
+        }
+        if (updates.containsKey("photo")) {
+            String oldVal = user.getPhoto();
+            String newVal = (String) updates.get("photo");
+            update.setPhoto(newVal);
+            detail.append(String.format("photo [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
+        }
+        if (updates.containsKey("idCard")) {
+            String oldVal = user.getIdCard();
+            String newVal = (String) updates.get("idCard");
+            if (StringUtils.hasText(newVal) && !newVal.equals(oldVal)) {
+                QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
+                idCardCheck.eq("id_card", newVal).ne("id", userId).eq("is_valid", 1);
+                if (sysUserMapper.selectCount(idCardCheck) > 0) {
+                    throw new RuntimeException("该身份证号已被其他用户使用");
+                }
+            }
+            update.setIdCard(newVal);
+            detail.append(String.format("idCard [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
         }
         if (updates.containsKey("gender")) {
-            update.setGender((Integer) updates.get("gender"));
+            update.setGender(toInteger(updates.get("gender")));
             detail.append("gender updated; ");
+            hasUserFieldUpdate = true;
         }
         if (updates.containsKey("phone")) {
             String oldVal = user.getPhone();
             String newVal = (String) updates.get("phone");
             update.setPhone(newVal);
             detail.append(String.format("phone [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
         }
         if (updates.containsKey("studentNo")) {
             String oldVal = user.getStudentNo();
             String newVal = (String) updates.get("studentNo");
-            update.setStudentNo(newVal);
-            detail.append(String.format("studentNo [%s]->[%s]; ", oldVal, newVal));
+            if (StringUtils.hasText(newVal) && !newVal.equals(oldVal)) {
+                QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
+                studentNoCheck.eq("student_no", newVal).ne("id", userId).eq("is_valid", 1);
+                if (sysUserMapper.selectCount(studentNoCheck) > 0) {
+                    throw new RuntimeException("该学号已被其他用户使用");
+                }
+                update.setStudentNo(newVal);
+                update.setUsername(newVal);
+                detail.append(String.format("studentNo [%s]->[%s]; username synced; ", oldVal, newVal));
+                hasUserFieldUpdate = true;
+            }
         }
         if (updates.containsKey("college")) {
             String oldVal = user.getCollege();
             String newVal = (String) updates.get("college");
             update.setCollege(newVal);
             detail.append(String.format("college [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
         }
         if (updates.containsKey("className")) {
             String oldVal = user.getClassName();
             String newVal = (String) updates.get("className");
             update.setClassName(newVal);
             detail.append(String.format("className [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
         }
         if (updates.containsKey("dormAddress")) {
             String oldVal = user.getDormAddress();
             String newVal = (String) updates.get("dormAddress");
             update.setDormAddress(newVal);
             detail.append(String.format("dormAddress [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
         }
         if (updates.containsKey("bankCard")) {
             String oldVal = user.getBankCard();
             String newVal = (String) updates.get("bankCard");
             update.setBankCard(newVal);
             detail.append(String.format("bankCard [%s]->[%s]; ", oldVal, newVal));
+            hasUserFieldUpdate = true;
         }
         if (updates.containsKey("remark")) {
             update.setRemark((String) updates.get("remark"));
             detail.append("remark updated; ");
+            hasUserFieldUpdate = true;
+        }
+        if (updates.containsKey("isValid")) {
+            update.setIsValid(toInteger(updates.get("isValid")));
+            detail.append("isValid updated; ");
+            hasUserFieldUpdate = true;
         }
 
-        sysUserMapper.updateById(update);
+        if (hasUserFieldUpdate) {
+            sysUserMapper.updateById(update);
+        }
+
+        if (updates.containsKey("deptIds")) {
+            List<Long> deptIds = toLongList(updates.get("deptIds"));
+            updateUserDepts(userId, deptIds);
+            detail.append("deptIds updated; ");
+        }
+
+        if (updates.containsKey("roleIds")) {
+            List<Long> roleIds = toLongList(updates.get("roleIds"));
+            updateUserRoles(userId, roleIds);
+            detail.append("roleIds updated; ");
+        }
 
         operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
                 "USER", userId, detail.toString(), "");
@@ -383,6 +442,7 @@ public class UserServiceImpl implements UserService {
         vo.setRealName(user.getRealName());
         vo.setGender(user.getGender());
         vo.setPhoto(user.getPhoto());
+        vo.setIdCard(user.getIdCard());
         vo.setStudentNo(user.getStudentNo());
         vo.setCollege(user.getCollege());
         vo.setClassName(user.getClassName());
@@ -398,31 +458,126 @@ public class UserServiceImpl implements UserService {
         roleQuery.eq("user_id", user.getId());
         List<SysUserRole> userRoles = sysUserRoleMapper.selectList(roleQuery);
         List<String> roleNames = new ArrayList<>();
+        List<Long> roleIds = new ArrayList<>();
+        List<Integer> roleCodes = new ArrayList<>();
         if (userRoles != null) {
             for (SysUserRole ur : userRoles) {
                 SysRole role = sysRoleMapper.selectById(ur.getRoleId());
                 if (role != null) {
+                    roleIds.add(role.getId());
+                    roleCodes.add(role.getRoleCode());
                     roleNames.add(role.getRoleName());
                 }
             }
         }
         vo.setRoleNames(roleNames);
+        vo.setRoleIds(roleIds);
+        vo.setRoleCodes(roleCodes);
 
         // Load department names
         QueryWrapper<SysUserDept> deptQuery = new QueryWrapper<>();
         deptQuery.eq("user_id", user.getId());
         List<SysUserDept> userDepts = sysUserDeptMapper.selectList(deptQuery);
         List<String> deptNames = new ArrayList<>();
+        List<Long> deptIds = new ArrayList<>();
+        List<String> deptCodes = new ArrayList<>();
         if (userDepts != null) {
             for (SysUserDept ud : userDepts) {
                 SysDept dept = sysDeptMapper.selectById(ud.getDeptId());
                 if (dept != null) {
+                    deptIds.add(dept.getId());
+                    deptCodes.add(dept.getDeptCode());
                     deptNames.add(dept.getDeptName());
                 }
             }
         }
         vo.setDeptNames(deptNames);
+        vo.setDeptIds(deptIds);
+        vo.setDeptCodes(deptCodes);
 
         return vo;
+    }
+
+    private void updateUserDepts(Long userId, List<Long> deptIds) {
+        QueryWrapper<SysUserDept> deleteQuery = new QueryWrapper<>();
+        deleteQuery.eq("user_id", userId);
+        sysUserDeptMapper.delete(deleteQuery);
+
+        for (Long deptId : deptIds) {
+            if (deptId == null) {
+                continue;
+            }
+            SysDept dept = sysDeptMapper.selectById(deptId);
+            if (dept == null || !Objects.equals(dept.getIsValid(), 1)) {
+                throw new RuntimeException("部门不存在或已禁用: " + deptId);
+            }
+            SysUserDept userDept = new SysUserDept();
+            userDept.setUserId(userId);
+            userDept.setDeptId(deptId);
+            sysUserDeptMapper.insert(userDept);
+        }
+    }
+
+    private void updateUserRoles(Long userId, List<Long> roleIds) {
+        QueryWrapper<SysUserRole> deleteQuery = new QueryWrapper<>();
+        deleteQuery.eq("user_id", userId);
+        sysUserRoleMapper.delete(deleteQuery);
+
+        for (Long roleId : roleIds) {
+            if (roleId == null) {
+                continue;
+            }
+            SysRole role = sysRoleMapper.selectById(roleId);
+            if (role == null || !Objects.equals(role.getIsValid(), 1)) {
+                throw new RuntimeException("角色不存在或已禁用: " + roleId);
+            }
+            SysUserRole userRole = new SysUserRole();
+            userRole.setUserId(userId);
+            userRole.setRoleId(roleId);
+            sysUserRoleMapper.insert(userRole);
+        }
+    }
+
+    private Integer toInteger(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Integer) {
+            return (Integer) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        return Integer.valueOf(value.toString());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Long> toLongList(Object value) {
+        if (value == null) {
+            return Collections.emptyList();
+        }
+        if (!(value instanceof List)) {
+            return Collections.singletonList(toLong(value));
+        }
+        List<Object> values = (List<Object>) value;
+        return values.stream()
+                .map(this::toLong)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Long) {
+            return (Long) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        String text = value.toString();
+        return StringUtils.hasText(text) ? Long.valueOf(text) : null;
     }
 }

@@ -19,7 +19,7 @@
           </el-select>
           <el-button type="primary" :icon="Search" @click="loadList">查询</el-button>
           <el-button :icon="Refresh" @click="resetQuery">重置</el-button>
-          <el-button type="success" :icon="Download" :loading="exporting" @click="handleExport">导出</el-button>
+          <el-button v-if="canManageFeeAmount" type="success" :icon="Download" :loading="exporting" @click="handleExport">导出</el-button>
         </div>
       </template>
 
@@ -31,7 +31,7 @@
         </el-table-column>
         <el-table-column prop="title" label="作品标题" min-width="220" show-overflow-tooltip />
         <el-table-column prop="submitterName" label="提交/关联人员" width="130" />
-        <el-table-column label="金额" width="120">
+        <el-table-column v-if="canManageFeeAmount" label="金额" width="120">
           <template #default="{ row }">¥{{ money(row.totalAmount) }}</template>
         </el-table-column>
         <el-table-column label="状态" width="110">
@@ -45,8 +45,9 @@
         <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" :icon="View" @click="openDetail(row)">详情</el-button>
-            <el-button link type="success" :icon="CircleCheck" @click="openAudit(row, true)">通过</el-button>
-            <el-button link type="danger" :icon="CircleClose" @click="openAudit(row, false)">驳回</el-button>
+            <el-button v-if="canManageFeeAmount" link type="warning" :icon="Edit" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="canManageFeeAmount" link type="success" :icon="CircleCheck" @click="openAudit(row, true)">通过</el-button>
+            <el-button v-if="canManageFeeAmount" link type="danger" :icon="CircleClose" @click="openAudit(row, false)">驳回</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -69,7 +70,7 @@
         <el-descriptions v-if="detail" :column="1" border>
           <el-descriptions-item label="作品类型">{{ workTypeName(detail.workType) }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ statusName(detail.status) }}</el-descriptions-item>
-          <el-descriptions-item label="总金额">¥{{ money(detail.totalAmount) }}</el-descriptions-item>
+          <el-descriptions-item v-if="canManageFeeAmount" label="总金额">¥{{ money(detail.totalAmount) }}</el-descriptions-item>
           <el-descriptions-item label="备注">{{ detail.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
 
@@ -85,7 +86,7 @@
           <el-table-column prop="roleInWork" label="角色" width="110">
             <template #default="{ row }">{{ roleName(row.roleInWork) }}</template>
           </el-table-column>
-          <el-table-column label="金额" width="120">
+          <el-table-column v-if="canManageFeeAmount" label="金额" width="120">
             <template #default="{ row }">¥{{ money(row.feeAmount) }}</template>
           </el-table-column>
         </el-table>
@@ -106,15 +107,49 @@
         <el-button :type="auditForm.approved ? 'success' : 'danger'" :loading="auditing" @click="handleAudit">确认</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="editVisible" title="编辑稿费任务" width="760px">
+      <el-form label-width="110px">
+        <el-form-item v-for="field in editWorkFields" :key="field.key" :label="field.key">
+          <el-input v-model="editForm.workInfo[field.key]" />
+        </el-form-item>
+      </el-form>
+      <h3 class="detail-title">参与人员金额</h3>
+      <el-table :data="editForm.contributors" border size="small">
+        <el-table-column prop="realName" label="姓名" min-width="120" />
+        <el-table-column label="用户ID" width="110">
+          <template #default="{ row }">
+            <el-input v-model="row.userId" />
+          </template>
+        </el-table-column>
+        <el-table-column label="角色" width="150">
+          <template #default="{ row }">
+            <el-select v-model="row.roleInWork">
+              <el-option v-for="role in contributorRoles" :key="role.value" :label="role.label" :value="role.value" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="150">
+          <template #default="{ row }">
+            <el-input-number v-model="row.feeAmount" :min="0" :precision="2" controls-position="right" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSaveEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { CircleCheck, CircleClose, Download, Refresh, Search, View } from '@element-plus/icons-vue'
+import { CircleCheck, CircleClose, Download, Edit, Refresh, Search, View } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { auditFee, exportFee, getFeeDetail, getFeeList } from '@/api/fee'
+import { auditFee, exportFee, getFeeDetail, getFeeList, updateFeeDetail } from '@/api/fee'
 import { getDeptList } from '@/api/system'
+import { useUserStore } from '@/store/user'
 
 const fallbackDepts = [
   { label: '采编部', value: 'EDITORIAL' },
@@ -133,12 +168,22 @@ const detailLoading = ref(false)
 const detail = ref(null)
 const auditVisible = ref(false)
 const auditing = ref(false)
+const editVisible = ref(false)
+const saving = ref(false)
 const currentRow = ref(null)
 const deptOptions = ref(fallbackDepts)
 const auditForm = reactive({ approved: true, opinion: '' })
+const editForm = reactive({ workType: '', workInfo: {}, contributors: [] })
+const userStore = useUserStore()
 
 const workTypeMap = { EDITORIAL: '采编', PHOTO: '摄影', VIDEO: '视频', VISUAL: '视觉' }
 const roleMap = { AUTHOR: '作者', SHOOTER: '拍摄', EDITOR: '编辑/剪辑', DESIGNER: '设计' }
+const contributorRoles = [
+  { label: '作者', value: 'AUTHOR' },
+  { label: '拍摄', value: 'SHOOTER' },
+  { label: '编辑/剪辑', value: 'EDITOR' },
+  { label: '设计', value: 'DESIGNER' }
+]
 
 const money = value => Number(value || 0).toFixed(2)
 const time = value => value ? String(value).replace('T', ' ').slice(0, 16) : '-'
@@ -146,11 +191,15 @@ const workTypeName = type => workTypeMap[type] || type || '-'
 const roleName = role => roleMap[role] || role || '-'
 const statusName = status => ({ SUBMITTED: '已提交', APPROVED: '已通过', REJECTED: '已驳回' }[status] || status || '-')
 const statusType = status => ({ APPROVED: 'success', REJECTED: 'danger', SUBMITTED: 'warning' }[status] || 'info')
+const roleCodes = computed(() => userStore.userInfo?.roleCodes || [])
+const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...roleCodes.value) : 13)
+const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
 
 const workInfoRows = computed(() => {
   const info = detail.value?.workInfo || {}
   return Object.entries(info).map(([label, value]) => ({ label, value: value ?? '-' }))
 })
+const editWorkFields = computed(() => Object.keys(editForm.workInfo || {}).map(key => ({ key })))
 
 const loadList = async () => {
   loading.value = true
@@ -185,6 +234,37 @@ const openAudit = (row, approved) => {
   auditForm.approved = approved
   auditForm.opinion = approved ? '审核通过' : ''
   auditVisible.value = true
+}
+
+const openEdit = async row => {
+  await openDetail(row)
+  editForm.workType = detail.value.workType
+  editForm.workInfo = { ...(detail.value.workInfo || {}) }
+  editForm.contributors = (detail.value.contributors || []).map(item => ({ ...item }))
+  editVisible.value = true
+}
+
+const handleSaveEdit = async () => {
+  if (!currentRow.value) return
+  saving.value = true
+  try {
+    await updateFeeDetail(currentRow.value.workType, currentRow.value.id, {
+      workType: currentRow.value.workType,
+      workInfo: { ...editForm.workInfo },
+      contributors: editForm.contributors.map(item => ({
+        userId: Number(item.userId),
+        roleInWork: item.roleInWork,
+        feeAmount: Number(item.feeAmount || 0),
+        remark: item.remark || ''
+      }))
+    })
+    ElMessage.success('稿费任务已保存')
+    editVisible.value = false
+    detailVisible.value = false
+    await loadList()
+  } finally {
+    saving.value = false
+  }
 }
 
 const handleAudit = async () => {

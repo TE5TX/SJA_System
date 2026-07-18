@@ -23,6 +23,14 @@ export function getFeeDetail(workType, id) {
   })
 }
 
+export function updateFeeDetail(workType, id, data) {
+  return request({
+    url: `/v1/fee/detail/${workType}/${id}`,
+    method: 'put',
+    data
+  })
+}
+
 export function auditFee(workType, id, data) {
   return request({
     url: `/v1/fee/audit/${workType}/${id}`,

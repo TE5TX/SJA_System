@@ -18,6 +18,8 @@ public class UserVO {
 
     private String photo;
 
+    private String idCard;
+
     private String studentNo;
 
     private String college;
@@ -36,7 +38,15 @@ public class UserVO {
 
     private List<String> roleNames;
 
+    private List<Long> roleIds;
+
+    private List<Integer> roleCodes;
+
     private List<String> deptNames;
+
+    private List<Long> deptIds;
+
+    private List<String> deptCodes;
 
     private LocalDateTime createTime;
 

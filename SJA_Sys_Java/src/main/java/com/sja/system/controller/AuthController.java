@@ -88,8 +88,9 @@ public class AuthController {
                     .map(SysUserRole::getRoleId)
                     .collect(Collectors.toList());
 
-            // Find highest (lowest number = highest privilege) role code
-            Integer highestRoleCode = 3; // default: member
+            // Find highest (lowest number = highest privilege) role code.
+            // Default to visitor to avoid treating ordinary members as secretary.
+            Integer highestRoleCode = 13;
             List<Integer> roleCodes = new ArrayList<>();
             if (!roleIds.isEmpty()) {
                 QueryWrapper<SysRole> rQuery = new QueryWrapper<>();

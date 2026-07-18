@@ -24,7 +24,7 @@ public interface FeeService {
      * @param deptCode  submitting user's department code
      * @param dto       fee submission data (work info + contributors)
      */
-    void submitFee(Long userId, String username, String realName, String deptCode, FeeSubmitDTO dto);
+    void submitFee(Long userId, String username, String realName, Integer roleCode, FeeSubmitDTO dto);
 
     /**
      * List fee records with optional filters.
@@ -36,7 +36,8 @@ public interface FeeService {
      * @param pageSize page size
      * @return paginated fee list
      */
-    PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, Integer pageNum, Integer pageSize);
+    PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, Integer pageNum, Integer pageSize,
+                                     Long operatorId, Integer roleCode);
 
     /**
      * Get detailed information for a specific work's fee record.
@@ -45,7 +46,10 @@ public interface FeeService {
      * @param workType one of EDITORIAL, PHOTO, VIDEO, VISUAL
      * @return full fee detail including contributors
      */
-    FeeDetailVO getFeeDetail(Long id, String workType);
+    FeeDetailVO getFeeDetail(Long id, String workType, Long operatorId, Integer roleCode);
+
+    void updateFee(Long id, String workType, FeeSubmitDTO dto, Long operatorId, String operatorName, String operatorRole,
+                   Integer roleCode);
 
     /**
      * Audit (approve/reject) a fee record.
@@ -66,5 +70,5 @@ public interface FeeService {
      * @param month    filter by month in "yyyy-MM" format (nullable)
      * @param response HTTP response to write the Excel file to
      */
-    void exportFee(String deptCode, String month, HttpServletResponse response);
+    void exportFee(String deptCode, String month, Long operatorId, Integer roleCode, HttpServletResponse response);
 }

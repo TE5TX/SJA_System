@@ -61,6 +61,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                     "/swagger-resources/**",
                     "/v2/api-docs/**",
                     "/v3/api-docs/**",
+                    "/uploads/**",
                     "/favicon.ico"
                 ).permitAll()
                 // All other requests require authentication
