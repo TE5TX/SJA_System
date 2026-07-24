@@ -71,7 +71,7 @@
             </el-menu-item>
             <el-menu-item v-if="canViewFeeTasks" index="/app/fee-audit">
               <el-icon><CircleCheck /></el-icon>
-              <template #title>{{ canManageFeeAmount ? '审核与导出' : '本部门任务' }}</template>
+              <template #title>{{ canManageFeeAmount ? '审核与导出' : '稿费任务' }}</template>
             </el-menu-item>
           </el-sub-menu>
 

@@ -3,6 +3,7 @@ package com.sja.system.service;
 import com.sja.system.common.PageResult;
 import com.sja.system.dto.FeeAuditDTO;
 import com.sja.system.dto.FeeSubmitDTO;
+import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.vo.FeeDetailVO;
 import com.sja.system.vo.FeeListVO;
 
@@ -43,7 +44,7 @@ public interface FeeService {
      * Get detailed information for a specific work's fee record.
      *
      * @param id       work primary key
-     * @param workType one of EDITORIAL, PHOTO, VIDEO, VISUAL
+     * @param workType one of EDITORIAL, PHOTO, VIDEO, VISUAL, SUBSIDY
      * @return full fee detail including contributors
      */
     FeeDetailVO getFeeDetail(Long id, String workType, Long operatorId, Integer roleCode);
@@ -63,6 +64,14 @@ public interface FeeService {
      */
     void auditFee(Long id, String workType, FeeAuditDTO dto, Long auditorId, String auditorName, String auditorRole);
 
+    void resetAudit(Long id, String workType, Long operatorId, String operatorName, String operatorRole);
+
+    /**
+     * Mark a rejected fee task as invalid without physically deleting its data.
+     */
+    void invalidateRejectedFee(Long id, String workType, Long operatorId, String operatorName,
+                               String operatorRole, Integer roleCode);
+
     /**
      * Export fee records to an Excel file written to the HTTP response.
      *
@@ -70,5 +79,5 @@ public interface FeeService {
      * @param month    filter by month in "yyyy-MM" format (nullable)
      * @param response HTTP response to write the Excel file to
      */
-    void exportFee(String deptCode, String month, Long operatorId, Integer roleCode, HttpServletResponse response);
+    void exportFee(FeeExportDTO dto, Long operatorId, Integer roleCode, HttpServletResponse response);
 }

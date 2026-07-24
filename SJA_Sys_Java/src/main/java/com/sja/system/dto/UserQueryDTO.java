@@ -17,6 +17,8 @@ public class UserQueryDTO {
 
     private Integer roleCode;
 
+    private Integer isValid;
+
     private Integer pageNum = 1;
 
     private Integer pageSize = 10;

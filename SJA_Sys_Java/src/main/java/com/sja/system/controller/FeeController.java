@@ -4,14 +4,18 @@ import com.sja.system.common.PageResult;
 import com.sja.system.common.Result;
 import com.sja.system.dto.FeeAuditDTO;
 import com.sja.system.dto.FeeSubmitDTO;
+import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.FeeService;
+import com.sja.system.service.UserService;
+import com.sja.system.vo.FeeContributorVO;
 import com.sja.system.vo.FeeDetailVO;
 import com.sja.system.vo.FeeListVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -23,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.validation.Valid;
+import java.util.List;
 
 /**
  * Fee (remuneration) management controller.
@@ -35,7 +40,18 @@ import javax.validation.Valid;
 public class FeeController {
 
     private final FeeService feeService;
+    private final UserService userService;
     private final SecurityUtils securityUtils;
+
+    /**
+     * Return active users that can be selected as contributors. This deliberately
+     * exposes only name and student number instead of the full user profile.
+     */
+    @GetMapping("/contributors")
+    @PreAuthorize("hasAuthority('fee:contributors:view')")
+    public Result<List<FeeContributorVO>> getContributors() {
+        return Result.success(userService.queryActiveFeeContributors());
+    }
 
     /**
      * Submit a new fee record for a piece of work.
@@ -97,7 +113,7 @@ public class FeeController {
     }
 
     @PutMapping("/detail/{workType}/{id}")
-    @PreAuthorize("hasAuthority('fee:audit')")
+    @PreAuthorize("hasAnyAuthority('fee:audit', 'fee:edit')")
     public Result<Void> updateFee(@PathVariable String workType,
                                   @PathVariable Long id,
                                   @RequestBody @Valid FeeSubmitDTO dto,
@@ -138,13 +154,46 @@ public class FeeController {
         return Result.success();
     }
 
+    @PutMapping("/audit/{workType}/{id}/reset")
+    @PreAuthorize("hasAuthority('fee:audit')")
+    public Result<Void> resetAudit(@PathVariable String workType,
+                                   @PathVariable Long id,
+                                   HttpServletRequest request) {
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) {
+            return Result.error(401, "未授权");
+        }
+        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
+            return Result.error(403, "只有管理员或秘书长可以退回审批");
+        }
+        feeService.resetAudit(id, workType, operatorId,
+                securityUtils.getCurrentUsernameFromToken(request), String.valueOf(roleCode));
+        return Result.success();
+    }
+
+    @DeleteMapping("/detail/{workType}/{id}")
+    @PreAuthorize("hasAnyAuthority('fee:audit', 'fee:edit')")
+    public Result<Void> invalidateRejectedFee(@PathVariable String workType,
+                                              @PathVariable Long id,
+                                              HttpServletRequest request) {
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) {
+            return Result.error(401, "未授权");
+        }
+        feeService.invalidateRejectedFee(id, workType, operatorId,
+                securityUtils.getCurrentUsernameFromToken(request),
+                roleCode != null ? String.valueOf(roleCode) : "", roleCode);
+        return Result.success();
+    }
+
     /**
      * Export fee records to an Excel file.
      */
-    @GetMapping("/export")
+    @PostMapping("/export")
     @PreAuthorize("hasAuthority('fee:export')")
-    public void exportFee(@RequestParam(required = false) String deptCode,
-                          @RequestParam(required = false) String month,
+    public void exportFee(@RequestBody @Valid FeeExportDTO dto,
                           HttpServletRequest request,
                           HttpServletResponse response) {
         Long operatorId = securityUtils.getCurrentUserId(request);
@@ -152,6 +201,6 @@ public class FeeController {
         if (operatorId == null) {
             throw new RuntimeException("未授权");
         }
-        feeService.exportFee(deptCode, month, operatorId, roleCode, response);
+        feeService.exportFee(dto, operatorId, roleCode, response);
     }
 }

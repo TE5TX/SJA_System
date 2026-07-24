@@ -32,13 +32,23 @@ public class BizVideoWork {
 
     private String reprintStatus;
 
+    private Integer isComplexEdit;
+
     private LocalDate publishDate;
 
     private String videoLink;
 
     private Integer isPublished;
 
+    private Integer isSpecialNode;
+
+    private Integer specialMultiplier;
+
     private BigDecimal totalAmount;
+
+    private String auditStatus;
+
+    private Integer isValid;
 
     private String remark;
 

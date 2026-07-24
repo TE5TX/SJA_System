@@ -1,10 +1,13 @@
 package com.sja.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sja.system.common.PageResult;
 import com.sja.system.dto.PasswordUpdateDTO;
 import com.sja.system.dto.ProfileUpdateDTO;
+import com.sja.system.dto.UserBatchUpdateDTO;
+import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserQueryDTO;
 import com.sja.system.entity.SysDept;
 import com.sja.system.entity.SysRole;
@@ -19,6 +22,7 @@ import com.sja.system.mapper.SysUserRoleMapper;
 import com.sja.system.service.OperationLogService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.UserVO;
+import com.sja.system.vo.FeeContributorVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -190,6 +194,26 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateProfilePhoto(Long userId, String photo, Long operatorId, String operatorName, String operatorRole) {
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+
+        String newPhoto = StringUtils.hasText(photo) ? photo : null;
+        UpdateWrapper<SysUser> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", userId).set("photo", newPhoto);
+        sysUserMapper.update(null, updateWrapper);
+
+        String action = StringUtils.hasText(photo) ? "上传照片" : "删除照片";
+        String detail = String.format("%s: %s，原照片 [%s]，新照片 [%s]",
+                action, user.getRealName(), user.getPhoto(), newPhoto);
+        operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
+                "USER", userId, detail, "");
+    }
+
+    @Override
     public PageResult<UserVO> queryUsers(UserQueryDTO query) {
         int pageNum = query.getPageNum() != null ? query.getPageNum() : 1;
         int pageSize = query.getPageSize() != null ? query.getPageSize() : 10;
@@ -248,8 +272,6 @@ public class UserServiceImpl implements UserService {
 
         // Build the main user query
         QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
-        userQuery.eq("is_valid", 1);
-
         if (StringUtils.hasText(query.getUsername())) {
             userQuery.like("username", query.getUsername());
         }
@@ -261,6 +283,9 @@ public class UserServiceImpl implements UserService {
         }
         if (StringUtils.hasText(query.getCollege())) {
             userQuery.like("college", query.getCollege());
+        }
+        if (query.getIsValid() != null) {
+            userQuery.eq("is_valid", query.getIsValid());
         }
         if (filteredUserIds != null) {
             userQuery.in("id", filteredUserIds);
@@ -276,6 +301,95 @@ public class UserServiceImpl implements UserService {
                 .collect(Collectors.toList());
 
         return new PageResult<>(voList, resultPage.getTotal(), (long) pageNum, (long) pageSize);
+    }
+
+    @Override
+    public List<FeeContributorVO> queryActiveFeeContributors() {
+        QueryWrapper<SysUser> query = new QueryWrapper<>();
+        query.select("id", "real_name", "student_no", "is_valid")
+                .eq("is_valid", 1)
+                .orderByAsc("real_name", "id");
+        return sysUserMapper.selectList(query).stream()
+                .map(user -> new FeeContributorVO(
+                        user.getId(), user.getRealName(), user.getStudentNo(), user.getIsValid()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<UserVO> queryUsersForExport(UserQueryDTO query) {
+        final int exportPageSize = 500;
+        List<UserVO> users = new ArrayList<>();
+        int pageNum = 1;
+        long total;
+
+        do {
+            UserQueryDTO pageQuery = new UserQueryDTO();
+            pageQuery.setUsername(query.getUsername());
+            pageQuery.setRealName(query.getRealName());
+            pageQuery.setStudentNo(query.getStudentNo());
+            pageQuery.setCollege(query.getCollege());
+            pageQuery.setDeptCode(query.getDeptCode());
+            pageQuery.setRoleCode(query.getRoleCode());
+            pageQuery.setPageNum(pageNum);
+            pageQuery.setPageSize(exportPageSize);
+
+            PageResult<UserVO> result = queryUsers(pageQuery);
+            users.addAll(result.getList());
+            total = result.getTotal();
+            pageNum++;
+        } while (users.size() < total);
+
+        return users;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long createUser(UserCreateDTO dto, Long operatorId,
+                           String operatorName, String operatorRole) {
+        String studentNo = dto.getStudentNo().trim();
+        String idCard = dto.getIdCard().trim();
+
+        QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
+        studentNoCheck.eq("student_no", studentNo).or().eq("username", studentNo);
+        if (sysUserMapper.selectCount(studentNoCheck) > 0) {
+            throw new RuntimeException("该学号或登录账号已被其他用户使用");
+        }
+
+        QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
+        idCardCheck.eq("id_card", idCard);
+        if (sysUserMapper.selectCount(idCardCheck) > 0) {
+            throw new RuntimeException("该身份证号已被其他用户使用");
+        }
+
+        List<Long> deptIds = distinctIds(dto.getDeptIds(), "部门");
+        List<Long> roleIds = distinctIds(dto.getRoleIds(), "角色");
+        validateDeptIds(deptIds);
+        validateRoleIds(roleIds);
+
+        SysUser user = new SysUser();
+        user.setUsername(studentNo);
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setRealName(dto.getRealName().trim());
+        user.setGender(dto.getGender());
+        user.setPhoto(StringUtils.hasText(dto.getPhoto()) ? dto.getPhoto().trim() : null);
+        user.setIdCard(idCard);
+        user.setStudentNo(studentNo);
+        user.setCollege(dto.getCollege().trim());
+        user.setClassName(dto.getClassName().trim());
+        user.setDormAddress(dto.getDormAddress().trim());
+        user.setPhone(dto.getPhone().trim());
+        user.setBankCard(dto.getBankCard().trim());
+        user.setIsValid(dto.getIsValid());
+        user.setRemark(dto.getRemark().trim());
+        sysUserMapper.insert(user);
+
+        updateUserDepts(user.getId(), deptIds);
+        updateUserRoles(user.getId(), roleIds);
+        operationLogService.log(operatorId, operatorName, operatorRole, "CREATE",
+                "USER", user.getId(),
+                "新增人员: " + user.getRealName() + "（" + studentNo + "）", "");
+        log.info("User {} created by operator {}", user.getId(), operatorId);
+        return user.getId();
     }
 
     @Override
@@ -411,6 +525,74 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void batchUpdateUsers(UserBatchUpdateDTO dto, Long operatorId,
+                                 String operatorName, String operatorRole) {
+        if (dto.getRoleIds() == null && dto.getIsValid() == null) {
+            throw new RuntimeException("请至少选择一项需要修改的内容");
+        }
+        if (dto.getRoleIds() != null && dto.getRoleIds().isEmpty()) {
+            throw new RuntimeException("角色不能为空");
+        }
+
+        List<Long> userIds = dto.getUserIds().stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (userIds.isEmpty()) {
+            throw new RuntimeException("请至少选择一名人员");
+        }
+
+        List<Long> roleIds = dto.getRoleIds() == null ? null : dto.getRoleIds().stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        List<String> roleNames = new ArrayList<>();
+        if (roleIds != null) {
+            if (roleIds.isEmpty()) {
+                throw new RuntimeException("角色不能为空");
+            }
+            for (Long roleId : roleIds) {
+                SysRole role = sysRoleMapper.selectById(roleId);
+                if (role == null || !Objects.equals(role.getIsValid(), 1)) {
+                    throw new RuntimeException("角色不存在或已禁用: " + roleId);
+                }
+                roleNames.add(role.getRoleName());
+            }
+        }
+
+        for (Long userId : userIds) {
+            SysUser user = sysUserMapper.selectById(userId);
+            if (user == null) {
+                throw new RuntimeException("用户不存在: " + userId);
+            }
+            if (roleIds != null) {
+                updateUserRoles(userId, roleIds);
+            }
+            if (dto.getIsValid() != null) {
+                SysUser statusUpdate = new SysUser();
+                statusUpdate.setId(userId);
+                statusUpdate.setIsValid(dto.getIsValid());
+                sysUserMapper.updateById(statusUpdate);
+            }
+
+            StringBuilder detail = new StringBuilder("批量修改人员信息: ");
+            if (roleIds != null) {
+                detail.append("角色 -> ").append(roleNames).append("; ");
+            }
+            if (dto.getIsValid() != null) {
+                detail.append("账号状态 -> ")
+                        .append(dto.getIsValid() == 1 ? "启用" : "禁用")
+                        .append("; ");
+            }
+            operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
+                    "USER", userId, detail.toString(), "");
+        }
+
+        log.info("Batch updated {} users by operator {}", userIds.size(), operatorId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateUserStatus(Long userId, Integer status, Long operatorId,
                                  String operatorName, String operatorRole) {
         SysUser user = sysUserMapper.selectById(userId);
@@ -515,6 +697,35 @@ public class UserServiceImpl implements UserService {
             userDept.setUserId(userId);
             userDept.setDeptId(deptId);
             sysUserDeptMapper.insert(userDept);
+        }
+    }
+
+    private List<Long> distinctIds(List<Long> ids, String fieldName) {
+        List<Long> result = ids == null ? Collections.emptyList() : ids.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (result.isEmpty()) {
+            throw new RuntimeException("请至少选择一个" + fieldName);
+        }
+        return result;
+    }
+
+    private void validateDeptIds(List<Long> deptIds) {
+        for (Long deptId : deptIds) {
+            SysDept dept = sysDeptMapper.selectById(deptId);
+            if (dept == null || !Objects.equals(dept.getIsValid(), 1)) {
+                throw new RuntimeException("部门不存在或已禁用: " + deptId);
+            }
+        }
+    }
+
+    private void validateRoleIds(List<Long> roleIds) {
+        for (Long roleId : roleIds) {
+            SysRole role = sysRoleMapper.selectById(roleId);
+            if (role == null || !Objects.equals(role.getIsValid(), 1)) {
+                throw new RuntimeException("角色不存在或已禁用: " + roleId);
+            }
         }
     }
 

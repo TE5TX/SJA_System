@@ -26,6 +26,8 @@ public class BizPhotographyWork {
 
     private String platform;
 
+    private String category;
+
     private Integer photoCount;
 
     private Integer readCount;
@@ -36,7 +38,15 @@ public class BizPhotographyWork {
 
     private Integer isPublished;
 
+    private Integer isSpecialNode;
+
+    private Integer specialMultiplier;
+
     private BigDecimal totalAmount;
+
+    private String auditStatus;
+
+    private Integer isValid;
 
     private String remark;
 

@@ -31,6 +31,8 @@ public class BizWorkContributor {
 
     private BigDecimal feeAmount;
 
+    private Integer workCount;
+
     private String remark;
 
     private LocalDateTime createTime;

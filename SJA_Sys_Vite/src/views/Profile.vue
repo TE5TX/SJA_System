@@ -9,7 +9,7 @@
       <el-col :xl="4" :lg="5" :md="6" :sm="24" :xs="24">
         <el-card class="profile-card">
           <div class="profile-card-body">
-            <el-avatar :size="120" :src="userInfo.photo || ''" class="profile-avatar">
+            <el-avatar :size="120" class="profile-avatar">
               {{ userInfo.realName?.charAt(0) || 'U' }}
             </el-avatar>
             <h2 class="profile-name">{{ userInfo.realName || '未设置' }}</h2>
@@ -41,6 +41,7 @@
               <el-descriptions-item label="手机号">{{ userInfo.phone || '-' }}</el-descriptions-item>
               <el-descriptions-item label="银行卡号">{{ userInfo.bankCard || '-' }}</el-descriptions-item>
               <el-descriptions-item label="身份证号">{{ idCardMasked }}</el-descriptions-item>
+              <el-descriptions-item label="照片">{{ userInfo.photo ? '已上传' : '未上传' }}</el-descriptions-item>
               <el-descriptions-item label="二级学院">{{ userInfo.college || '-' }}</el-descriptions-item>
               <el-descriptions-item label="班级">{{ userInfo.className || '-' }}</el-descriptions-item>
               <el-descriptions-item label="宿舍地址">{{ userInfo.dormAddress || '-' }}</el-descriptions-item>
@@ -91,7 +92,7 @@
                 </el-col>
                 <el-col :span="12">
                   <el-form-item label="身份证号" prop="idCard">
-                    <el-input v-model="editForm.idCard" placeholder="选填" />
+                    <el-input v-model="editForm.idCard" placeholder="请输入身份证号" />
                   </el-form-item>
                 </el-col>
               </el-row>
@@ -112,7 +113,9 @@
               <el-row :gutter="20">
                 <el-col :span="12">
                   <el-form-item label="二级学院" prop="college">
-                    <el-input v-model="editForm.college" placeholder="请输入二级学院" />
+                    <el-select v-model="editForm.college" filterable placeholder="请选择二级学院">
+                      <el-option v-for="college in collegeOptions" :key="college" :label="college" :value="college" />
+                    </el-select>
                   </el-form-item>
                 </el-col>
                 <el-col :span="12">
@@ -129,15 +132,30 @@
                   </el-form-item>
                 </el-col>
                 <el-col :span="12">
-                  <el-form-item label="所属部门">
-                    <el-input :model-value="deptDisplay" disabled />
+                  <el-form-item label="照片">
+                    <el-upload
+                      class="avatar-upload"
+                      :show-file-list="false"
+                      :before-upload="beforeAvatarUpload"
+                      :http-request="handleAvatarUpload"
+                    >
+                      <el-avatar v-if="editForm.photo" :src="editForm.photo" :size="56" />
+                      <el-button v-else type="primary">上传照片</el-button>
+                      <el-button v-if="editForm.photo" class="edit-btn" type="primary" link>重新上传</el-button>
+                    </el-upload>
+                    <el-button v-if="editForm.photo" type="danger" link @click="handleDeleteAvatar">删除照片</el-button>
                   </el-form-item>
                 </el-col>
               </el-row>
 
               <el-row :gutter="20">
                 <el-col :span="12">
-                  <el-form-item label="团内职务">
+                  <el-form-item label="所属部门" prop="deptNames">
+                    <el-input :model-value="deptDisplay" disabled />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="团内职务" prop="roleNames">
                     <el-input :model-value="roleDisplay" disabled />
                   </el-form-item>
                 </el-col>
@@ -214,8 +232,9 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Refresh, Lock } from '@element-plus/icons-vue'
-import { getUserProfile, updateUserProfile } from '@/api/user'
+import { deleteProfilePhoto, getUserProfile, updateProfilePhoto, updateUserProfile } from '@/api/user'
 import { changePassword } from '@/api/auth'
+import { uploadAvatar } from '@/api/upload'
 import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
@@ -224,6 +243,17 @@ const submitLoading = ref(false)
 const passwordLoading = ref(false)
 const formRef = ref(null)
 const passwordFormRef = ref(null)
+const collegeOptions = [
+  '电子信息学院',
+  '机电工程学院',
+  '计算机学院',
+  '经贸学院',
+  '人文社会科学学院',
+  '材料与食品学院',
+  '外国语学院',
+  '艺术设计学院',
+  '管理学院'
+]
 
 // 用户信息（优先用 store 中的，后续可从接口刷新）
 const userInfo = computed(() => userStore.userInfo || {})
@@ -248,13 +278,13 @@ const genderText = computed(() => {
   return '-'
 })
 
-// 身份证号（后端不返回，显示为未设置）
-const idCardMasked = computed(() => '-')
+const idCardMasked = computed(() => userInfo.value?.idCard || '-')
 
 // 编辑表单
 const editForm = reactive({
   realName: '',
   gender: 1,
+  photo: '',
   studentNo: '',
   idCard: '',
   bankCard: '',
@@ -267,14 +297,20 @@ const editForm = reactive({
 // 编辑表单验证
 const rules = {
   realName: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
   studentNo: [{ required: true, message: '请输入学号', trigger: 'blur' }],
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
     { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
   ],
   idCard: [
+    { required: true, message: '请输入身份证号', trigger: 'blur' },
     { pattern: /^\d{17}[\dXx]$/, message: '请输入正确的身份证号', trigger: 'blur' }
-  ]
+  ],
+  bankCard: [{ required: true, message: '请输入银行卡号', trigger: 'blur' }],
+  college: [{ required: true, message: '请输入二级学院', trigger: 'blur' }],
+  className: [{ required: true, message: '请输入班级', trigger: 'blur' }],
+  dormAddress: [{ required: true, message: '请输入宿舍地址', trigger: 'blur' }]
 }
 
 // 密码表单
@@ -314,8 +350,9 @@ const loadEditForm = () => {
   Object.assign(editForm, {
     realName: data.realName || '',
     gender: data.gender ?? 1,
+    photo: data.photo || '',
     studentNo: data.studentNo || '',
-    idCard: '',
+    idCard: data.idCard || '',
     bankCard: data.bankCard || '',
     phone: data.phone || '',
     college: data.college || '',
@@ -335,9 +372,55 @@ const refreshProfile = async () => {
   }
 }
 
+const beforeAvatarUpload = file => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  if (!allowedTypes.includes(file.type)) {
+    ElMessage.warning('只支持 jpg、png、gif、webp 格式')
+    return false
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    ElMessage.warning('照片大小不能超过 5MB')
+    return false
+  }
+  return true
+}
+
+const handleAvatarUpload = async options => {
+  try {
+    const res = await uploadAvatar(options.file)
+    const url = res.data?.url || ''
+    await updateProfilePhoto(url)
+    editForm.photo = url
+    userStore.setUserInfo({ ...userInfo.value, photo: url })
+    ElMessage.success('照片已上传并保存')
+    options.onSuccess?.(res)
+  } catch (error) {
+    options.onError?.(error)
+  }
+}
+
+const handleDeleteAvatar = async () => {
+  try {
+    await deleteProfilePhoto()
+    editForm.photo = ''
+    userStore.setUserInfo({ ...userInfo.value, photo: '' })
+    ElMessage.success('照片已删除')
+  } catch (error) {
+    console.error(error)
+  }
+}
+
 // 提交编辑
 const handleSubmit = async () => {
   if (!formRef.value) return
+  if (!Array.isArray(userInfo.value?.deptNames) || userInfo.value.deptNames.length === 0) {
+    ElMessage.warning('所属部门不能为空，请先由管理员分配部门')
+    return
+  }
+  if (!Array.isArray(userInfo.value?.roleNames) || userInfo.value.roleNames.length === 0) {
+    ElMessage.warning('团内职务不能为空，请先由管理员分配角色')
+    return
+  }
 
   await formRef.value.validate(async (valid) => {
     if (valid) {
@@ -560,8 +643,21 @@ onMounted(() => {
   background-color: #f8f9fa;
 }
 
+.avatar-upload :deep(.el-upload) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .el-button {
   min-width: 100px;
+}
+
+:deep(.edit-btn) {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: rgb(88, 88, 205) !important;
+  margin-left: 0;
 }
 
 @media (max-width: 768px) {

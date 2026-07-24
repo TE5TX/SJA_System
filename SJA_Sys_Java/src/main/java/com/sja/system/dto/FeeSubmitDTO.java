@@ -34,6 +34,8 @@ public class FeeSubmitDTO {
 
         private BigDecimal feeAmount;
 
+        private Integer workCount;
+
         private String remark;
 
     }

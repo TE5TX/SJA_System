@@ -33,9 +33,13 @@ public class FeeDetailVO {
 
         private String realName;
 
+        private String studentNo;
+
         private String roleInWork;
 
         private BigDecimal feeAmount;
+
+        private Integer workCount;
 
     }
 

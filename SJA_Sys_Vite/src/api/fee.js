@@ -8,6 +8,13 @@ export function submitFee(data) {
   })
 }
 
+export function getFeeContributors() {
+  return request({
+    url: '/v1/fee/contributors',
+    method: 'get'
+  })
+}
+
 export function getFeeList(params) {
   return request({
     url: '/v1/fee/list',
@@ -31,6 +38,13 @@ export function updateFeeDetail(workType, id, data) {
   })
 }
 
+export function invalidateRejectedFee(workType, id) {
+  return request({
+    url: `/v1/fee/detail/${workType}/${id}`,
+    method: 'delete'
+  })
+}
+
 export function auditFee(workType, id, data) {
   return request({
     url: `/v1/fee/audit/${workType}/${id}`,
@@ -39,11 +53,18 @@ export function auditFee(workType, id, data) {
   })
 }
 
-export function exportFee(params) {
+export function resetFeeAudit(workType, id) {
+  return request({
+    url: `/v1/fee/audit/${workType}/${id}/reset`,
+    method: 'put'
+  })
+}
+
+export function exportFee(data) {
   return request({
     url: '/v1/fee/export',
-    method: 'get',
-    params,
+    method: 'post',
+    data,
     responseType: 'blob'
   })
 }

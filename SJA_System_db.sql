@@ -97,7 +97,11 @@ CREATE TABLE IF NOT EXISTS `biz_editorial_article` (
   `publish_date` DATE NOT NULL COMMENT '发布日期',
   `article_link` VARCHAR(500) DEFAULT NULL COMMENT '文章链接',
   `is_published` TINYINT(1) DEFAULT 0 COMMENT '是否已发布',
+  `is_special_node` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否特殊节点：1-是，0-否',
+  `special_multiplier` TINYINT NOT NULL DEFAULT 1 COMMENT '特殊节点倍数：普通1倍，特殊节点2倍或3倍',
   `total_amount` DECIMAL(10, 2) DEFAULT 0.00 COMMENT '文章总稿费',
+  `audit_status` VARCHAR(20) NOT NULL DEFAULT 'SUBMITTED' COMMENT '审核状态：SUBMITTED-待审核，APPROVED-已通过，REJECTED-已驳回',
+  `is_valid` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否有效：1-有效，0-无效',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -109,12 +113,17 @@ CREATE TABLE IF NOT EXISTS `biz_photography_work` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `title` VARCHAR(255) NOT NULL COMMENT '作品标题',
   `platform` VARCHAR(20) NOT NULL COMMENT '平台：微信/院网/校报',
+  `category` VARCHAR(50) DEFAULT NULL COMMENT '类别（微信展示，计算不使用）',
   `photo_count` INT DEFAULT 0 COMMENT '选中图片数',
   `read_count` INT DEFAULT 0 COMMENT '阅读量(微信用)',
   `publish_date` DATE NOT NULL COMMENT '发布日期',
   `article_link` VARCHAR(500) DEFAULT NULL COMMENT '作品链接',
   `is_published` TINYINT(1) DEFAULT 0 COMMENT '是否已发布',
+  `is_special_node` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否特殊节点：1-是，0-否',
+  `special_multiplier` TINYINT NOT NULL DEFAULT 1 COMMENT '特殊节点倍数：普通1倍，特殊节点2倍或3倍',
   `total_amount` DECIMAL(10, 2) DEFAULT 0.00 COMMENT '作品总稿费',
+  `audit_status` VARCHAR(20) NOT NULL DEFAULT 'SUBMITTED' COMMENT '审核状态：SUBMITTED-待审核，APPROVED-已通过，REJECTED-已驳回',
+  `is_valid` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否有效：1-有效，0-无效',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -125,14 +134,19 @@ CREATE TABLE IF NOT EXISTS `biz_photography_work` (
 CREATE TABLE IF NOT EXISTS `biz_video_work` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `video_title` VARCHAR(255) NOT NULL COMMENT '视频标题',
-  `category` VARCHAR(50) NOT NULL COMMENT '类别：风景/活动新闻/原创短/原创长',
+  `category` VARCHAR(50) NOT NULL COMMENT '类别：风景类系列短视频/活动新闻类视频/原创类短视频/原创类长视频',
   `video_duration_sec` INT DEFAULT 0 COMMENT '视频时长(秒)',
   `like_count` INT DEFAULT 0 COMMENT '点赞数',
   `reprint_status` VARCHAR(50) DEFAULT '无' COMMENT '转载情况',
+  `is_complex_edit` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否使用复杂剪辑手段：1-是，0-否',
   `publish_date` DATE NOT NULL COMMENT '发布日期',
   `video_link` VARCHAR(500) DEFAULT NULL COMMENT '视频链接',
   `is_published` TINYINT(1) DEFAULT 0 COMMENT '是否已发布',
+  `is_special_node` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否特殊节点：1-是，0-否',
+  `special_multiplier` TINYINT NOT NULL DEFAULT 1 COMMENT '特殊节点倍数：普通1倍，特殊节点2倍或3倍',
   `total_amount` DECIMAL(10, 2) DEFAULT 0.00 COMMENT '视频总稿费',
+  `audit_status` VARCHAR(20) NOT NULL DEFAULT 'SUBMITTED' COMMENT '审核状态：SUBMITTED-待审核，APPROVED-已通过，REJECTED-已驳回',
+  `is_valid` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否有效：1-有效，0-无效',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -149,21 +163,41 @@ CREATE TABLE IF NOT EXISTS `biz_visual_work` (
   `publish_date` DATE NOT NULL COMMENT '发布日期',
   `article_link` VARCHAR(500) DEFAULT NULL COMMENT '文章链接',
   `is_published` TINYINT(1) DEFAULT 0 COMMENT '是否已发布',
+  `is_special_node` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否特殊节点：1-是，0-否',
+  `special_multiplier` TINYINT NOT NULL DEFAULT 1 COMMENT '特殊节点倍数：普通1倍，特殊节点2倍或3倍',
   `total_amount` DECIMAL(10, 2) DEFAULT 0.00 COMMENT '总金额',
+  `audit_status` VARCHAR(20) NOT NULL DEFAULT 'SUBMITTED' COMMENT '审核状态：SUBMITTED-待审核，APPROVED-已通过，REJECTED-已驳回',
+  `is_valid` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否有效：1-有效，0-无效',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视觉部作品表';
 
--- 2.5 统一的稿费人员分配表
+-- 2.5 月度编辑、管理及巡查补贴表
+CREATE TABLE IF NOT EXISTS `biz_monthly_subsidy` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `title` VARCHAR(255) NOT NULL COMMENT '补贴任务标题',
+  `category` VARCHAR(50) NOT NULL COMMENT '补贴类型',
+  `subsidy_month` VARCHAR(7) NOT NULL COMMENT '补贴月份：yyyy-MM',
+  `total_amount` DECIMAL(10, 2) NOT NULL DEFAULT 0.00 COMMENT '补贴总金额',
+  `audit_status` VARCHAR(20) NOT NULL DEFAULT 'SUBMITTED' COMMENT '审核状态：SUBMITTED-待审核，APPROVED-已通过，REJECTED-已驳回',
+  `is_valid` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否有效：1-有效，0-无效',
+  `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='月度编辑、管理及巡查补贴表';
+
+-- 2.6 统一的稿费人员分配表
 CREATE TABLE IF NOT EXISTS `biz_work_contributor` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `work_type` VARCHAR(20) NOT NULL COMMENT '作品类型：EDITORIAL-采编, PHOTO-摄影, VIDEO-视频, VISUAL-视觉',
+  `work_type` VARCHAR(20) NOT NULL COMMENT '任务类型：EDITORIAL-采编, PHOTO-摄影, VIDEO-视频, VISUAL-视觉, SUBSIDY-月度补贴',
   `work_id` BIGINT UNSIGNED NOT NULL COMMENT '对应作品表的ID',
   `user_id` BIGINT UNSIGNED NOT NULL COMMENT '关联 sys_user.id',
-  `role_in_work` VARCHAR(20) NOT NULL COMMENT '角色：AUTHOR-作者, SHOOTER-拍摄, EDITOR-剪辑, DESIGNER-设计',
+  `role_in_work` VARCHAR(20) NOT NULL COMMENT '角色：AUTHOR-作者, SHOOTER-拍摄, EDITOR-剪辑, DESIGNER-设计, MEMBER-补贴人员',
   `fee_amount` DECIMAL(10, 2) NOT NULL DEFAULT 0.00 COMMENT '该成员最终应得稿费',
+  `work_count` INT DEFAULT NULL COMMENT '该人员对应作品数量（摄影院网/校报、校园网首页大图使用）',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -171,7 +205,7 @@ CREATE TABLE IF NOT EXISTS `biz_work_contributor` (
   KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一稿费人员分配表';
 
--- 2.6 稿费标准配置表
+-- 2.7 稿费标准配置表
 CREATE TABLE IF NOT EXISTS `biz_fee_standard` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `dept_code` VARCHAR(30) NOT NULL COMMENT '部门代码',
@@ -310,6 +344,8 @@ INSERT INTO `sys_menu` (`id`, `menu_name`, `permission_code`, `menu_type`, `pare
 (6, '稿费导出', 'page:fee:export', 2, 3, '/fee/export', 3, 1, '导出稿费 Excel 对账单'),
 (7, '稿费列表', 'page:fee:list',   2, 3, '/fee/list',   4, 1, '查看稿费明细列表'),
 (20, '提交稿费', 'fee:submit', 3, 4, NULL, 1, 1, '提交稿费按钮'),
+(24, '选择稿费作者', 'fee:contributors:view', 3, 4, NULL, 2, 1, '查询有效人员的姓名和学号'),
+(25, '编辑稿费任务', 'fee:edit', 3, 4, NULL, 3, 1, '编辑未审核的稿费任务'),
 (21, '审核稿费', 'fee:audit',  3, 5, NULL, 1, 1, '审核通过/驳回按钮'),
 (22, '导出稿费', 'fee:export', 3, 6, NULL, 1, 1, '导出 Excel 按钮'),
 (23, '查看稿费', 'fee:view',   3, 7, NULL, 1, 1, '查看稿费列表/详情按钮');
@@ -352,6 +388,7 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (1, 3,  '稿费管理-目录'),
 (1, 4,  '稿费提交-菜单'),
 (1, 20, '提交稿费按钮'),
+(1, 24, '选择稿费作者'),
 (1, 5,  '稿费审核-菜单'),
 (1, 21, '审核稿费按钮'),
 (1, 6,  '稿费导出-菜单'),
@@ -406,6 +443,8 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (3, 3,  '稿费管理-目录'),
 (3, 4,  '稿费提交-菜单'),
 (3, 20, '提交稿费按钮'),
+(3, 24, '选择稿费作者'),
+(3, 25, '编辑稿费任务'),
 (3, 5,  '稿费审核-菜单'),
 (3, 21, '审核稿费按钮'),
 (3, 6,  '稿费导出-菜单'),
@@ -437,6 +476,8 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (4, 3,  '稿费管理-目录'),
 (4, 4,  '稿费提交-菜单'),
 (4, 20, '提交稿费按钮'),
+(4, 24, '选择稿费作者'),
+(4, 25, '编辑未审核稿费任务'),
 (4, 7,  '稿费列表-菜单'),
 (4, 23, '查看稿费按钮'),
 (4, 40, '素拓工具-菜单'),
