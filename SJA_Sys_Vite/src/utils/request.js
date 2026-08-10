@@ -37,10 +37,13 @@ request.interceptors.response.use(
   error => {
     const message = error.response?.data?.message || error.message || '网络错误'
     if (error.response?.status === 401) {
-      ElMessage.error('登录已过期，请重新登录')
-      localStorage.removeItem('token')
-      localStorage.removeItem('userInfo')
-      window.location.href = '/login'
+      const isLoginRequest = error.config?.url?.includes('/v1/auth/login')
+      if (!isLoginRequest) {
+        ElMessage.error('登录已过期，请重新登录')
+        localStorage.removeItem('token')
+        localStorage.removeItem('userInfo')
+        window.location.href = '/login'
+      }
     } else if (error.response?.status === 403 && message === '首次登录请先修改密码') {
       localStorage.setItem('mustChangePassword', 'true')
       if (window.location.pathname !== '/change-password') window.location.href = '/change-password'

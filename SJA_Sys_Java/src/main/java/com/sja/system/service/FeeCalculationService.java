@@ -15,6 +15,9 @@ import java.util.Map;
 @Service
 public class FeeCalculationService {
 
+    // 202608101716 - 将稿费计算统一为保留一位小数并按四舍五入处理。
+    private static final int MONEY_SCALE = 1;
+
     private static final String EDITORIAL = "EDITORIAL";
     private static final String PHOTO = "PHOTO";
     private static final String VIDEO = "VIDEO";
@@ -145,7 +148,7 @@ public class FeeCalculationService {
         BigDecimal shootTotal;
         BigDecimal editTotal;
         if (shooterCount > 0 && editorCount > 0) {
-            shootTotal = sharedTotal.multiply(shootRatio).setScale(2, RoundingMode.HALF_UP);
+            shootTotal = sharedTotal.multiply(shootRatio).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             editTotal = sharedTotal.subtract(shootTotal);
         } else if (shooterCount > 0) {
             shootTotal = sharedTotal;
@@ -280,9 +283,10 @@ public class FeeCalculationService {
     }
 
     private BigDecimal calculatePhotographyWebsite(int workCount) {
-        if (workCount < 2) return rule("PHOTO", "院网", "", "COUNT_1_FEE", "30");
-        if (workCount <= 5) return rule("PHOTO", "院网", "", "COUNT_2_TO_5_FEE", "40");
-        return rule("PHOTO", "院网", "", "COUNT_OVER_5_FEE", "60");
+        // 202608101635 - 修复了院网摄影选图数量分档及配置键不一致的问题。
+        if (workCount <= 2) return rule("PHOTO", "院网", "", "COUNT_UP_TO_2_FEE", "30");
+        if (workCount <= 4) return rule("PHOTO", "院网", "", "COUNT_3_TO_4_FEE", "40");
+        return rule("PHOTO", "院网", "", "COUNT_5_PLUS_FEE", "60");
     }
 
     private BigDecimal calculatePhotographyNewspaper(int workCount) {
@@ -298,13 +302,13 @@ public class FeeCalculationService {
             throw ApiException.badRequest("特殊节点倍数只能选择 2 倍或 3 倍");
         }
         List<BigDecimal> result = new ArrayList<>();
-        fees.forEach(fee -> result.add(fee.multiply(BigDecimal.valueOf(multiplier)).setScale(2, RoundingMode.HALF_UP)));
+        fees.forEach(fee -> result.add(fee.multiply(BigDecimal.valueOf(multiplier)).setScale(MONEY_SCALE, RoundingMode.HALF_UP)));
         return result;
     }
 
     private List<BigDecimal> scaled(List<BigDecimal> fees) {
         List<BigDecimal> result = new ArrayList<>();
-        fees.forEach(fee -> result.add(fee.setScale(2, RoundingMode.HALF_UP)));
+        fees.forEach(fee -> result.add(fee.setScale(MONEY_SCALE, RoundingMode.HALF_UP)));
         return result;
     }
 
@@ -325,12 +329,12 @@ public class FeeCalculationService {
     }
 
     private List<BigDecimal> repeated(int count, BigDecimal value) {
-        return new ArrayList<>(Collections.nCopies(count, value.setScale(2, RoundingMode.HALF_UP)));
+        return new ArrayList<>(Collections.nCopies(count, value.setScale(MONEY_SCALE, RoundingMode.HALF_UP)));
     }
 
     private List<BigDecimal> splitEvenly(BigDecimal total, int count) {
-        BigDecimal normalizedTotal = total.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal regularAmount = normalizedTotal.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
+        BigDecimal normalizedTotal = total.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal regularAmount = normalizedTotal.divide(BigDecimal.valueOf(count), MONEY_SCALE, RoundingMode.HALF_UP);
         List<BigDecimal> result = new ArrayList<>();
         for (int index = 0; index < count - 1; index++) result.add(regularAmount);
         result.add(normalizedTotal.subtract(regularAmount.multiply(BigDecimal.valueOf(count - 1))));

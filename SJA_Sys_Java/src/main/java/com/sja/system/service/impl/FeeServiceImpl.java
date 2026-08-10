@@ -26,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -42,6 +43,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class FeeServiceImpl implements FeeService {
+
+    // 202608101716 - 将稿费保存、展示和导出统一为一位小数。
+    private static final int MONEY_SCALE = 1;
 
     private static final String EDITORIAL = "EDITORIAL";
     private static final String PHOTO = "PHOTO";
@@ -118,12 +122,12 @@ public class FeeServiceImpl implements FeeService {
                 BigDecimal feeAmount = automaticFees != null
                         ? automaticFees.get(index)
                         : (canSeeAmount && c.getFeeAmount() != null ? c.getFeeAmount() : BigDecimal.ZERO);
-                contributor.setFeeAmount(feeAmount);
+                contributor.setFeeAmount(normalizeMoney(feeAmount));
                 contributor.setWorkCount(c.getWorkCount());
                 contributor.setRemark(c.getRemark());
                 contributorMapper.insert(contributor);
 
-                totalAmount = totalAmount.add(feeAmount);
+                totalAmount = totalAmount.add(contributor.getFeeAmount());
             }
         }
 
@@ -133,7 +137,7 @@ public class FeeServiceImpl implements FeeService {
         // 4. Log operation
         operationLogService.log(userId, realName, "", "CREATE",
                 "FEE", workId,
-                String.format("提交稿费申请 [%s] 总金额: %.2f, 贡献者: %d人",
+                String.format("提交稿费申请 [%s] 总金额: %.1f, 贡献者: %d人",
                         workType, totalAmount, contributors != null ? contributors.size() : 0),
                 "");
 
@@ -382,9 +386,9 @@ public class FeeServiceImpl implements FeeService {
                 contributor.setWorkId(id);
                 contributor.setUserId(c.getUserId());
                 contributor.setRoleInWork((EDITORIAL.equals(workType) || PHOTO.equals(workType)) ? "AUTHOR" : c.getRoleInWork());
-                contributor.setFeeAmount(canManageAmount
+                contributor.setFeeAmount(normalizeMoney(canManageAmount
                         ? (c.getFeeAmount() != null ? c.getFeeAmount() : BigDecimal.ZERO)
-                        : automaticFees.get(index));
+                        : automaticFees.get(index)));
                 contributor.setWorkCount(c.getWorkCount());
                 contributor.setRemark(c.getRemark());
                 contributorMapper.insert(contributor);
@@ -400,7 +404,7 @@ public class FeeServiceImpl implements FeeService {
         String detail = "REJECTED".equals(originalStatus)
                 ? String.format("修改并重新提交稿费任务 [%s] id=%d", workType, id)
                 : canManageAmount
-                ? String.format("修改稿费任务 [%s] id=%d，总金额 %.2f", workType, id, totalAmount)
+                ? String.format("修改稿费任务 [%s] id=%d，总金额 %.1f", workType, id, totalAmount)
                 : String.format("修改未审核稿费任务 [%s] id=%d", workType, id);
         operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE", "FEE", id, detail, "");
     }
@@ -650,8 +654,8 @@ public class FeeServiceImpl implements FeeService {
             case "contributorStudentNos": return joinContributorValues(contributors, FeeDetailVO.ContributorVO::getStudentNo);
             case "contributorRoles": return joinContributorValues(contributors, c -> contributorRoleDisplayName(c.getRoleInWork()));
             case "workCounts": return joinContributorValues(contributors, c -> c.getWorkCount() != null ? String.valueOf(c.getWorkCount()) : "");
-            case "contributorAmounts": return joinContributorValues(contributors, c -> c.getFeeAmount() != null ? c.getFeeAmount().toPlainString() : "");
-            case "totalAmount": return detail.getTotalAmount() != null ? detail.getTotalAmount().toPlainString() : "";
+            case "contributorAmounts": return joinContributorValues(contributors, c -> formatMoney(c.getFeeAmount()));
+            case "totalAmount": return formatMoney(detail.getTotalAmount());
             case "auditStatus": return auditStatusDisplayName(detail.getStatus());
             case "isSpecialNode": return yesNo(info.get("isSpecialNode"));
             case "specialMultiplier": return displayValue(info.get("specialMultiplier"));
@@ -682,7 +686,7 @@ public class FeeServiceImpl implements FeeService {
         if (labelIndex < 0) labelIndex = 0;
         totalRow.set(labelIndex, "合计");
         int amountIndex = fields.indexOf("totalAmount");
-        if (amountIndex >= 0) totalRow.set(amountIndex, grandTotal.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
+        if (amountIndex >= 0) totalRow.set(amountIndex, formatMoney(grandTotal));
         data.add(totalRow);
         return data;
     }
@@ -905,7 +909,7 @@ public class FeeServiceImpl implements FeeService {
                 update.setAuthorCount(contributorCount);
                 // 202608101042 - 修复了视觉稿件人均金额显示为0的问题。
                 update.setAuthorAvgFee(contributorCount > 0
-                        ? totalAmount.divide(BigDecimal.valueOf(contributorCount), 2, java.math.RoundingMode.HALF_UP)
+                        ? totalAmount.divide(BigDecimal.valueOf(contributorCount), MONEY_SCALE, RoundingMode.HALF_UP)
                         : BigDecimal.ZERO);
                 visualMapper.updateById(update);
                 break;
@@ -1551,6 +1555,14 @@ public class FeeServiceImpl implements FeeService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private BigDecimal normalizeMoney(BigDecimal value) {
+        return (value != null ? value : BigDecimal.ZERO).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private String formatMoney(BigDecimal value) {
+        return value == null ? "" : normalizeMoney(value).toPlainString();
     }
 
     private LocalDate getLocalDateVal(Map<String, Object> map, String key) {

@@ -153,6 +153,7 @@
             v-else-if="numberFieldKeys.includes(field.key)"
             v-model="editForm.workInfo[field.key]"
             :min="0"
+            :precision="field.key === 'authorAvgFee' ? 1 : undefined"
             controls-position="right"
             @focus="selectNumberInputText"
             @click="selectNumberInputText"
@@ -212,7 +213,7 @@
         </el-table-column>
         <el-table-column v-if="canManageFeeAmount" label="金额" width="150">
           <template #default="{ row }">
-            <el-input-number v-model="row.feeAmount" :min="0" :precision="2" controls-position="right" />
+            <el-input-number v-model="row.feeAmount" :min="0" :precision="1" controls-position="right" />
           </template>
         </el-table-column>
         <el-table-column v-if="editShowsWorkCount" label="作品数量" width="130">
@@ -340,7 +341,8 @@ const defaultExportFields = [
 const exportFields = ref([...defaultExportFields])
 const allExportFieldsSelected = computed(() => exportFields.value.length === exportFieldOptions.length)
 
-const money = value => Number(value || 0).toFixed(2)
+// 202608101716 - 将稿费金额统一显示为四舍五入后的一位小数。
+const money = value => Number(value || 0).toFixed(1)
 const time = value => value ? String(value).replace('T', ' ').slice(0, 16) : '-'
 const workTypeName = type => workTypeMap[type] || type || '-'
 const roleName = role => roleMap[role] || role || '-'
@@ -380,7 +382,9 @@ const workInfoRows = computed(() => {
   const info = detail.value?.workInfo || {}
   return Object.entries(info).map(([key, value]) => ({
     label: fieldLabelMap[key] || key,
-    value: ['isPublished', 'isSpecialNode', 'isReposted', 'isComplexEdit'].includes(key) ? (Number(value) === 1 ? '是' : '否') : (value ?? '-')
+    value: key === 'authorAvgFee'
+      ? money(value)
+      : (['isPublished', 'isSpecialNode', 'isReposted', 'isComplexEdit'].includes(key) ? (Number(value) === 1 ? '是' : '否') : (value ?? '-'))
   }))
 })
 const amountSensitiveFields = new Set(['isSpecialNode', 'specialMultiplier', 'authorAvgFee'])

@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS `biz_fee_standard` (
   UNIQUE KEY `uk_standard` (`dept_code`, `platform`, `category`, `rule_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='稿费标准配置表';
 
+-- 202608101635 - 修复了院网摄影选图数量分档及配置键不一致的问题。
+DELETE FROM `biz_fee_standard`
+WHERE `dept_code` = 'PHOTO'
+  AND `platform` = '院网'
+  AND `rule_key` IN (
+    'COUNT_1_FEE', 'COUNT_2_FEE', 'COUNT_2_TO_5_FEE', 'COUNT_3_TO_5_FEE', 'COUNT_OVER_5_FEE',
+    'COUNT_UP_TO_2_FEE', 'COUNT_3_TO_4_FEE', 'COUNT_5_PLUS_FEE'
+  );
+
 INSERT INTO `biz_fee_standard`
 (`dept_code`, `platform`, `category`, `rule_key`, `rule_value`, `description`)
 VALUES
@@ -89,9 +98,9 @@ VALUES
 ('WECHAT','微信','原创类','READ_BASE_FEE',30,'基础每人稿费'),
 ('WECHAT','微信','原创类','READ_MIDDLE_FEE',50,'中档每人稿费'),
 ('WECHAT','微信','原创类','READ_HIGH_FEE',80,'高档每人稿费'),
-('PHOTO','院网','','COUNT_1_FEE',30,'选用1张每人稿费'),
-('PHOTO','院网','','COUNT_2_TO_5_FEE',40,'选用2至5张每人稿费'),
-('PHOTO','院网','','COUNT_OVER_5_FEE',60,'选用6张及以上每人稿费'),
+  ('PHOTO','院网','','COUNT_UP_TO_2_FEE',30,'选用2张及以下每人稿费'),
+('PHOTO','院网','','COUNT_3_TO_4_FEE',40,'选用3至4张每人稿费'),
+('PHOTO','院网','','COUNT_5_PLUS_FEE',60,'选用5张及以上每人稿费'),
 ('PHOTO','校报','','COUNT_1_FEE',20,'选用1张每人稿费'),
 ('PHOTO','校报','','COUNT_2_TO_5_FEE',30,'选用2至5张每人稿费'),
 ('PHOTO','校报','','COUNT_OVER_5_FEE',40,'选用6张及以上每人稿费'),

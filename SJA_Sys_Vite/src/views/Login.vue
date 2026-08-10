@@ -15,6 +15,7 @@
             placeholder="学号（账号）"
             prefix-icon="User"
             size="large"
+            @input="loginError = ''"
           />
         </el-form-item>
 
@@ -26,9 +27,12 @@
             prefix-icon="Lock"
             size="large"
             show-password
+            @input="loginError = ''"
             @keyup.enter="handleLogin"
           />
         </el-form-item>
+
+        <el-alert v-if="loginError" :title="loginError" type="error" show-icon :closable="false" />
 
         <el-form-item>
           <el-button
@@ -59,6 +63,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const formRef = ref(null)
 const loading = ref(false)
+const loginError = ref('')
 
 const loginForm = reactive({
   username: '',
@@ -78,11 +83,15 @@ const rules = {
 const handleLogin = async () => {
   if (!formRef.value) return
 
+  loginForm.username = loginForm.username.trim()
+  loginError.value = ''
+
   await formRef.value.validate(async (valid) => {
     if (valid) {
       loading.value = true
       try {
-        const res = await login(loginForm)
+        // 202608101717 - 清理账号首尾空白，并在登录失败时显示明确提示。
+        const res = await login({ username: loginForm.username, password: loginForm.password })
         const { token, userInfo, menus, mustChangePassword } = res.data
 
         userStore.setToken(token)
@@ -100,6 +109,7 @@ const handleLogin = async () => {
         }, 100)
       } catch (error) {
         console.error('登录失败:', error)
+        loginError.value = error.response?.data?.message || error.message || '登录失败，请稍后重试'
       } finally {
         loading.value = false
       }
@@ -163,8 +173,28 @@ const handleLogin = async () => {
 }
 
 .login-form :deep(.el-input__wrapper) {
+  /* 202608101717 - 修复了登录账号、密码文本与图标未垂直对齐的问题。 */
   border-radius: 4px;
-  padding: 8px 12px;
+  min-height: 48px;
+  padding: 0 14px;
+  align-items: center;
+}
+
+.login-form :deep(.el-input__inner) {
+  height: 46px;
+  line-height: 46px;
+}
+
+.login-form :deep(.el-input__prefix),
+.login-form :deep(.el-input__suffix),
+.login-form :deep(.el-input__prefix-inner),
+.login-form :deep(.el-input__suffix-inner) {
+  display: flex;
+  align-items: center;
+}
+
+.login-form :deep(.el-alert) {
+  margin: -8px 0 20px;
 }
 
 .login-form :deep(.el-input__wrapper.is-focus) {

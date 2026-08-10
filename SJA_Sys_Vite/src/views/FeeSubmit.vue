@@ -70,17 +70,10 @@
                 <el-input v-model="form.workInfo.title" placeholder="请输入摄影作品标题" />
               </el-form-item>
               <el-row :gutter="16">
-                <el-col :span="12">
+                <el-col :span="24">
                   <el-form-item label="发布平台" required>
                     <el-select v-model="form.workInfo.platform" @change="handlePlatformChange">
                       <el-option v-for="platform in platformOptions" :key="platform" :label="platform" :value="platform" />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-                <el-col v-if="form.workInfo.platform === '微信'" :span="12">
-                  <el-form-item label="类别">
-                    <el-select v-model="form.workInfo.category" placeholder="请选择类别">
-                      <el-option v-for="option in photoCategoryOptions" :key="option" :label="option" :value="option" />
                     </el-select>
                   </el-form-item>
                 </el-col>
@@ -291,7 +284,11 @@ import { useUserStore } from '@/store/user'
 
 const userStore = useUserStore()
 const platformOptions = ['微信', '院网', '校报']
-const photoCategoryOptions = ['原创类', '半原创类']
+const editorialCategoryOptions = {
+  微信: ['原创类', '半原创类'],
+  院网: ['莲峰群英', '学校新闻（含学校要闻、校园时讯）'],
+  校报: ['原创头版头条', '原创一般稿件', '重新编辑类稿件']
+}
 const visualCategoryOptions = ['普通消息类', '原创美文（不含制图）', '原创美文（含部分制图）', '互动、长图、SVG动图、手绘', '校园网首页大图']
 const subsidyCategoryOptions = ['微信统筹编辑', '排版编辑', '校对', '主席团成员', '校园巡查组长', '校园巡查组员']
 const allWorkTypeOptions = [
@@ -331,11 +328,19 @@ const contributorPanelTitle = computed(() => form.workType === 'SUBSIDY'
 const inputPersonLabel = computed(() => form.workType === 'SUBSIDY'
   ? '补贴人员'
   : (form.workType === 'VISUAL' ? '设计人员' : '作者'))
-const categoryOptions = computed(() => ({
-  微信: ['原创类', '半原创类'],
-  院网: ['莲峰群英', '学校新闻（含学校要闻、校园时讯）'],
-  校报: ['原创头版头条', '原创一般稿件', '重新编辑类稿件']
-}[form.workInfo.platform] || []))
+const categoryOptions = computed(() => editorialCategoryOptions[form.workInfo.platform] || [])
+
+// 202608101716 - 分别记住采编部和摄影部上次选择的发布平台。
+const preferredPlatform = workType => {
+  const value = localStorage.getItem(`sja-fee-submit-platform-${workType.toLowerCase()}`)
+  return platformOptions.includes(value) ? value : '微信'
+}
+
+const rememberPlatform = (workType, platform) => {
+  if (['EDITORIAL', 'PHOTO'].includes(workType) && platformOptions.includes(platform)) {
+    localStorage.setItem(`sja-fee-submit-platform-${workType.toLowerCase()}`, platform)
+  }
+}
 
 const createWorkInfo = workType => {
   const base = {
@@ -346,10 +351,11 @@ const createWorkInfo = workType => {
     remark: ''
   }
   if (workType === 'EDITORIAL') {
-    return { ...base, title: '', platform: '微信', category: '原创类', wordCount: 0, readCount: 0, articleLink: '' }
+    const platform = preferredPlatform(workType)
+    return { ...base, title: '', platform, category: editorialCategoryOptions[platform][0], wordCount: 0, readCount: 0, articleLink: '' }
   }
   if (workType === 'PHOTO') {
-    return { ...base, title: '', platform: '微信', category: '原创类', readCount: 0, articleLink: '' }
+    return { ...base, title: '', platform: preferredPlatform(workType), category: '', readCount: 0, articleLink: '' }
   }
   if (workType === 'VIDEO') {
     return { ...base, videoTitle: '', category: '活动新闻类视频', videoDurationSec: 0, likeCount: 0, isReposted: 0, isComplexEdit: 0, reprintStatus: '无', videoLink: '' }
@@ -381,10 +387,11 @@ const resetWorkInfo = () => {
 }
 
 const handlePlatformChange = () => {
+  rememberPlatform(form.workType, form.workInfo.platform)
   if (form.workType === 'EDITORIAL') {
     form.workInfo.category = categoryOptions.value[0] || ''
   } else if (form.workType === 'PHOTO') {
-    form.workInfo.category = form.workInfo.platform === '微信' ? photoCategoryOptions[0] : ''
+    form.workInfo.category = ''
   }
   form.contributors.forEach(item => { item.workCount = 1 })
 }
@@ -458,11 +465,12 @@ const validate = () => {
   if (!title) return '请填写作品标题'
   if (form.workType !== 'SUBSIDY' && !form.workInfo.publishDate) return '请选择发布时间'
   if (form.workType === 'SUBSIDY' && !form.workInfo.subsidyMonth) return '请选择补贴月份'
-  if (!form.workInfo.category) return '请选择类别'
+  // 202608101716 - 移除了摄影部稿费提交中的类别字段及对应校验。
+  const categoryRequired = form.workType !== 'PHOTO'
+  if (categoryRequired && !form.workInfo.category) return '请选择类别'
   if (form.workType !== 'SUBSIDY' && form.workInfo.isSpecialNode === 1 && ![2, 3].includes(Number(form.workInfo.specialMultiplier))) {
     return '请选择特殊节点发放倍数'
   }
-  if (form.workType === 'EDITORIAL' && !form.workInfo.category) return '请选择文章类别'
   if (form.workType === 'EDITORIAL' && form.workInfo.platform === '校报' && Number(form.workInfo.wordCount) <= 0) {
     return '校报文章字数必须大于 0'
   }
