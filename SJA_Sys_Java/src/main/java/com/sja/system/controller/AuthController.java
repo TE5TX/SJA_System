@@ -2,6 +2,7 @@ package com.sja.system.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.common.Result;
+import com.sja.system.common.ApiException;
 import com.sja.system.dto.LoginDTO;
 import com.sja.system.entity.SysDept;
 import com.sja.system.entity.SysRole;
@@ -76,7 +77,7 @@ public class AuthController {
             SysUser user = sysUserMapper.selectOne(userQuery);
 
             if (user == null) {
-                return Result.error("用户不存在或已被禁用");
+                throw ApiException.unauthorized("用户不存在或已被禁用");
             }
 
             // 3. Load user roles
@@ -123,19 +124,22 @@ public class AuthController {
             loginVO.setToken(token);
             loginVO.setUserInfo(userVO);
             loginVO.setMenus(menus);
+            loginVO.setMustChangePassword(Integer.valueOf(1).equals(user.getMustChangePassword()));
 
             log.info("User logged in: {}", user.getUsername());
             return Result.success(loginVO);
 
         } catch (BadCredentialsException e) {
             log.warn("Login failed - bad credentials for user: {}", dto.getUsername());
-            return Result.error("用户名或密码错误");
+            throw ApiException.unauthorized("用户名或密码错误");
         } catch (AuthenticationException e) {
             log.error("Authentication failed: {}", e.getMessage());
-            return Result.error("认证失败: " + e.getMessage());
+            throw ApiException.unauthorized("认证失败");
+        } catch (ApiException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Login error: {}", e.getMessage(), e);
-            return Result.error("登录失败，请稍后重试");
+            throw new RuntimeException("登录失败，请稍后重试", e);
         }
     }
 
@@ -154,13 +158,13 @@ public class AuthController {
     @PostMapping("/refresh")
     public Result<String> refresh(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         if (!StringUtils.hasText(authHeader) || !authHeader.startsWith("Bearer ")) {
-            return Result.error(401, "未提供有效的认证令牌");
+            throw ApiException.unauthorized("未提供有效的认证令牌");
         }
 
         String token = authHeader.substring(7);
 
         if (!jwtUtils.validateToken(token)) {
-            return Result.error(401, "令牌已过期或无效");
+            throw ApiException.unauthorized("令牌已过期或无效");
         }
 
         Long userId = jwtUtils.getUserId(token);

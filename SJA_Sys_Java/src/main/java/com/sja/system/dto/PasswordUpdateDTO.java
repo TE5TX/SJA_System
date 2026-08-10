@@ -3,6 +3,8 @@ package com.sja.system.dto;
 import lombok.Data;
 
 import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Pattern;
+import javax.validation.constraints.Size;
 
 @Data
 public class PasswordUpdateDTO {
@@ -11,6 +13,8 @@ public class PasswordUpdateDTO {
     private String oldPassword;
 
     @NotBlank(message = "新密码不能为空")
+    @Size(min = 8, max = 64, message = "新密码长度必须为8到64位")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).+$", message = "新密码必须同时包含大写字母、小写字母和数字")
     private String newPassword;
 
 }

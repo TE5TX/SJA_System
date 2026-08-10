@@ -14,6 +14,12 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/change-password',
+    name: 'ForcePasswordChange',
+    component: () => import('@/views/ForcePasswordChange.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/app',
     component: () => import('@/views/Layout.vue'),
     redirect: '/app/profile',
@@ -36,6 +42,12 @@ const routes = [
         name: 'FeeAudit',
         component: () => import('@/views/FeeAudit.vue'),
         meta: { title: '稿费审核与导出' }
+      },
+      {
+        path: 'fee-standards',
+        name: 'FeeStandards',
+        component: () => import('@/views/FeeStandards.vue'),
+        meta: { title: '稿费标准' }
       },
       {
         path: 'users',
@@ -68,6 +80,10 @@ router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
   if (to.meta.requiresAuth && !userStore.token) {
     next('/login')
+  } else if (userStore.token && userStore.mustChangePassword && to.path !== '/change-password') {
+    next('/change-password')
+  } else if (userStore.token && !userStore.mustChangePassword && to.path === '/change-password') {
+    next('/app')
   } else {
     next()
   }

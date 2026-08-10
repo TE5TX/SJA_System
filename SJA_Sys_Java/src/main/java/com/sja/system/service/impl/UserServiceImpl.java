@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sja.system.common.PageResult;
+import com.sja.system.common.ApiException;
+import com.sja.system.common.MaskingUtils;
 import com.sja.system.dto.PasswordUpdateDTO;
 import com.sja.system.dto.ProfileUpdateDTO;
 import com.sja.system.dto.UserBatchUpdateDTO;
@@ -57,7 +59,16 @@ public class UserServiceImpl implements UserService {
     public UserVO getUserProfile(Long userId) {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw ApiException.notFound("用户不存在");
+        }
+        return buildUserVO(user);
+    }
+
+    @Override
+    public UserVO getManagedUserDetail(Long userId) {
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw ApiException.badRequest("用户不存在");
         }
         return buildUserVO(user);
     }
@@ -67,7 +78,7 @@ public class UserServiceImpl implements UserService {
     public void updateProfile(Long userId, ProfileUpdateDTO dto) {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw ApiException.notFound("用户不存在");
         }
 
         SysUser update = new SysUser();
@@ -99,7 +110,7 @@ public class UserServiceImpl implements UserService {
             QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
             idCardCheck.eq("id_card", dto.getIdCard()).ne("id", userId).eq("is_valid", 1);
             if (sysUserMapper.selectCount(idCardCheck) > 0) {
-                throw new RuntimeException("该身份证号已被其他用户使用");
+                throw ApiException.conflict("该身份证号已被其他用户使用");
             }
             update.setIdCard(dto.getIdCard());
             changedFields.append("idCard; ");
@@ -111,7 +122,7 @@ public class UserServiceImpl implements UserService {
             QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
             studentNoCheck.eq("student_no", dto.getStudentNo()).ne("id", userId).eq("is_valid", 1);
             if (sysUserMapper.selectCount(studentNoCheck) > 0) {
-                throw new RuntimeException("该学号已被其他用户使用");
+                throw ApiException.conflict("该学号已被其他用户使用");
             }
             update.setStudentNo(dto.getStudentNo());
             // 核心逻辑：学号改变时，账号(username)自动同步为新的学号
@@ -173,18 +184,23 @@ public class UserServiceImpl implements UserService {
     public void updatePassword(Long userId, PasswordUpdateDTO dto) {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw ApiException.notFound("用户不存在");
         }
 
         // Verify old password
         if (!passwordEncoder.matches(dto.getOldPassword(), user.getPassword())) {
-            throw new RuntimeException("原密码错误");
+            throw ApiException.badRequest("原密码错误");
+        }
+
+        if (passwordEncoder.matches(dto.getNewPassword(), user.getPassword())) {
+            throw ApiException.badRequest("新密码不能与原密码相同");
         }
 
         // Encode and set new password
         SysUser update = new SysUser();
         update.setId(userId);
         update.setPassword(passwordEncoder.encode(dto.getNewPassword()));
+        update.setMustChangePassword(0);
         sysUserMapper.updateById(update);
 
         operationLogService.log(userId, user.getRealName(), "", "UPDATE",
@@ -198,7 +214,7 @@ public class UserServiceImpl implements UserService {
     public void updateProfilePhoto(Long userId, String photo, Long operatorId, String operatorName, String operatorRole) {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw ApiException.notFound("用户不存在");
         }
 
         String newPhoto = StringUtils.hasText(photo) ? photo : null;
@@ -298,6 +314,7 @@ public class UserServiceImpl implements UserService {
 
         List<UserVO> voList = resultPage.getRecords().stream()
                 .map(this::buildUserVO)
+                .peek(MaskingUtils::maskUser)
                 .collect(Collectors.toList());
 
         return new PageResult<>(voList, resultPage.getTotal(), (long) pageNum, (long) pageSize);
@@ -352,13 +369,13 @@ public class UserServiceImpl implements UserService {
         QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
         studentNoCheck.eq("student_no", studentNo).or().eq("username", studentNo);
         if (sysUserMapper.selectCount(studentNoCheck) > 0) {
-            throw new RuntimeException("该学号或登录账号已被其他用户使用");
+            throw ApiException.conflict("该学号或登录账号已被其他用户使用");
         }
 
         QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
         idCardCheck.eq("id_card", idCard);
         if (sysUserMapper.selectCount(idCardCheck) > 0) {
-            throw new RuntimeException("该身份证号已被其他用户使用");
+            throw ApiException.conflict("该身份证号已被其他用户使用");
         }
 
         List<Long> deptIds = distinctIds(dto.getDeptIds(), "部门");
@@ -369,6 +386,7 @@ public class UserServiceImpl implements UserService {
         SysUser user = new SysUser();
         user.setUsername(studentNo);
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setMustChangePassword(1);
         user.setRealName(dto.getRealName().trim());
         user.setGender(dto.getGender());
         user.setPhoto(StringUtils.hasText(dto.getPhoto()) ? dto.getPhoto().trim() : null);
@@ -398,7 +416,7 @@ public class UserServiceImpl implements UserService {
                            String operatorName, String operatorRole) {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw ApiException.notFound("用户不存在");
         }
 
         // Build before-state snapshot for audit
@@ -428,7 +446,7 @@ public class UserServiceImpl implements UserService {
                 QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
                 idCardCheck.eq("id_card", newVal).ne("id", userId).eq("is_valid", 1);
                 if (sysUserMapper.selectCount(idCardCheck) > 0) {
-                    throw new RuntimeException("该身份证号已被其他用户使用");
+                    throw ApiException.conflict("该身份证号已被其他用户使用");
                 }
             }
             update.setIdCard(newVal);
@@ -454,7 +472,7 @@ public class UserServiceImpl implements UserService {
                 QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
                 studentNoCheck.eq("student_no", newVal).ne("id", userId).eq("is_valid", 1);
                 if (sysUserMapper.selectCount(studentNoCheck) > 0) {
-                    throw new RuntimeException("该学号已被其他用户使用");
+                    throw ApiException.conflict("该学号已被其他用户使用");
                 }
                 update.setStudentNo(newVal);
                 update.setUsername(newVal);
@@ -528,10 +546,10 @@ public class UserServiceImpl implements UserService {
     public void batchUpdateUsers(UserBatchUpdateDTO dto, Long operatorId,
                                  String operatorName, String operatorRole) {
         if (dto.getRoleIds() == null && dto.getIsValid() == null) {
-            throw new RuntimeException("请至少选择一项需要修改的内容");
+            throw ApiException.badRequest("请至少选择一项需要修改的内容");
         }
         if (dto.getRoleIds() != null && dto.getRoleIds().isEmpty()) {
-            throw new RuntimeException("角色不能为空");
+            throw ApiException.badRequest("角色不能为空");
         }
 
         List<Long> userIds = dto.getUserIds().stream()
@@ -539,7 +557,7 @@ public class UserServiceImpl implements UserService {
                 .distinct()
                 .collect(Collectors.toList());
         if (userIds.isEmpty()) {
-            throw new RuntimeException("请至少选择一名人员");
+            throw ApiException.badRequest("请至少选择一名人员");
         }
 
         List<Long> roleIds = dto.getRoleIds() == null ? null : dto.getRoleIds().stream()
@@ -549,12 +567,12 @@ public class UserServiceImpl implements UserService {
         List<String> roleNames = new ArrayList<>();
         if (roleIds != null) {
             if (roleIds.isEmpty()) {
-                throw new RuntimeException("角色不能为空");
+                throw ApiException.badRequest("角色不能为空");
             }
             for (Long roleId : roleIds) {
                 SysRole role = sysRoleMapper.selectById(roleId);
                 if (role == null || !Objects.equals(role.getIsValid(), 1)) {
-                    throw new RuntimeException("角色不存在或已禁用: " + roleId);
+                    throw ApiException.badRequest("角色不存在或已禁用: " + roleId);
                 }
                 roleNames.add(role.getRoleName());
             }
@@ -563,7 +581,7 @@ public class UserServiceImpl implements UserService {
         for (Long userId : userIds) {
             SysUser user = sysUserMapper.selectById(userId);
             if (user == null) {
-                throw new RuntimeException("用户不存在: " + userId);
+                throw ApiException.notFound("用户不存在: " + userId);
             }
             if (roleIds != null) {
                 updateUserRoles(userId, roleIds);
@@ -597,7 +615,7 @@ public class UserServiceImpl implements UserService {
                                  String operatorName, String operatorRole) {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
-            throw new RuntimeException("用户不存在");
+            throw ApiException.notFound("用户不存在");
         }
 
         SysUser update = new SysUser();
@@ -632,6 +650,7 @@ public class UserServiceImpl implements UserService {
         vo.setPhone(user.getPhone());
         vo.setBankCard(user.getBankCard());
         vo.setIsValid(user.getIsValid());
+        vo.setMustChangePassword(user.getMustChangePassword());
         vo.setRemark(user.getRemark());
         vo.setCreateTime(user.getCreateTime());
 
@@ -691,7 +710,7 @@ public class UserServiceImpl implements UserService {
             }
             SysDept dept = sysDeptMapper.selectById(deptId);
             if (dept == null || !Objects.equals(dept.getIsValid(), 1)) {
-                throw new RuntimeException("部门不存在或已禁用: " + deptId);
+                throw ApiException.badRequest("部门不存在或已禁用: " + deptId);
             }
             SysUserDept userDept = new SysUserDept();
             userDept.setUserId(userId);
@@ -706,7 +725,7 @@ public class UserServiceImpl implements UserService {
                 .distinct()
                 .collect(Collectors.toList());
         if (result.isEmpty()) {
-            throw new RuntimeException("请至少选择一个" + fieldName);
+            throw ApiException.badRequest("请至少选择一个" + fieldName);
         }
         return result;
     }
@@ -715,7 +734,7 @@ public class UserServiceImpl implements UserService {
         for (Long deptId : deptIds) {
             SysDept dept = sysDeptMapper.selectById(deptId);
             if (dept == null || !Objects.equals(dept.getIsValid(), 1)) {
-                throw new RuntimeException("部门不存在或已禁用: " + deptId);
+                throw ApiException.badRequest("部门不存在或已禁用: " + deptId);
             }
         }
     }
@@ -724,7 +743,7 @@ public class UserServiceImpl implements UserService {
         for (Long roleId : roleIds) {
             SysRole role = sysRoleMapper.selectById(roleId);
             if (role == null || !Objects.equals(role.getIsValid(), 1)) {
-                throw new RuntimeException("角色不存在或已禁用: " + roleId);
+                throw ApiException.badRequest("角色不存在或已禁用: " + roleId);
             }
         }
     }
@@ -740,7 +759,7 @@ public class UserServiceImpl implements UserService {
             }
             SysRole role = sysRoleMapper.selectById(roleId);
             if (role == null || !Objects.equals(role.getIsValid(), 1)) {
-                throw new RuntimeException("角色不存在或已禁用: " + roleId);
+                throw ApiException.badRequest("角色不存在或已禁用: " + roleId);
             }
             SysUserRole userRole = new SysUserRole();
             userRole.setUserId(userId);

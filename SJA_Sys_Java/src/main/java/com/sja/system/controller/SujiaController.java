@@ -3,6 +3,7 @@ package com.sja.system.controller;
 import com.alibaba.excel.EasyExcel;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.common.Result;
+import com.sja.system.common.ApiException;
 import com.sja.system.dto.SujiaResolveDTO;
 import com.sja.system.entity.SysUser;
 import com.sja.system.entity.SysUserDept;
@@ -60,7 +61,7 @@ public class SujiaController {
         Long operatorId = securityUtils.getCurrentUserId(request);
         Integer roleCode = securityUtils.getCurrentRoleCode(request);
         if (operatorId == null) {
-            throw new RuntimeException("未授权");
+            throw ApiException.unauthorized("未授权");
         }
 
         try {

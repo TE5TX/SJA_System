@@ -73,6 +73,10 @@
               <el-icon><CircleCheck /></el-icon>
               <template #title>{{ canManageFeeAmount ? '审核与导出' : '稿费任务' }}</template>
             </el-menu-item>
+            <el-menu-item v-if="canManageFeeAmount" index="/app/fee-standards">
+              <el-icon><Setting /></el-icon>
+              <template #title>稿费标准</template>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu v-if="canManageUsers" index="system">

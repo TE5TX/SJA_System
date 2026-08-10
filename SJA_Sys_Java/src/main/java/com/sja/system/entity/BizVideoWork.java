@@ -22,6 +22,8 @@ public class BizVideoWork {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    private Long submitterId;
+
     private String videoTitle;
 
     private String category;

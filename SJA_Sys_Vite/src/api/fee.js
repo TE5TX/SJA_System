@@ -68,3 +68,18 @@ export function exportFee(data) {
     responseType: 'blob'
   })
 }
+
+export function getFeeStandards() {
+  return request({
+    url: '/v1/fee/standards',
+    method: 'get'
+  })
+}
+
+export function updateFeeStandard(id, data) {
+  return request({
+    url: `/v1/fee/standards/${id}`,
+    method: 'put',
+    data
+  })
+}

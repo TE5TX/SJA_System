@@ -13,4 +13,6 @@ public class LoginVO {
 
     private List<MenuTreeVO> menus;
 
+    private Boolean mustChangePassword;
+
 }

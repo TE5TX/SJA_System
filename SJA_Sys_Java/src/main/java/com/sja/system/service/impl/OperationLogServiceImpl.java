@@ -3,6 +3,7 @@ package com.sja.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sja.system.common.PageResult;
+import com.sja.system.common.MaskingUtils;
 import com.sja.system.entity.SysOperationLog;
 import com.sja.system.mapper.SysOperationLogMapper;
 import com.sja.system.service.OperationLogService;
@@ -38,7 +39,7 @@ public class OperationLogServiceImpl implements OperationLogService {
             logEntity.setOperationType(operationType);
             logEntity.setTargetModule(targetModule);
             logEntity.setTargetId(targetId);
-            logEntity.setDetail(detail);
+            logEntity.setDetail(MaskingUtils.sanitizeLogDetail(detail));
             logEntity.setIpAddress(ipAddress);
 
             sysOperationLogMapper.insert(logEntity);
@@ -75,7 +76,7 @@ public class OperationLogServiceImpl implements OperationLogService {
         vo.setOperationType(entity.getOperationType());
         vo.setTargetModule(entity.getTargetModule());
         vo.setTargetId(entity.getTargetId());
-        vo.setDetail(entity.getDetail());
+        vo.setDetail(MaskingUtils.sanitizeLogDetail(entity.getDetail()));
         vo.setIpAddress(entity.getIpAddress());
         vo.setCreateTime(entity.getCreateTime());
         return vo;

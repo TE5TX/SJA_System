@@ -22,6 +22,8 @@ public class BizEditorialArticle {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    private Long submitterId;
+
     private String title;
 
     private String platform;

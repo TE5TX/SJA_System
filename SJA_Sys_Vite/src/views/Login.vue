@@ -83,10 +83,11 @@ const handleLogin = async () => {
       loading.value = true
       try {
         const res = await login(loginForm)
-        const { token, userInfo, menus } = res.data
+        const { token, userInfo, menus, mustChangePassword } = res.data
 
         userStore.setToken(token)
         userStore.setUserInfo(userInfo)
+        userStore.setMustChangePassword(mustChangePassword)
 
         if (menus) {
           localStorage.setItem('menus', JSON.stringify(menus))
@@ -95,7 +96,7 @@ const handleLogin = async () => {
         ElMessage.success('登录成功')
 
         setTimeout(() => {
-          router.push('/app')
+          router.push(mustChangePassword ? '/change-password' : '/app')
         }, 100)
       } catch (error) {
         console.error('登录失败:', error)

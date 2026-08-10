@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class FeeCalculationServiceTest {
 
@@ -33,10 +35,38 @@ class FeeCalculationServiceTest {
     }
 
     @Test
-    void calculatesEditorialNewspaperFromNewRatesAndSplitsAuthors() {
-        Map<String, Object> info = info("校报", "原创头版头条");
+    void calculatesEditorialNewspaperByWholeThousandWordTiersAndSplitsAuthors() {
+        Map<String, Object> info = info("校报", "原创一般稿件");
         info.put("wordCount", 1500);
-        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(2)), "75.00", "75.00");
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(2)), "40.00", "40.00");
+
+        info.put("wordCount", 1999);
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(1)), "80.00");
+
+        info.put("wordCount", 2000);
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(1)), "160.00");
+
+        info.put("wordCount", 2073);
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(1)), "160.00");
+
+        info.put("wordCount", 2172);
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(1)), "160.00");
+
+        info.put("wordCount", 3000);
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(1)), "240.00");
+    }
+
+    @Test
+    void usesConfiguredFeeStandardDuringCalculation() {
+        FeeStandardService standardService = mock(FeeStandardService.class);
+        when(standardService.value("EDITORIAL", "校报", "原创一般稿件",
+                "PER_1000_WORDS_FEE", new BigDecimal("80")))
+                .thenReturn(new BigDecimal("81"));
+        FeeCalculationService configuredService = new FeeCalculationService(standardService);
+        Map<String, Object> info = info("校报", "原创一般稿件");
+        info.put("wordCount", 1000);
+
+        assertFees(configuredService.calculateAutomaticFees("EDITORIAL", info, authors(1)), "81.00");
     }
 
     @Test
@@ -55,11 +85,13 @@ class FeeCalculationServiceTest {
 
     @Test
     void calculatesPhotographyWebsitePerAuthorImageCount() {
-        List<FeeSubmitDTO.ContributorDTO> contributors = authors(3);
-        contributors.get(0).setWorkCount(2);
-        contributors.get(1).setWorkCount(3);
-        contributors.get(2).setWorkCount(6);
-        assertFees(service.calculateAutomaticFees("PHOTO", info("院网", ""), contributors), "30.00", "40.00", "60.00");
+        List<FeeSubmitDTO.ContributorDTO> contributors = authors(4);
+        contributors.get(0).setWorkCount(1);
+        contributors.get(1).setWorkCount(2);
+        contributors.get(2).setWorkCount(5);
+        contributors.get(3).setWorkCount(6);
+        assertFees(service.calculateAutomaticFees("PHOTO", info("院网", ""), contributors),
+                "30.00", "40.00", "40.00", "60.00");
     }
 
     @Test
@@ -115,6 +147,14 @@ class FeeCalculationServiceTest {
         designers.get(0).setWorkCount(1);
         designers.get(1).setWorkCount(3);
         assertFees(service.calculateAutomaticFees("VISUAL", info("", "校园网首页大图"), designers), "40.00", "120.00");
+    }
+
+    @Test
+    void acceptsBothVisualSvgCategoryNames() {
+        assertFees(service.calculateAutomaticFees("VISUAL",
+                info("", "互动、长图、SVG动图、手绘"), authors(1)), "50.00");
+        assertFees(service.calculateAutomaticFees("VISUAL",
+                info("", "互动、长图、SVG、手绘"), authors(1)), "50.00");
     }
 
     @Test

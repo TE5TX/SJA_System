@@ -24,6 +24,8 @@ public class SysUser {
 
     private String password;
 
+    private Integer mustChangePassword;
+
     private String realName;
 
     private Integer gender;

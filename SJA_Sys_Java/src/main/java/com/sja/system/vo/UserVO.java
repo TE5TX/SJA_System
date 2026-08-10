@@ -34,6 +34,8 @@ public class UserVO {
 
     private Integer isValid;
 
+    private Integer mustChangePassword;
+
     private String remark;
 
     private List<String> roleNames;

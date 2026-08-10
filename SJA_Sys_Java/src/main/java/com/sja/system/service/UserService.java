@@ -25,6 +25,8 @@ public interface UserService {
      */
     UserVO getUserProfile(Long userId);
 
+    UserVO getManagedUserDetail(Long userId);
+
     /**
      * Update a user's self-service profile fields (phone, dormAddress, bankCard).
      *

@@ -2,6 +2,7 @@ package com.sja.system.controller;
 
 import com.sja.system.common.PageResult;
 import com.sja.system.common.Result;
+import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeAuditDTO;
 import com.sja.system.dto.FeeSubmitDTO;
 import com.sja.system.dto.FeeExportDTO;
@@ -199,7 +200,7 @@ public class FeeController {
         Long operatorId = securityUtils.getCurrentUserId(request);
         Integer roleCode = securityUtils.getCurrentRoleCode(request);
         if (operatorId == null) {
-            throw new RuntimeException("未授权");
+            throw ApiException.unauthorized("未授权");
         }
         feeService.exportFee(dto, operatorId, roleCode, response);
     }

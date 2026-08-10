@@ -41,6 +41,9 @@ request.interceptors.response.use(
       localStorage.removeItem('token')
       localStorage.removeItem('userInfo')
       window.location.href = '/login'
+    } else if (error.response?.status === 403 && message === '首次登录请先修改密码') {
+      localStorage.setItem('mustChangePassword', 'true')
+      if (window.location.pathname !== '/change-password') window.location.href = '/change-password'
     } else {
       ElMessage.error(message)
     }

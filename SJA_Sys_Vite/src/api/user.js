@@ -41,6 +41,13 @@ export function getUserList(params) {
   })
 }
 
+export function getUserDetail(id) {
+  return request({
+    url: `/v1/users/${id}`,
+    method: 'get'
+  })
+}
+
 export function createUser(data) {
   return request({
     url: '/v1/users',

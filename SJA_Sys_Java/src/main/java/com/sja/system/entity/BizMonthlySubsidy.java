@@ -21,6 +21,8 @@ public class BizMonthlySubsidy {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    private Long submitterId;
+
     private String title;
 
     private String category;

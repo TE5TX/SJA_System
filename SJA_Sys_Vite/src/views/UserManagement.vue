@@ -243,7 +243,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { Download, Edit, Plus, Refresh, Search, SwitchButton } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserList, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
+import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDetail, getUserList, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
 import { getDeptList, getRoleList } from '@/api/system'
 import { uploadAvatar } from '@/api/upload'
 
@@ -342,7 +342,8 @@ const exportFieldOptions = [
   { key: 'photo', label: '照片地址' },
   { key: 'remark', label: '备注' }
 ]
-const defaultExportFields = ['realName', 'studentNo', 'phone', 'idCard', 'bankCard', 'college', 'className', 'dormAddress', 'deptNames', 'roleNames', 'isValid']
+// 202608101042 - 修复了默认导出手机号、身份证、银行卡和宿舍地址导致敏感信息暴露的问题。
+const defaultExportFields = ['realName', 'studentNo', 'college', 'className', 'deptNames', 'roleNames', 'isValid']
 const exportFields = ref([...defaultExportFields])
 const allExportFieldsSelected = computed(() => exportFields.value.length === exportFieldOptions.length)
 
@@ -526,24 +527,25 @@ const openCreate = () => {
   nextTick(() => userFormRef.value?.clearValidate())
 }
 
-const openEdit = row => {
+const openEdit = async row => {
+  const detail = (await getUserDetail(row.id)).data
   dialogMode.value = 'edit'
-  editingId.value = row.id
+  editingId.value = detail.id
   Object.assign(editForm, {
-    realName: row.realName || '',
-    gender: row.gender ?? 0,
-    studentNo: row.studentNo || '',
-    phone: row.phone || '',
-    photo: row.photo || '',
-    idCard: row.idCard || '',
-    college: row.college || '',
-    className: row.className || '',
-    dormAddress: row.dormAddress || '',
-    bankCard: row.bankCard || '',
-    deptIds: Array.isArray(row.deptIds) && row.deptIds.length ? row.deptIds : idsByNames(depts.value, row.deptNames, 'deptName'),
-    roleIds: Array.isArray(row.roleIds) && row.roleIds.length ? row.roleIds : idsByNames(roles.value, row.roleNames, 'roleName'),
-    isValid: row.isValid ?? 1,
-    remark: row.remark || '',
+    realName: detail.realName || '',
+    gender: detail.gender ?? 0,
+    studentNo: detail.studentNo || '',
+    phone: detail.phone || '',
+    photo: detail.photo || '',
+    idCard: detail.idCard || '',
+    college: detail.college || '',
+    className: detail.className || '',
+    dormAddress: detail.dormAddress || '',
+    bankCard: detail.bankCard || '',
+    deptIds: Array.isArray(detail.deptIds) && detail.deptIds.length ? detail.deptIds : idsByNames(depts.value, detail.deptNames, 'deptName'),
+    roleIds: Array.isArray(detail.roleIds) && detail.roleIds.length ? detail.roleIds : idsByNames(roles.value, detail.roleNames, 'roleName'),
+    isValid: detail.isValid ?? 1,
+    remark: detail.remark || '',
     password: '',
     confirmPassword: ''
   })

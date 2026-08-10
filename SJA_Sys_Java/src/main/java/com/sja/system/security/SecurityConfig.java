@@ -34,6 +34,7 @@ import java.util.List;
 public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final PasswordChangeRequiredFilter passwordChangeRequiredFilter;
     private final ObjectMapper objectMapper;
 
     /**
@@ -83,7 +84,8 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 })
             .and()
             // Add JWT filter before UsernamePasswordAuthenticationFilter
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterAfter(passwordChangeRequiredFilter, JwtAuthFilter.class);
     }
 
     /**

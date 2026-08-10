@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 export const useUserStore = defineStore('user', () => {
   const token = ref(localStorage.getItem('token') || '')
+  const mustChangePassword = ref(localStorage.getItem('mustChangePassword') === 'true')
 
   // 安全地解析 userInfo
   let userInfoValue = null
@@ -28,18 +29,26 @@ export const useUserStore = defineStore('user', () => {
     localStorage.setItem('userInfo', JSON.stringify(info))
   }
 
+  function setMustChangePassword(value) {
+    mustChangePassword.value = Boolean(value)
+    localStorage.setItem('mustChangePassword', String(Boolean(value)))
+  }
+
   function logout() {
     token.value = ''
     userInfo.value = null
     localStorage.removeItem('token')
     localStorage.removeItem('userInfo')
+    localStorage.removeItem('mustChangePassword')
   }
 
   return {
     token,
     userInfo,
+    mustChangePassword,
     setToken,
     setUserInfo,
+    setMustChangePassword,
     logout
   }
 })

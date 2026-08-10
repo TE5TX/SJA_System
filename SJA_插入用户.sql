@@ -1,4 +1,6 @@
 -- ============================================
+
+-- 202608101117 - 修复了数据库重置后秘书长、视觉部部长及其部门关系恢复错误的问题。
 -- SJA 用户导入脚本：根据两份 Excel 花名册生成
 -- 主花名册：C:\Users\Administrator\Desktop\稿费整理工具\第二十届校记者团花名册.xlsx
 -- 二轮花名册：C:\Users\Administrator\Desktop\稿费整理工具\第二十届校学生记者团二轮花名册（收集结果）.xlsx
@@ -51,7 +53,7 @@ ON DUPLICATE KEY UPDATE `remark` = VALUES(`remark`);
 -- 两份花名册学号重复时，以二轮花名册为准。
 INSERT INTO `sys_user` (`username`, `password`, `real_name`, `gender`, `id_card`, `student_no`, `college`, `class_name`, `dorm_address`, `phone`, `bank_card`, `remark`) VALUES
 ('admin', @pwd_admin, '系统管理员', 0, NULL, 'ADMIN', NULL, NULL, NULL, NULL, NULL, '管理员'),
-('2023030103052', @pwd_user, '黄义鉴', 1, '445322200411300030', '2023030103052', '计算机学院', '23计科F班', '18栋223', '18033372534', NULL, '主席团成员'),
+('2023030103052', @pwd_user, '黄义鉴', 1, '445322200411300030', '2023030103052', '计算机学院', '23计科F班', '18栋223', '18033372534', NULL, '秘书长（主席团、视觉部）'),
 ('2024050401003', @pwd_user, '蔡沐哲', 2, '445121200606211620', '2024050401003', '人文社会科学学院', '24新闻B班', '香晖A825', '17817688736', NULL, '正式部员'),
 ('2023070303020', @pwd_user, '陈美艳', 2, '440803200406053921', '2023070303020', '经贸学院', '23国贸C班', '香晖B1207', '18022686137', NULL, '正式部员'),
 ('2024070102016', @pwd_user, '郭潇远', 2, '410323200502089628', '2024070102016', '经贸学院', '24金融B班', '香晖C912', '18319424396', NULL, '正式部员'),
@@ -142,7 +144,7 @@ INSERT INTO `sys_user` (`username`, `password`, `real_name`, `gender`, `id_card`
 ('2023060102006', @pwd_user, '龚楚淇', 2, '440103200410274841', '2023060102006', '管理学院', '23财务管理C班', '凤翔4栋205', '13680185067', NULL, '主席团成员'),
 ('2023080402027', @pwd_user, '何锌颖', 2, '44532220030214522X', '2023080402027', '外国语学院', '23英语B班', '朝晖523', '15818150965', NULL, '主席团成员'),
 ('2023050402060', @pwd_user, '梁衡', 1, '440803200503312913', '2023050402060', '人文社会科学学院', '23新闻D班', '8栋602', '13790971716', NULL, '主席团成员'),
-('2023050402083', @pwd_user, '张静文', 2, '440783200411150626', '2023050402083', '人文社会科学学院', '23新闻D班', '凤翔3栋606', '13066260393', NULL, '主席团成员'),
+('2023050402083', @pwd_user, '张静文', 2, '440783200411150626', '2023050402083', '人文社会科学学院', '23新闻D班', '凤翔3栋606', '13066260393', NULL, '视觉部部长'),
 ('2023050402053', @pwd_user, '杜美婷', 2, '411729200412257262', '2023050402053', '人文社会科学学院', '23新闻D班', '凤翔3栋608', '15814668266', NULL, '主席团成员'),
 ('2023070103012', @pwd_user, '郑诗亭', 2, '445202200503063027', '2023070103012', '人文社会科学学院', '23法学a', '香晖b1205', '19840899982', NULL, '主席团成员'),
 ('2023050401056', @pwd_user, '钟利灵', 1, '441621200506260992', '2023050401056', '人文社会科学学院', '23新闻B班', '凤翔3-408', '18475684548', NULL, '主席团成员'),
@@ -207,6 +209,7 @@ INSERT INTO `sys_user` (`username`, `password`, `real_name`, `gender`, `id_card`
 ('2025050102073', @pwd_user, '王锴悦', 2, '360321200706154527', '2025050102073', '人文社会科学学院', '25法学D班', '香晖苑b126', '13827276909', NULL, '实习部员（二轮）')
 ON DUPLICATE KEY UPDATE
   `password` = VALUES(`password`),
+  `must_change_password` = 1,
   `real_name` = VALUES(`real_name`),
   `gender` = VALUES(`gender`),
   `id_card` = VALUES(`id_card`),
@@ -219,12 +222,12 @@ ON DUPLICATE KEY UPDATE
   `is_valid` = 1;
 
 -- 2. 插入用户-角色关联。
--- 角色对应：管理员=0，主席团成员=1，留任部员=10，正式部员=14，二轮名单=9。
+-- 角色对应：管理员=0，主席团成员=1，秘书长=3，部长=4，留任部员=10，正式部员=14，二轮名单=9。
 INSERT INTO `sys_user_role` (`user_id`, `role_id`, `remark`)
 SELECT u.id, r.id, x.remark
 FROM (
   SELECT 'admin' AS username, 0 AS role_code, '管理员' AS remark UNION ALL
-  SELECT '2023030103052' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
+  SELECT '2023030103052' AS username, 3 AS role_code, '秘书长' AS remark UNION ALL
   SELECT '2024050401003' AS username, 14 AS role_code, '正式部员' AS remark UNION ALL
   SELECT '2023070303020' AS username, 14 AS role_code, '正式部员' AS remark UNION ALL
   SELECT '2024070102016' AS username, 14 AS role_code, '正式部员' AS remark UNION ALL
@@ -315,7 +318,7 @@ FROM (
   SELECT '2023060102006' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
   SELECT '2023080402027' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
   SELECT '2023050402060' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
-  SELECT '2023050402083' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
+  SELECT '2023050402083' AS username, 4 AS role_code, '视觉部部长' AS remark UNION ALL
   SELECT '2023050402053' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
   SELECT '2023070103012' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
   SELECT '2023050401056' AS username, 1 AS role_code, '主席团成员' AS remark UNION ALL
@@ -389,6 +392,7 @@ INSERT INTO `sys_user_dept` (`user_id`, `dept_id`, `remark`)
 SELECT u.id, d.id, x.remark
 FROM (
   SELECT '2023030103052' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL
+  SELECT '2023030103052' AS username, 'VISUAL' AS dept_code, '视觉部' AS remark UNION ALL
   SELECT '2024050401003' AS username, 'EDITORIAL' AS dept_code, '采编部' AS remark UNION ALL
   SELECT '2023070303020' AS username, 'EDITORIAL' AS dept_code, '采编部' AS remark UNION ALL
   SELECT '2024070102016' AS username, 'EDITORIAL' AS dept_code, '采编部' AS remark UNION ALL
@@ -479,7 +483,7 @@ FROM (
   SELECT '2023060102006' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL
   SELECT '2023080402027' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL
   SELECT '2023050402060' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL
-  SELECT '2023050402083' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL
+  SELECT '2023050402083' AS username, 'VISUAL' AS dept_code, '视觉部' AS remark UNION ALL
   SELECT '2023050402053' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL
   SELECT '2023070103012' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL
   SELECT '2023050401056' AS username, 'PRESIDIUM' AS dept_code, '主席团' AS remark UNION ALL

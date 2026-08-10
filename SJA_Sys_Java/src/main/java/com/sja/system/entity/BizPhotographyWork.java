@@ -22,6 +22,8 @@ public class BizPhotographyWork {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    private Long submitterId;
+
     private String title;
 
     private String platform;

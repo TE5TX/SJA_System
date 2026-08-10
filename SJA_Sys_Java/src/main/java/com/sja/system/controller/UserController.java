@@ -133,6 +133,12 @@ public class UserController {
         return Result.success(result);
     }
 
+    @GetMapping("/users/{id}")
+    @PreAuthorize("hasAuthority('sys:users:edit')")
+    public Result<UserVO> getManagedUserDetail(@PathVariable Long id) {
+        return Result.success(userService.getManagedUserDetail(id));
+    }
+
     @PostMapping("/users")
     @PreAuthorize("hasAuthority('sys:users:edit')")
     public Result<Long> createUser(@RequestBody @Valid UserCreateDTO dto,
