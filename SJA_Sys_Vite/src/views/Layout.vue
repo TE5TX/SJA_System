@@ -77,6 +77,10 @@
               <el-icon><Setting /></el-icon>
               <template #title>稿费标准</template>
             </el-menu-item>
+            <el-menu-item v-if="canManageFeeAmount" index="/app/monthly-fee-export">
+              <el-icon><Download /></el-icon>
+              <template #title>月份稿费导出</template>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu v-if="canManageUsers" index="system">
@@ -360,12 +364,21 @@ const handleCommand = (command) => {
   line-height: 45px;
 }
 
+/* 202608111533 - 修复了侧边栏普通菜单与折叠菜单鼠标悬停样式不一致的问题。 */
+.sidebar :deep(.el-sub-menu__title) {
+  margin-bottom: 5px;
+  border-radius: 4px;
+  height: 45px;
+  line-height: 45px;
+}
+
 .sidebar :deep(.el-menu-item.is-active) {
   background-color: var(--background-color);
   color: var(--primary-color);
 }
 
-.sidebar :deep(.el-menu-item:hover) {
+.sidebar :deep(.el-menu-item:hover),
+.sidebar :deep(.el-sub-menu__title:hover) {
   background-color: var(--background-color);
   color: var(--primary-color);
 }

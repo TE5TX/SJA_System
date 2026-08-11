@@ -63,7 +63,8 @@ public class FeeCalculationService {
             default:
                 throw ApiException.badRequest("不支持的稿费类型: " + workType);
         }
-        return applySpecialMultiplier(fees, workInfo);
+        // 视频的特殊节点倍数已在基础稿费阶段应用，避免点赞等奖励被重复放大。
+        return VIDEO.equals(workType) ? scaled(fees) : applySpecialMultiplier(fees, workInfo);
     }
 
     private List<BigDecimal> calculateEditorial(Map<String, Object> info, int authorCount) {
@@ -134,6 +135,9 @@ public class FeeCalculationService {
             default:
                 throw ApiException.badRequest("不支持的视频类别: " + category);
         }
+
+        // 202608111609 - 修复了视频特殊节点将点赞、转载及复杂剪辑奖励一并翻倍的问题。
+        base = applySpecialMultiplier(base, info);
 
         int likeCount = intValue(info, "likeCount");
         if (likeCount < 0) throw ApiException.badRequest("点赞数不能小于 0");
@@ -297,13 +301,23 @@ public class FeeCalculationService {
 
     private List<BigDecimal> applySpecialMultiplier(List<BigDecimal> fees, Map<String, Object> info) {
         if (intValue(info, "isSpecialNode") != 1) return scaled(fees);
+        int multiplier = specialMultiplier(info);
+        List<BigDecimal> result = new ArrayList<>();
+        fees.forEach(fee -> result.add(fee.multiply(BigDecimal.valueOf(multiplier)).setScale(MONEY_SCALE, RoundingMode.HALF_UP)));
+        return result;
+    }
+
+    private BigDecimal applySpecialMultiplier(BigDecimal amount, Map<String, Object> info) {
+        if (intValue(info, "isSpecialNode") != 1) return amount;
+        return amount.multiply(BigDecimal.valueOf(specialMultiplier(info)));
+    }
+
+    private int specialMultiplier(Map<String, Object> info) {
         int multiplier = intValue(info, "specialMultiplier");
         if (multiplier != 2 && multiplier != 3) {
             throw ApiException.badRequest("特殊节点倍数只能选择 2 倍或 3 倍");
         }
-        List<BigDecimal> result = new ArrayList<>();
-        fees.forEach(fee -> result.add(fee.multiply(BigDecimal.valueOf(multiplier)).setScale(MONEY_SCALE, RoundingMode.HALF_UP)));
-        return result;
+        return multiplier;
     }
 
     private List<BigDecimal> scaled(List<BigDecimal> fees) {
@@ -334,11 +348,9 @@ public class FeeCalculationService {
 
     private List<BigDecimal> splitEvenly(BigDecimal total, int count) {
         BigDecimal normalizedTotal = total.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        BigDecimal regularAmount = normalizedTotal.divide(BigDecimal.valueOf(count), MONEY_SCALE, RoundingMode.HALF_UP);
-        List<BigDecimal> result = new ArrayList<>();
-        for (int index = 0; index < count - 1; index++) result.add(regularAmount);
-        result.add(normalizedTotal.subtract(regularAmount.multiply(BigDecimal.valueOf(count - 1))));
-        return result;
+        // 202608111638 - 修复了多人平均分配稿费时最后一人因补差额导致个人金额不一致的问题。
+        BigDecimal perPerson = normalizedTotal.divide(BigDecimal.valueOf(count), MONEY_SCALE, RoundingMode.CEILING);
+        return new ArrayList<>(Collections.nCopies(count, perPerson));
     }
 
     private BigDecimal amount(String value) {

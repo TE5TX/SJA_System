@@ -1,5 +1,6 @@
 package com.sja.system.service.impl;
 
+import com.sja.system.dto.FeeAuditDTO;
 import com.sja.system.entity.BizEditorialArticle;
 import com.sja.system.mapper.BizEditorialArticleMapper;
 import com.sja.system.service.OperationLogService;
@@ -62,6 +63,23 @@ class FeeServiceImplResetAuditTest {
         assertEquals("只有已通过的稿费任务可以退回待审核", error.getMessage());
         verify(editorialMapper, never()).updateById(any());
         verify(operationLogService, never()).log(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void approvedTaskCannotBeAuditedAgain() {
+        BizEditorialArticle approved = new BizEditorialArticle();
+        approved.setId(16L);
+        approved.setAuditStatus("APPROVED");
+        approved.setIsValid(1);
+        when(editorialMapper.selectById(16L)).thenReturn(approved);
+        FeeAuditDTO dto = new FeeAuditDTO();
+        dto.setApproved(false);
+
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> feeService.auditFee(16L, "EDITORIAL", dto, 1L, "管理员", "0"));
+
+        assertEquals("只有待审核的稿费任务可以审核", error.getMessage());
+        verify(editorialMapper, never()).updateById(any());
     }
 
     @Test

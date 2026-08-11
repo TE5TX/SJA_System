@@ -232,7 +232,9 @@ public class UserServiceImpl implements UserService {
     @Override
     public PageResult<UserVO> queryUsers(UserQueryDTO query) {
         int pageNum = query.getPageNum() != null ? query.getPageNum() : 1;
-        int pageSize = query.getPageSize() != null ? query.getPageSize() : 10;
+        // 202608111533 - 修复了人员管理列表缺少200条分页选项且服务端未限制分页大小的问题。
+        int pageSize = query.getPageSize() != null
+                ? Math.min(200, Math.max(1, query.getPageSize())) : 10;
 
         // Determine which user IDs to filter by
         List<Long> filteredUserIds = null;

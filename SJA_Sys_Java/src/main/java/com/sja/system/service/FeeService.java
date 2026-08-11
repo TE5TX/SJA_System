@@ -2,12 +2,15 @@ package com.sja.system.service;
 
 import com.sja.system.common.PageResult;
 import com.sja.system.dto.FeeAuditDTO;
+import com.sja.system.dto.FeeBatchAuditDTO;
 import com.sja.system.dto.FeeSubmitDTO;
 import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.vo.FeeDetailVO;
 import com.sja.system.vo.FeeListVO;
 
 import javax.servlet.http.HttpServletResponse;
+import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * Fee (remuneration) management service interface.
@@ -52,6 +55,8 @@ public interface FeeService {
     void updateFee(Long id, String workType, FeeSubmitDTO dto, Long operatorId, String operatorName, String operatorRole,
                    Integer roleCode);
 
+    List<BigDecimal> calculateFee(FeeSubmitDTO dto);
+
     /**
      * Audit (approve/reject) a fee record.
      *
@@ -63,6 +68,8 @@ public interface FeeService {
      * @param auditorRole  auditor role name
      */
     void auditFee(Long id, String workType, FeeAuditDTO dto, Long auditorId, String auditorName, String auditorRole);
+
+    void batchAuditFee(FeeBatchAuditDTO dto, Long auditorId, String auditorName, String auditorRole);
 
     void resetAudit(Long id, String workType, Long operatorId, String operatorName, String operatorRole);
 

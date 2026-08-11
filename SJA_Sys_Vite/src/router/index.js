@@ -50,6 +50,12 @@ const routes = [
         meta: { title: '稿费标准' }
       },
       {
+        path: 'monthly-fee-export',
+        name: 'MonthlyFeeExport',
+        component: () => import('@/views/MonthlyFeeExport.vue'),
+        meta: { title: '月份稿费导出' }
+      },
+      {
         path: 'users',
         name: 'UserManagement',
         component: () => import('@/views/UserManagement.vue'),

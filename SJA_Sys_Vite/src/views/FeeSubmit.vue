@@ -105,18 +105,15 @@
                   <el-option label="原创类长视频" value="原创类长视频" />
                 </el-select>
               </el-form-item>
-              <el-row :gutter="16">
-                <el-col :span="12">
-                  <el-form-item label="时长（秒）">
-                    <el-input-number v-model="form.workInfo.videoDurationSec" :min="0" controls-position="right" />
-                  </el-form-item>
-                </el-col>
-                <el-col :span="12">
-                  <el-form-item label="点赞数">
-                    <el-input-number v-model="form.workInfo.likeCount" :min="0" controls-position="right" />
-                  </el-form-item>
-                </el-col>
-              </el-row>
+              <el-form-item label="点赞数">
+                <el-input-number
+                  v-model="form.workInfo.likeCount"
+                  :min="0"
+                  controls-position="right"
+                  @focus="selectNumberInputText"
+                  @click="selectNumberInputText"
+                />
+              </el-form-item>
               <el-row :gutter="16">
                 <el-col :span="12">
                   <el-form-item label="官方转载">
@@ -358,7 +355,8 @@ const createWorkInfo = workType => {
     return { ...base, title: '', platform: preferredPlatform(workType), category: '', readCount: 0, articleLink: '' }
   }
   if (workType === 'VIDEO') {
-    return { ...base, videoTitle: '', category: '活动新闻类视频', videoDurationSec: 0, likeCount: 0, isReposted: 0, isComplexEdit: 0, reprintStatus: '无', videoLink: '' }
+    // 202608111533 - 修复了视频部提交任务仍要求录入无计费作用的视频时长且点赞数不便直接输入的问题。
+    return { ...base, videoTitle: '', category: '活动新闻类视频', likeCount: 0, isReposted: 0, isComplexEdit: 0, reprintStatus: '无', videoLink: '' }
   }
   if (workType === 'VISUAL') {
     return { ...base, title: '', category: visualCategoryOptions[0], authorCount: 0, articleLink: '' }

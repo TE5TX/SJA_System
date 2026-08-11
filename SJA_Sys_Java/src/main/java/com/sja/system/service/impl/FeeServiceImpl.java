@@ -9,8 +9,10 @@ import com.alibaba.excel.write.style.column.LongestMatchColumnWidthStyleStrategy
 import com.sja.system.common.PageResult;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeAuditDTO;
+import com.sja.system.dto.FeeBatchAuditDTO;
 import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.dto.FeeSubmitDTO;
+import com.sja.system.dto.FeeTaskRefDTO;
 import com.sja.system.entity.*;
 import com.sja.system.mapper.*;
 import com.sja.system.service.FeeService;
@@ -149,8 +151,9 @@ public class FeeServiceImpl implements FeeService {
     public PageResult<FeeListVO> getFeeList(String deptCode, String month, String status,
                                             Integer pageNum, Integer pageSize,
                                             Long operatorId, Integer roleCode) {
-        int pn = pageNum != null ? pageNum : 1;
-        int ps = pageSize != null ? pageSize : 10;
+        int pn = pageNum != null ? Math.max(1, pageNum) : 1;
+        // 202608111533 - 修复了稿费审核列表单页最多只能显示50条且服务端未限制分页大小的问题。
+        int ps = pageSize != null ? Math.min(200, Math.max(1, pageSize)) : 10;
 
         List<FeeListVO> allItems = new ArrayList<>();
 
@@ -375,8 +378,11 @@ public class FeeServiceImpl implements FeeService {
         deleteQuery.eq("work_type", workType).eq("work_id", id);
         contributorMapper.delete(deleteQuery);
 
-        List<BigDecimal> automaticFees = canManageAmount ? null
-                : feeCalculationService.calculateAutomaticFees(workType, workInfo, dto.getContributors());
+        // 202608111533 - 修复了管理员或秘书长编辑视频计费条件后仍保存旧个人稿费的问题。
+        boolean recalculateAutomatically = !canManageAmount || VIDEO.equals(workType);
+        List<BigDecimal> automaticFees = recalculateAutomatically
+                ? feeCalculationService.calculateAutomaticFees(workType, workInfo, dto.getContributors())
+                : null;
         BigDecimal totalAmount = BigDecimal.ZERO;
         if (dto.getContributors() != null) {
             for (int index = 0; index < dto.getContributors().size(); index++) {
@@ -386,9 +392,9 @@ public class FeeServiceImpl implements FeeService {
                 contributor.setWorkId(id);
                 contributor.setUserId(c.getUserId());
                 contributor.setRoleInWork((EDITORIAL.equals(workType) || PHOTO.equals(workType)) ? "AUTHOR" : c.getRoleInWork());
-                contributor.setFeeAmount(normalizeMoney(canManageAmount
-                        ? (c.getFeeAmount() != null ? c.getFeeAmount() : BigDecimal.ZERO)
-                        : automaticFees.get(index)));
+                contributor.setFeeAmount(normalizeMoney(automaticFees != null
+                        ? automaticFees.get(index)
+                        : (c.getFeeAmount() != null ? c.getFeeAmount() : BigDecimal.ZERO)));
                 contributor.setWorkCount(c.getWorkCount());
                 contributor.setRemark(c.getRemark());
                 contributorMapper.insert(contributor);
@@ -410,9 +416,18 @@ public class FeeServiceImpl implements FeeService {
     }
 
     @Override
+    public List<BigDecimal> calculateFee(FeeSubmitDTO dto) {
+        return feeCalculationService.calculateAutomaticFees(
+                dto.getWorkType(), dto.getWorkInfo(), dto.getContributors());
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void auditFee(Long id, String workType, FeeAuditDTO dto, Long auditorId,
                          String auditorName, String auditorRole) {
+        if (!"SUBMITTED".equals(getAuditStatus(workType, id))) {
+            throw ApiException.badRequest("只有待审核的稿费任务可以审核");
+        }
         String action = Boolean.TRUE.equals(dto.getApproved()) ? "审核通过" : "审核驳回";
         String opinion = dto.getOpinion() != null ? dto.getOpinion() : "";
 
@@ -489,6 +504,25 @@ public class FeeServiceImpl implements FeeService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void batchAuditFee(FeeBatchAuditDTO dto, Long auditorId,
+                              String auditorName, String auditorRole) {
+        Set<String> taskKeys = dto.getTasks().stream()
+                .map(this::feeTaskKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (taskKeys.size() != dto.getTasks().size()) {
+            throw ApiException.badRequest("批量审核任务不能重复");
+        }
+        FeeAuditDTO auditDTO = new FeeAuditDTO();
+        auditDTO.setApproved(dto.getApproved());
+        auditDTO.setOpinion(dto.getOpinion());
+        // 202608111533 - 修复了稿费任务无法批量通过或批量驳回的问题。
+        for (FeeTaskRefDTO task : dto.getTasks()) {
+            auditFee(task.getId(), task.getWorkType(), auditDTO, auditorId, auditorName, auditorRole);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void resetAudit(Long id, String workType, Long operatorId,
                            String operatorName, String operatorRole) {
         if (!"APPROVED".equals(getAuditStatus(workType, id))) {
@@ -554,6 +588,22 @@ public class FeeServiceImpl implements FeeService {
                     .filter(item -> !StringUtils.hasText(selectedPlatform) || selectedPlatform.equals(item.getPlatform()))
                     .filter(item -> !StringUtils.hasText(dto.getStatus()) || dto.getStatus().equals(item.getStatus()))
                     .collect(Collectors.toList());
+
+            if (dto.getSelectedTasks() != null && !dto.getSelectedTasks().isEmpty()) {
+                Set<String> selectedTaskKeys = dto.getSelectedTasks().stream()
+                        .map(this::feeTaskKey)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+                if (selectedTaskKeys.size() != dto.getSelectedTasks().size()) {
+                    throw ApiException.badRequest("批量导出任务不能重复");
+                }
+                allItems = allItems.stream()
+                        .filter(item -> selectedTaskKeys.contains(feeTaskKey(item.getWorkType(), item.getId())))
+                        .collect(Collectors.toList());
+                if (allItems.size() != selectedTaskKeys.size()) {
+                    throw ApiException.badRequest("部分选中任务不存在、已失效或无权导出");
+                }
+                // 202608111533 - 修复了稿费审核页不能只导出勾选任务的问题。
+            }
 
             // Sort by createTime desc
             allItems.sort((a, b) -> {
@@ -715,6 +765,14 @@ public class FeeServiceImpl implements FeeService {
 
     private String displayValue(Object value) {
         return value != null ? String.valueOf(value) : "";
+    }
+
+    private String feeTaskKey(FeeTaskRefDTO task) {
+        return feeTaskKey(task.getWorkType(), task.getId());
+    }
+
+    private String feeTaskKey(String workType, Long id) {
+        return workType + ":" + id;
     }
 
     private String yesNo(Object value) {

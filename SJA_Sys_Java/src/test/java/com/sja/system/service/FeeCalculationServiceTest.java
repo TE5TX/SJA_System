@@ -70,10 +70,15 @@ class FeeCalculationServiceTest {
     }
 
     @Test
-    void assignsDivisionRemainderWithoutLosingTaskTotal() {
+    void roundsEqualSharesUpInsteadOfAssigningRemainderToOnePerson() {
         Map<String, Object> info = info("校报", "原创头版头条");
         info.put("wordCount", 1000);
-        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(3)), "33.3", "33.3", "33.4");
+        // 202608111638 - 修复了三人平均分配100元时出现33.3、33.3、33.4的问题。
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(3)), "33.4", "33.4", "33.4");
+
+        info.put("category", "重新编辑类稿件");
+        info.put("wordCount", 8000);
+        assertFees(service.calculateAutomaticFees("EDITORIAL", info, authors(3)), "133.4", "133.4", "133.4");
     }
 
     @Test
@@ -131,6 +136,19 @@ class FeeCalculationServiceTest {
         info.put("isReposted", 1);
         List<FeeSubmitDTO.ContributorDTO> contributors = Arrays.asList(contributor("SHOOTER"), contributor("EDITOR"));
         assertFees(service.calculateAutomaticFees("VIDEO", info, contributors), "455.0", "195.0");
+    }
+
+    @Test
+    void appliesVideoSpecialMultiplierToBaseFeeButNotLikeBonus() {
+        Map<String, Object> info = info("", "活动新闻类视频");
+        info.put("likeCount", 639);
+        info.put("isSpecialNode", 1);
+        info.put("specialMultiplier", 2);
+        List<FeeSubmitDTO.ContributorDTO> contributors = Arrays.asList(
+                contributor("EDITOR"), contributor("SHOOTER"), contributor("SHOOTER"));
+
+        // 202608111609 - 修复了活动新闻类视频点赞奖励被特殊节点倍数重复翻倍的问题。
+        assertFees(service.calculateAutomaticFees("VIDEO", info, contributors), "300.0", "350.0", "350.0");
     }
 
     @Test

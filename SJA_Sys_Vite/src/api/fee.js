@@ -38,6 +38,14 @@ export function updateFeeDetail(workType, id, data) {
   })
 }
 
+export function calculateFee(data) {
+  return request({
+    url: '/v1/fee/calculate',
+    method: 'post',
+    data
+  })
+}
+
 export function invalidateRejectedFee(workType, id) {
   return request({
     url: `/v1/fee/detail/${workType}/${id}`,
@@ -53,6 +61,14 @@ export function auditFee(workType, id, data) {
   })
 }
 
+export function batchAuditFee(data) {
+  return request({
+    url: '/v1/fee/audit/batch',
+    method: 'put',
+    data
+  })
+}
+
 export function resetFeeAudit(workType, id) {
   return request({
     url: `/v1/fee/audit/${workType}/${id}/reset`,
@@ -63,6 +79,15 @@ export function resetFeeAudit(workType, id) {
 export function exportFee(data) {
   return request({
     url: '/v1/fee/export',
+    method: 'post',
+    data,
+    responseType: 'blob'
+  })
+}
+
+export function exportMonthlyFeeSummary(data) {
+  return request({
+    url: '/v1/fee/monthly-summary/export',
     method: 'post',
     data,
     responseType: 'blob'

@@ -17,13 +17,35 @@
             <el-option label="已通过" value="APPROVED" />
             <el-option label="已驳回" value="REJECTED" />
           </el-select>
-          <el-button type="primary" :icon="Search" @click="loadList">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="searchFees">查询</el-button>
           <el-button :icon="Refresh" @click="resetQuery">重置</el-button>
-          <el-button v-if="canManageFeeAmount" type="success" :icon="Download" @click="openExport">导出</el-button>
+          <el-button v-if="canManageFeeAmount" type="success" :icon="Download" @click="openExport(false)">导出</el-button>
+          <el-dropdown v-if="canManageFeeAmount" trigger="click" @command="handleBatchCommand">
+            <el-button :disabled="selectedRecords.length === 0">
+              批量操作{{ selectedRecords.length ? `（${selectedRecords.length}）` : '' }}
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="approve">批量通过</el-dropdown-item>
+                <el-dropdown-item command="reject">批量驳回</el-dropdown-item>
+                <el-dropdown-item command="export" divided>批量导出</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </template>
 
-      <el-table :data="records" v-loading="loading" border row-key="id">
+      <el-table
+        ref="feeTableRef"
+        :data="records"
+        v-loading="loading"
+        border
+        :row-key="feeRowKey"
+        @selection-change="handleSelectionChange"
+      >
+        <!-- 202608111533 - 修复了稿费审核与导出列表没有任务勾选框和批量操作入口的问题。 -->
+        <el-table-column type="selection" width="48" fixed reserve-selection />
         <el-table-column prop="workType" label="类型" width="100">
           <template #default="{ row }">
             <el-tag>{{ workTypeName(row.workType) }}</el-tag>
@@ -64,7 +86,7 @@
         <el-pagination
           v-model:current-page="query.pageNum"
           v-model:page-size="query.pageSize"
-          :page-sizes="[10, 20, 50]"
+          :page-sizes="[10, 20, 50, 100, 200]"
           layout="total, sizes, prev, pager, next"
           :total="total"
           @size-change="loadList"
@@ -102,10 +124,10 @@
       </div>
     </el-drawer>
 
-    <el-dialog v-model="auditVisible" :title="auditForm.approved ? '审核通过' : '审核驳回'" width="480px">
+    <el-dialog v-model="auditVisible" :title="auditDialogTitle" width="480px">
       <el-form label-width="86px">
         <el-form-item label="作品">
-          <el-input :model-value="currentRow?.title" disabled />
+          <el-input :model-value="batchAuditMode ? `已选择 ${selectedRecords.length} 个任务` : currentRow?.title" disabled />
         </el-form-item>
         <el-form-item label="意见">
           <el-input v-model="auditForm.opinion" type="textarea" :rows="4" maxlength="500" show-word-limit placeholder="填写审核意见" />
@@ -197,7 +219,7 @@
         </el-form-item>
       </el-form>
       <h3 class="detail-title">{{ canManageFeeAmount ? '参与人员金额' : '参与人员' }}</h3>
-      <el-table :data="editForm.contributors" border size="small">
+      <el-table :data="editForm.contributors" border size="small" v-loading="videoPreviewLoading">
         <el-table-column prop="realName" label="姓名" min-width="120" />
         <el-table-column label="用户ID" width="110">
           <template #default="{ row }">
@@ -211,9 +233,15 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="canManageFeeAmount" label="金额" width="150">
+        <el-table-column v-if="canManageFeeAmount" :label="editForm.workType === 'VIDEO' ? '金额（自动）' : '金额'" width="150">
           <template #default="{ row }">
-            <el-input-number v-model="row.feeAmount" :min="0" :precision="1" controls-position="right" />
+            <el-input-number
+              v-model="row.feeAmount"
+              :min="0"
+              :precision="1"
+              :disabled="editForm.workType === 'VIDEO'"
+              controls-position="right"
+            />
           </template>
         </el-table-column>
         <el-table-column v-if="editShowsWorkCount" label="作品数量" width="130">
@@ -228,14 +256,20 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="exportVisible" title="导出稿费明细" width="680px">
+    <el-dialog v-model="exportVisible" :title="exportSelectedOnly ? '批量导出已选稿费' : '导出稿费明细'" width="760px">
+      <!-- 202608111715 - 新增了采编各平台、摄影、视觉、视频、补贴和自定义八种导出字段模板。 -->
+      <el-radio-group v-model="exportPreset" class="export-preset-list" @change="applyExportPreset">
+        <el-radio-button v-for="preset in exportPresetOptions" :key="preset.value" :label="preset.value">
+          {{ preset.label }}
+        </el-radio-button>
+      </el-radio-group>
       <div class="export-actions">
         <el-button text class="export-action-btn" @click="toggleAllExportFields">
           {{ allExportFieldsSelected ? '取消全选' : '全选' }}
         </el-button>
         <el-button text class="export-action-btn" @click="restoreDefaultExportFields">恢复默认</el-button>
       </div>
-      <el-checkbox-group v-model="exportFields" class="export-field-list">
+      <el-checkbox-group v-model="exportFields" class="export-field-list" @change="handleExportFieldsChange">
         <el-checkbox v-for="field in exportFieldOptions" :key="field.key" :label="field.key">
           {{ field.label }}
         </el-checkbox>
@@ -249,10 +283,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
-import { CircleCheck, CircleClose, Delete, Download, Edit, Refresh, RefreshLeft, Search, View } from '@element-plus/icons-vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { ArrowDown, CircleCheck, CircleClose, Delete, Download, Edit, Refresh, RefreshLeft, Search, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { auditFee, exportFee, getFeeDetail, getFeeList, invalidateRejectedFee, resetFeeAudit, updateFeeDetail } from '@/api/fee'
+import { auditFee, batchAuditFee, calculateFee, exportFee, getFeeDetail, getFeeList, invalidateRejectedFee, resetFeeAudit, updateFeeDetail } from '@/api/fee'
 import { useUserStore } from '@/store/user'
 
 const fallbackDepts = [
@@ -277,20 +311,26 @@ const switchFieldKeys = ['isPublished', 'isSpecialNode', 'isReposted', 'isComple
 const stepThousandNumberFields = ['readCount', 'wordCount']
 const numberFieldKeys = ['videoDurationSec', 'likeCount', 'authorCount', 'authorAvgFee']
 
+// 202608111533 - 修复了稿费审核与导出列表单页不能选择100或200条的问题。
 const query = reactive({ deptCode: '', month: '', status: '', pageNum: 1, pageSize: 10 })
 const records = ref([])
 const total = ref(0)
 const loading = ref(false)
 const exporting = ref(false)
 const exportVisible = ref(false)
+const exportSelectedOnly = ref(false)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref(null)
 const auditVisible = ref(false)
 const auditing = ref(false)
+const batchAuditMode = ref(false)
 const editVisible = ref(false)
 const saving = ref(false)
+const videoPreviewLoading = ref(false)
 const currentRow = ref(null)
+const feeTableRef = ref(null)
+const selectedRecords = ref([])
 const deptOptions = ref(fallbackDepts)
 const auditForm = reactive({ approved: true, opinion: '' })
 const editForm = reactive({ workType: '', workInfo: {}, contributors: [] })
@@ -338,6 +378,37 @@ const defaultExportFields = [
   'contributorNames', 'contributorStudentNos', 'contributorRoles',
   'contributorAmounts', 'totalAmount', 'auditStatus', 'remark'
 ]
+const exportPresetOptions = [
+  { label: '采编-微信', value: 'EDITORIAL_WECHAT' },
+  { label: '采编-院网', value: 'EDITORIAL_WEBSITE' },
+  { label: '采编-校报', value: 'EDITORIAL_NEWSPAPER' },
+  { label: '摄影', value: 'PHOTO' },
+  { label: '视觉', value: 'VISUAL' },
+  { label: '视频', value: 'VIDEO' },
+  { label: '补贴', value: 'SUBSIDY' },
+  { label: '自定义', value: 'CUSTOM' }
+]
+const commonWorkFields = [
+  'workType', 'title', 'category', 'publishDate', 'articleLink',
+  'contributorNames', 'contributorAmounts', 'totalAmount',
+  'isSpecialNode', 'specialMultiplier', 'remark'
+]
+const exportPresetFields = {
+  EDITORIAL_WECHAT: [...commonWorkFields.slice(0, 5), 'readCount', ...commonWorkFields.slice(5)],
+  EDITORIAL_WEBSITE: [...commonWorkFields],
+  EDITORIAL_NEWSPAPER: [...commonWorkFields.slice(0, 5), 'wordCount', ...commonWorkFields.slice(5)],
+  PHOTO: [...commonWorkFields.slice(0, 6), 'workCounts', ...commonWorkFields.slice(6)],
+  VISUAL: [...commonWorkFields],
+  VIDEO: [
+    ...commonWorkFields.slice(0, 6), 'likeCount', 'isReposted', 'isComplexEdit',
+    ...commonWorkFields.slice(6)
+  ],
+  SUBSIDY: [
+    'workType', 'title', 'category', 'subsidyMonth',
+    'contributorNames', 'contributorAmounts', 'totalAmount', 'remark'
+  ]
+}
+const exportPreset = ref('CUSTOM')
 const exportFields = ref([...defaultExportFields])
 const allExportFieldsSelected = computed(() => exportFields.value.length === exportFieldOptions.length)
 
@@ -354,6 +425,10 @@ const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...role
 const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
 const canAuditFee = computed(() => [0, 3].includes(highestRoleCode.value))
 const canEditFeeTask = computed(() => [0, 3, 4].includes(highestRoleCode.value))
+const auditDialogTitle = computed(() => {
+  const action = auditForm.approved ? '通过' : '驳回'
+  return batchAuditMode.value ? `批量${action}稿费任务` : `审核${action}`
+})
 const fieldLabelMap = {
   title: '标题',
   videoTitle: '视频标题',
@@ -390,6 +465,7 @@ const workInfoRows = computed(() => {
 const amountSensitiveFields = new Set(['isSpecialNode', 'specialMultiplier', 'authorAvgFee'])
 const editWorkFields = computed(() => Object.keys(editForm.workInfo || {})
   .filter(key => canManageFeeAmount.value || !amountSensitiveFields.has(key))
+  .filter(key => !(editForm.workType === 'VIDEO' && key === 'videoDurationSec'))
   .filter(key => key !== 'specialMultiplier' || Number(editForm.workInfo?.isSpecialNode) === 1)
   .map(key => ({ key, label: fieldLabelMap[key] || key })))
 const detailShowsWorkCount = computed(() => (detail.value?.contributors || []).some(item => item.workCount != null))
@@ -449,6 +525,22 @@ const handleEditPlatformChange = () => {
   }
 }
 
+const feeRowKey = row => `${row.workType}:${row.id}`
+
+const handleSelectionChange = selection => {
+  selectedRecords.value = selection
+}
+
+const clearSelection = () => {
+  feeTableRef.value?.clearSelection()
+  selectedRecords.value = []
+}
+
+const selectedTaskRefs = () => selectedRecords.value.map(item => ({
+  workType: item.workType,
+  id: Number(item.id)
+}))
+
 const loadList = async () => {
   loading.value = true
   try {
@@ -460,7 +552,14 @@ const loadList = async () => {
   }
 }
 
+const searchFees = () => {
+  clearSelection()
+  query.pageNum = 1
+  loadList()
+}
+
 const resetQuery = () => {
+  clearSelection()
   Object.assign(query, { deptCode: '', month: '', status: '', pageNum: 1, pageSize: 10 })
   loadList()
 }
@@ -478,10 +577,30 @@ const openDetail = async row => {
 }
 
 const openAudit = (row, approved) => {
+  batchAuditMode.value = false
   currentRow.value = row
   auditForm.approved = approved
   auditForm.opinion = approved ? '审核通过' : ''
   auditVisible.value = true
+}
+
+const openBatchAudit = approved => {
+  if (!selectedRecords.value.length) return
+  if (selectedRecords.value.some(item => item.status !== 'SUBMITTED')) {
+    ElMessage.warning('批量审核只能选择状态为“已提交”的任务')
+    return
+  }
+  batchAuditMode.value = true
+  currentRow.value = null
+  auditForm.approved = approved
+  auditForm.opinion = approved ? '批量审核通过' : ''
+  auditVisible.value = true
+}
+
+const handleBatchCommand = command => {
+  if (command === 'approve') openBatchAudit(true)
+  else if (command === 'reject') openBatchAudit(false)
+  else if (command === 'export') openExport(true)
 }
 
 const openEdit = async row => {
@@ -490,7 +609,49 @@ const openEdit = async row => {
   editForm.workInfo = { ...(detail.value.workInfo || {}), remark: detail.value.remark || '' }
   editForm.contributors = (detail.value.contributors || []).map(item => ({ ...item }))
   editVisible.value = true
+  if (editForm.workType === 'VIDEO' && canManageFeeAmount.value) {
+    refreshVideoFeePreview()
+  }
 }
+
+let videoPreviewSequence = 0
+const refreshVideoFeePreview = async () => {
+  if (!editVisible.value || editForm.workType !== 'VIDEO' || !canManageFeeAmount.value || !editForm.contributors.length) return
+  const sequence = ++videoPreviewSequence
+  videoPreviewLoading.value = true
+  try {
+    const res = await calculateFee({
+      workType: 'VIDEO',
+      workInfo: { ...editForm.workInfo },
+      contributors: editForm.contributors.map(item => ({
+        userId: Number(item.userId),
+        roleInWork: item.roleInWork,
+        workCount: item.workCount == null ? null : Number(item.workCount),
+        feeAmount: null,
+        remark: item.remark || ''
+      }))
+    })
+    if (sequence !== videoPreviewSequence) return
+    ;(res.data || []).forEach((amount, index) => {
+      if (editForm.contributors[index]) editForm.contributors[index].feeAmount = Number(amount)
+    })
+  } finally {
+    if (sequence === videoPreviewSequence) videoPreviewLoading.value = false
+  }
+}
+
+watch(
+  () => editForm.workType === 'VIDEO' ? JSON.stringify({
+    category: editForm.workInfo.category,
+    likeCount: editForm.workInfo.likeCount,
+    isReposted: editForm.workInfo.isReposted,
+    isComplexEdit: editForm.workInfo.isComplexEdit,
+    isSpecialNode: editForm.workInfo.isSpecialNode,
+    specialMultiplier: editForm.workInfo.specialMultiplier,
+    contributors: editForm.contributors.map(item => ({ userId: item.userId, roleInWork: item.roleInWork }))
+  }) : '',
+  () => refreshVideoFeePreview()
+)
 
 const handleSaveEdit = async () => {
   if (!currentRow.value) return
@@ -517,11 +678,21 @@ const handleSaveEdit = async () => {
 }
 
 const handleAudit = async () => {
-  if (!currentRow.value) return
+  if (!batchAuditMode.value && !currentRow.value) return
   auditing.value = true
   try {
-    await auditFee(currentRow.value.workType, currentRow.value.id, { ...auditForm })
-    ElMessage.success('审核操作已提交')
+    if (batchAuditMode.value) {
+      await batchAuditFee({
+        tasks: selectedTaskRefs(),
+        approved: auditForm.approved,
+        opinion: auditForm.opinion
+      })
+      ElMessage.success(`已批量${auditForm.approved ? '通过' : '驳回'} ${selectedRecords.value.length} 个任务`)
+      clearSelection()
+    } else {
+      await auditFee(currentRow.value.workType, currentRow.value.id, { ...auditForm })
+      ElMessage.success('审核操作已提交')
+    }
     auditVisible.value = false
     await loadList()
   } finally {
@@ -551,8 +722,40 @@ const handleInvalidate = async row => {
   await loadList()
 }
 
-const openExport = () => {
+const openExport = (selectedOnly = false) => {
+  if (selectedOnly && !selectedRecords.value.length) {
+    ElMessage.warning('请至少勾选一个稿费任务')
+    return
+  }
+  exportSelectedOnly.value = selectedOnly
+  if (!selectedOnly) {
+    const inferredPreset = {
+      'EDITORIAL:微信': 'EDITORIAL_WECHAT',
+      'EDITORIAL:院网': 'EDITORIAL_WEBSITE',
+      'EDITORIAL:校报': 'EDITORIAL_NEWSPAPER',
+      PHOTOGRAPHY: 'PHOTO',
+      VISUAL: 'VISUAL',
+      VIDEO: 'VIDEO',
+      MANAGEMENT: 'SUBSIDY'
+    }[query.deptCode]
+    if (inferredPreset) {
+      exportPreset.value = inferredPreset
+      applyExportPreset(inferredPreset)
+    }
+  }
   exportVisible.value = true
+}
+
+const applyExportPreset = preset => {
+  if (preset === 'CUSTOM') return
+  exportFields.value = [...exportPresetFields[preset]]
+}
+
+const handleExportFieldsChange = () => {
+  const expected = exportPresetFields[exportPreset.value]
+  if (!expected || expected.length !== exportFields.value.length || expected.some(field => !exportFields.value.includes(field))) {
+    exportPreset.value = 'CUSTOM'
+  }
 }
 
 const toggleAllExportFields = () => {
@@ -560,7 +763,8 @@ const toggleAllExportFields = () => {
 }
 
 const restoreDefaultExportFields = () => {
-  exportFields.value = [...defaultExportFields]
+  const presetFields = exportPresetFields[exportPreset.value]
+  exportFields.value = [...(presetFields || defaultExportFields)]
 }
 
 const handleExport = async () => {
@@ -574,17 +778,18 @@ const handleExport = async () => {
       deptCode: query.deptCode,
       month: query.month,
       status: query.status,
-      fields: exportFields.value
+      fields: exportFields.value,
+      selectedTasks: exportSelectedOnly.value ? selectedTaskRefs() : null
     })
     const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `稿费清单_${query.month || '全部'}.xlsx`
+    link.download = `${exportSelectedOnly.value ? '已选稿费清单' : '稿费清单'}_${query.month || '全部'}.xlsx`
     link.click()
     window.URL.revokeObjectURL(url)
     exportVisible.value = false
-    ElMessage.success('导出完成')
+    ElMessage.success(exportSelectedOnly.value ? `已导出 ${selectedRecords.value.length} 个选中任务` : '导出完成')
   } finally {
     exporting.value = false
   }
@@ -658,6 +863,21 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.export-preset-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+  margin-bottom: 18px;
+}
+
+.export-preset-list :deep(.el-radio-button) {
+  width: 100%;
+}
+
+.export-preset-list :deep(.el-radio-button__inner) {
+  width: 100%;
 }
 
 .export-field-list {

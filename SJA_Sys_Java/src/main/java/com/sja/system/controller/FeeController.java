@@ -4,10 +4,13 @@ import com.sja.system.common.PageResult;
 import com.sja.system.common.Result;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeAuditDTO;
+import com.sja.system.dto.FeeBatchAuditDTO;
 import com.sja.system.dto.FeeSubmitDTO;
 import com.sja.system.dto.FeeExportDTO;
+import com.sja.system.dto.MonthlyFeeExportDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.FeeService;
+import com.sja.system.service.MonthlyFeeExportService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.FeeContributorVO;
 import com.sja.system.vo.FeeDetailVO;
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.validation.Valid;
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -41,6 +45,7 @@ import java.util.List;
 public class FeeController {
 
     private final FeeService feeService;
+    private final MonthlyFeeExportService monthlyFeeExportService;
     private final UserService userService;
     private final SecurityUtils securityUtils;
 
@@ -130,6 +135,13 @@ public class FeeController {
         return Result.success();
     }
 
+    @PostMapping("/calculate")
+    @PreAuthorize("hasAnyAuthority('fee:submit', 'fee:audit', 'fee:edit')")
+    public Result<List<BigDecimal>> calculateFee(@RequestBody @Valid FeeSubmitDTO dto) {
+        // 202608111533 - 修复了管理员编辑视频计费字段时参与人员稿费不能实时预览的问题。
+        return Result.success(feeService.calculateFee(dto));
+    }
+
     /**
      * Audit (approve/reject) a fee record.
      */
@@ -152,6 +164,24 @@ public class FeeController {
         }
 
         feeService.auditFee(id, workType, dto, auditorId, auditorName, auditorRole);
+        return Result.success();
+    }
+
+    @PutMapping("/audit/batch")
+    @PreAuthorize("hasAuthority('fee:audit')")
+    public Result<Void> batchAuditFee(@RequestBody @Valid FeeBatchAuditDTO dto,
+                                      HttpServletRequest request) {
+        Long auditorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (auditorId == null) {
+            return Result.error(401, "未授权");
+        }
+        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
+            return Result.error(403, "只有管理员或秘书长可以批量审核稿费");
+        }
+        // 202608111533 - 修复了稿费审核页缺少批量通过和批量驳回能力的问题。
+        feeService.batchAuditFee(dto, auditorId,
+                securityUtils.getCurrentUsernameFromToken(request), String.valueOf(roleCode));
         return Result.success();
     }
 
@@ -203,5 +233,18 @@ public class FeeController {
             throw ApiException.unauthorized("未授权");
         }
         feeService.exportFee(dto, operatorId, roleCode, response);
+    }
+
+    @PostMapping("/monthly-summary/export")
+    @PreAuthorize("hasAuthority('fee:export')")
+    public void exportMonthlySummary(@RequestBody @Valid MonthlyFeeExportDTO dto,
+                                     HttpServletRequest request,
+                                     HttpServletResponse response) {
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) throw ApiException.unauthorized("未授权");
+        // 202608111715 - 新增了月份稿费发放名单导出接口。
+        monthlyFeeExportService.export(dto, operatorId, roleCode,
+                securityUtils.getCurrentUsernameFromToken(request), response);
     }
 }

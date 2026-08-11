@@ -76,7 +76,7 @@
         <el-pagination
           v-model:current-page="query.pageNum"
           v-model:page-size="query.pageSize"
-          :page-sizes="[10, 20, 50, allUsersPageSize]"
+          :page-sizes="[10, 20, 50, 100, 200]"
           layout="total, sizes, prev, pager, next"
           :total="total"
           @size-change="loadUsers"
@@ -247,7 +247,6 @@ import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDeta
 import { getDeptList, getRoleList } from '@/api/system'
 import { uploadAvatar } from '@/api/upload'
 
-const allUsersPageSize = 9999
 const query = reactive({ realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', isValid: '', pageNum: 1, pageSize: 10 })
 const users = ref([])
 const total = ref(0)
@@ -367,7 +366,8 @@ const search = () => {
 
 const reset = () => {
   clearSelection()
-  Object.assign(query, { realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', isValid: '', pageNum: 1, pageSize: allUsersPageSize })
+  // 202608111533 - 修复了人员管理分页不能选择100或200条并使用9999条加载全部数据的问题。
+  Object.assign(query, { realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', isValid: '', pageNum: 1, pageSize: 10 })
   loadUsers()
 }
 
