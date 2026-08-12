@@ -23,6 +23,3 @@ dist-ssr
 *.sln
 *.sw?
 ./SJA_System/SJA_Sys_Java/uploads
-
-### 验证码 ###
-/tac/
