@@ -299,7 +299,10 @@ const userFormRules = {
   realName: requiredText('姓名'),
   gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
   studentNo: requiredText('学号'),
-  phone: requiredText('手机号'),
+  phone: [
+    ...requiredText('手机号'),
+    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的11位手机号', trigger: 'blur' }
+  ],
   password: [
     { required: true, message: '请输入初始密码', trigger: 'blur' },
     { min: 6, max: 50, message: '密码长度应为 6 到 50 个字符', trigger: 'blur' }

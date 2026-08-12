@@ -409,7 +409,7 @@ const exportPresetOptions = [
   { label: '自定义', value: 'CUSTOM' }
 ]
 const commonWorkFields = [
-  'workType', 'title', 'category', 'publishDate', 'articleLink',
+  'title', 'category', 'publishDate', 'articleLink',
   'contributorNames', 'contributorAmounts', 'totalAmount',
   'isSpecialNode', 'specialMultiplier', 'remark'
 ]
@@ -424,7 +424,7 @@ const exportPresetFields = {
     ...commonWorkFields.slice(6)
   ],
   SUBSIDY: [
-    'workType', 'title', 'category', 'subsidyMonth',
+    'title', 'category', 'subsidyMonth',
     'contributorNames', 'contributorAmounts', 'totalAmount', 'remark'
   ]
 }

@@ -196,7 +196,7 @@
                 <el-input
                   v-model="passwordForm.newPassword"
                   type="password"
-                  placeholder="请输入新密码（至少6位）"
+                  placeholder="请输入8到64位英文字母和数字组合"
                   show-password
                 />
               </el-form-item>
@@ -336,7 +336,8 @@ const passwordRules = {
   ],
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, message: '密码至少6位', trigger: 'blur' }
+    { min: 8, max: 64, message: '密码长度必须为8到64位', trigger: 'blur' },
+    { pattern: /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]+$/, message: '必须同时包含英文字母和数字', trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: '请确认新密码', trigger: 'blur' },

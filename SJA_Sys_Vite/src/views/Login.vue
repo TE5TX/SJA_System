@@ -4,7 +4,7 @@
       <template #header>
         <div class="login-header">
           <h2>校记者团管理系统</h2>
-          <p>输入您的学号（账号）和密码</p>
+          <p>输入您的学号（账号）或手机号和密码</p>
         </div>
       </template>
 
@@ -12,7 +12,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="loginForm.username"
-            placeholder="学号（账号）"
+            placeholder="学号（账号）或手机号"
             prefix-icon="User"
             size="large"
             @input="loginError = ''"
@@ -72,7 +72,7 @@ const loginForm = reactive({
 
 const rules = {
   username: [
-    { required: true, message: '请输入学号（账号）', trigger: 'blur' }
+    { required: true, message: '请输入学号（账号）或手机号', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
@@ -90,7 +90,7 @@ const handleLogin = async () => {
     if (valid) {
       loading.value = true
       try {
-        // 202608101717 - 清理账号首尾空白，并在登录失败时显示明确提示。
+        // 202608121431 - 增加了使用手机号和密码登录系统的功能。
         const res = await login({ username: loginForm.username, password: loginForm.password })
         const { token, userInfo, menus, mustChangePassword } = res.data
 

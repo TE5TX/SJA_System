@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 验证码 ###
+/tianai-captcha-1.5.5/

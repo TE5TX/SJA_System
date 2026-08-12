@@ -5,7 +5,7 @@
       <template #header>
         <div>
           <h1>设置新密码</h1>
-          <p>首次登录需要修改初始密码后才能进入系统。</p>
+          <p>首次登录需要修改初始密码，新密码由英文字母和数字组成。</p>
         </div>
       </template>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
@@ -47,7 +47,8 @@ const rules = {
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
     { min: 8, max: 64, message: '密码长度必须为8到64位', trigger: 'blur' },
-    { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/, message: '必须同时包含大写字母、小写字母和数字', trigger: 'blur' }
+    // 202608121431 - 放宽了首次登录密码格式，不再要求同时包含大小写字母。
+    { pattern: /^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]+$/, message: '必须同时包含英文字母和数字', trigger: 'blur' }
   ],
   confirmPassword: [{ validator: validateConfirm, trigger: 'blur' }]
 }

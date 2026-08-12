@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   `class_name` VARCHAR(50) DEFAULT NULL COMMENT '班级',
   `dorm_address` VARCHAR(100) DEFAULT NULL COMMENT '宿舍地址',
   `phone` VARCHAR(20) DEFAULT NULL COMMENT '手机号',
+  `phone_unique` VARCHAR(20) GENERATED ALWAYS AS (
+    CASE WHEN CHAR_LENGTH(TRIM(`phone`)) = 11 THEN TRIM(`phone`) ELSE NULL END
+  ) STORED COMMENT '用于保证合法长度手机号唯一',
   `bank_card` VARCHAR(30) DEFAULT NULL COMMENT '银行卡号',
   `is_valid` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否有效',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
@@ -58,7 +61,8 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`),
-  UNIQUE KEY `uk_student_no` (`student_no`)
+  UNIQUE KEY `uk_student_no` (`student_no`),
+  UNIQUE KEY `uk_phone` (`phone_unique`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
 -- 1.4 用户-角色关联表

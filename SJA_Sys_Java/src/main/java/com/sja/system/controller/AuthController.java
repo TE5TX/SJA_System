@@ -65,15 +65,16 @@ public class AuthController {
      */
     @PostMapping("/login")
     public Result<LoginVO> login(@RequestBody @Valid LoginDTO dto) {
+        String loginIdentifier = dto.getUsername().trim();
         try {
             // 1. Authenticate with Spring Security
             Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(dto.getUsername(), dto.getPassword())
+                    new UsernamePasswordAuthenticationToken(loginIdentifier, dto.getPassword())
             );
 
-            // 2. Load user from database
+            // 手机号认证成功后，authentication.getName() 是数据库中的真实登录账号。
             QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
-            userQuery.eq("username", dto.getUsername()).eq("is_valid", 1);
+            userQuery.eq("username", authentication.getName()).eq("is_valid", 1);
             SysUser user = sysUserMapper.selectOne(userQuery);
 
             if (user == null) {
@@ -130,7 +131,7 @@ public class AuthController {
             return Result.success(loginVO);
 
         } catch (BadCredentialsException e) {
-            log.warn("Login failed - bad credentials for user: {}", dto.getUsername());
+            log.warn("Login failed - bad credentials for user: {}", loginIdentifier);
             throw ApiException.unauthorized("用户名或密码错误");
         } catch (AuthenticationException e) {
             log.error("Authentication failed: {}", e.getMessage());

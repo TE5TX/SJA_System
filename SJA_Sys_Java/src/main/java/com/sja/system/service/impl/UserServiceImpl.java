@@ -47,6 +47,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
+    private static final String PHONE_PATTERN = "^1[3-9]\\d{9}$";
+
     private final SysUserMapper sysUserMapper;
     private final SysRoleMapper sysRoleMapper;
     private final SysDeptMapper sysDeptMapper;
@@ -80,6 +82,7 @@ public class UserServiceImpl implements UserService {
         if (user == null) {
             throw ApiException.notFound("用户不存在");
         }
+        String phone = normalizeAndValidatePhone(dto.getPhone());
 
         SysUser update = new SysUser();
         update.setId(userId);
@@ -149,8 +152,9 @@ public class UserServiceImpl implements UserService {
         }
 
         // 手机号
-        if (dto.getPhone() != null && !dto.getPhone().equals(user.getPhone())) {
-            update.setPhone(dto.getPhone());
+        if (!phone.equals(user.getPhone())) {
+            ensurePhoneAvailable(phone, userId);
+            update.setPhone(phone);
             changedFields.append("phone; ");
         }
 
@@ -367,6 +371,7 @@ public class UserServiceImpl implements UserService {
                            String operatorName, String operatorRole) {
         String studentNo = dto.getStudentNo().trim();
         String idCard = dto.getIdCard().trim();
+        String phone = normalizeAndValidatePhone(dto.getPhone());
 
         QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
         studentNoCheck.eq("student_no", studentNo).or().eq("username", studentNo);
@@ -379,6 +384,8 @@ public class UserServiceImpl implements UserService {
         if (sysUserMapper.selectCount(idCardCheck) > 0) {
             throw ApiException.conflict("该身份证号已被其他用户使用");
         }
+
+        ensurePhoneAvailable(phone, null);
 
         List<Long> deptIds = distinctIds(dto.getDeptIds(), "部门");
         List<Long> roleIds = distinctIds(dto.getRoleIds(), "角色");
@@ -397,7 +404,7 @@ public class UserServiceImpl implements UserService {
         user.setCollege(dto.getCollege().trim());
         user.setClassName(dto.getClassName().trim());
         user.setDormAddress(dto.getDormAddress().trim());
-        user.setPhone(dto.getPhone().trim());
+        user.setPhone(phone);
         user.setBankCard(dto.getBankCard().trim());
         user.setIsValid(dto.getIsValid());
         user.setRemark(dto.getRemark().trim());
@@ -462,7 +469,10 @@ public class UserServiceImpl implements UserService {
         }
         if (updates.containsKey("phone")) {
             String oldVal = user.getPhone();
-            String newVal = (String) updates.get("phone");
+            String newVal = normalizeAndValidatePhone((String) updates.get("phone"));
+            if (!newVal.equals(oldVal)) {
+                ensurePhoneAvailable(newVal, userId);
+            }
             update.setPhone(newVal);
             detail.append(String.format("phone [%s]->[%s]; ", oldVal, newVal));
             hasUserFieldUpdate = true;
@@ -767,6 +777,26 @@ public class UserServiceImpl implements UserService {
             userRole.setUserId(userId);
             userRole.setRoleId(roleId);
             sysUserRoleMapper.insert(userRole);
+        }
+    }
+
+    private String normalizeAndValidatePhone(String phone) {
+        String normalized = phone == null ? "" : phone.trim();
+        if (!normalized.matches(PHONE_PATTERN)) {
+            throw ApiException.badRequest("请输入正确的11位手机号");
+        }
+        return normalized;
+    }
+
+    // 202608121431 - 增加了新增和修改人员时的手机号唯一性校验。
+    private void ensurePhoneAvailable(String phone, Long excludedUserId) {
+        QueryWrapper<SysUser> phoneCheck = new QueryWrapper<>();
+        phoneCheck.and(query -> query.eq("phone", phone).or().eq("username", phone));
+        if (excludedUserId != null) {
+            phoneCheck.ne("id", excludedUserId);
+        }
+        if (sysUserMapper.selectCount(phoneCheck) > 0) {
+            throw ApiException.conflict("该手机号已被其他用户使用");
         }
     }
 

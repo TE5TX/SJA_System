@@ -19,6 +19,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserDetailsServiceImpl implements UserDetailsService {
 
+    private static final String PHONE_PATTERN = "^1[3-9]\\d{9}$";
+
     private final SysUserMapper sysUserMapper;
     private final SysUserRoleMapper sysUserRoleMapper;
     private final SysRoleMapper sysRoleMapper;
@@ -40,15 +43,23 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     private final SysMenuMapper sysMenuMapper;
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // 1. Find user by username
+    public UserDetails loadUserByUsername(String loginIdentifier) throws UsernameNotFoundException {
+        String identifier = loginIdentifier == null ? "" : loginIdentifier.trim();
+
+        // 202608121431 - 增加了使用手机号和密码登录系统的功能。
         QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
-        userQuery.eq("username", username).eq("is_valid", 1);
+        userQuery.eq("username", identifier).eq("is_valid", 1);
         SysUser user = sysUserMapper.selectOne(userQuery);
 
+        if (user == null && StringUtils.hasText(identifier) && identifier.matches(PHONE_PATTERN)) {
+            QueryWrapper<SysUser> phoneQuery = new QueryWrapper<>();
+            phoneQuery.eq("phone", identifier).eq("is_valid", 1);
+            user = sysUserMapper.selectOne(phoneQuery);
+        }
+
         if (user == null) {
-            log.warn("User not found or inactive: {}", username);
-            throw new UsernameNotFoundException("用户不存在或已被禁用: " + username);
+            log.warn("User not found or inactive: {}", identifier);
+            throw new UsernameNotFoundException("用户不存在或已被禁用: " + identifier);
         }
 
         // 2. Find user-role associations
@@ -94,7 +105,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             authorities.add(new SimpleGrantedAuthority("ROLE_13"));
         }
 
-        log.debug("Loaded user: {}, authorities: {}", username, authorities);
+        log.debug("Loaded user: {}, authorities: {}", user.getUsername(), authorities);
 
         return new User(user.getUsername(), user.getPassword(), authorities);
     }

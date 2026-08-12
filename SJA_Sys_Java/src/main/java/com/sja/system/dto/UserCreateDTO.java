@@ -7,6 +7,7 @@ import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 import java.util.List;
 
@@ -38,7 +39,7 @@ public class UserCreateDTO {
     private String idCard;
 
     @NotBlank(message = "手机号不能为空")
-    @Size(max = 20, message = "手机号不能超过 20 个字符")
+    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
     private String phone;
 
     @NotBlank(message = "学院不能为空")

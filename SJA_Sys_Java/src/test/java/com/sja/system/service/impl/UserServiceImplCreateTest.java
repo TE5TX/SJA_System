@@ -1,5 +1,6 @@
 package com.sja.system.service.impl;
 
+import com.sja.system.common.ApiException;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.entity.SysDept;
 import com.sja.system.entity.SysRole;
@@ -18,9 +19,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +66,27 @@ class UserServiceImplCreateTest {
         verify(userRoleMapper).insert(any(SysUserRole.class));
         verify(operationLogService).log(eq(1L), eq("admin"), eq("8"), eq("CREATE"),
                 eq("USER"), eq(99L), any(String.class), eq(""));
+    }
+
+    @Test
+    void rejectsDuplicatePhoneBeforeCreatingUser() {
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        SysRoleMapper roleMapper = mock(SysRoleMapper.class);
+        SysDeptMapper deptMapper = mock(SysDeptMapper.class);
+        SysUserRoleMapper userRoleMapper = mock(SysUserRoleMapper.class);
+        SysUserDeptMapper userDeptMapper = mock(SysUserDeptMapper.class);
+        OperationLogService operationLogService = mock(OperationLogService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserServiceImpl service = new UserServiceImpl(userMapper, roleMapper, deptMapper,
+                userRoleMapper, userDeptMapper, operationLogService, passwordEncoder);
+        when(userMapper.selectCount(any())).thenReturn(0L, 0L, 1L);
+
+        ApiException exception = assertThrows(ApiException.class,
+                () -> service.createUser(createDto(), 1L, "admin", "8"));
+
+        assertEquals(409, exception.getStatus());
+        assertEquals("该手机号已被其他用户使用", exception.getMessage());
+        verify(userMapper, never()).insert(any(SysUser.class));
     }
 
     private UserCreateDTO createDto() {
