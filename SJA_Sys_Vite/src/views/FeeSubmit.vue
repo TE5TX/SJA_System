@@ -155,19 +155,30 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="补贴月份" required>
-                <el-date-picker v-model="form.workInfo.subsidyMonth" type="month" value-format="YYYY-MM" />
+                <el-date-picker
+                  v-model="form.workInfo.subsidyMonth"
+                  type="month"
+                  format="YYYY年MM月"
+                  value-format="YYYY-MM"
+                  :editable="false"
+                  :clearable="false"
+                />
               </el-form-item>
             </template>
 
             <el-row v-if="form.workType !== 'SUBSIDY'" :gutter="16">
-              <el-col :span="12">
+              <el-col v-if="form.workInfo.isPublished === 1" :span="12">
                 <el-form-item label="发布时间" required>
                   <div class="wheel-date-picker" @wheel.capture.prevent.stop="adjustPublishDateByWheel">
                     <el-date-picker
                       v-model="form.workInfo.publishDate"
                       type="date"
+                      format="YYYY年MM月DD日"
                       value-format="YYYY-MM-DD"
+                      :editable="false"
+                      :clearable="false"
                       :teleported="false"
+                      popper-class="single-year-date-picker"
                     />
                   </div>
                 </el-form-item>
@@ -272,7 +283,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AuthorInput from '@/components/AuthorInput.vue'
@@ -315,6 +326,8 @@ const authorInputValid = ref(true)
 const shooterInputValid = ref(true)
 const editorInputValid = ref(true)
 const form = reactive({ workType: 'EDITORIAL', workInfo: {}, contributors: [] })
+const draftReady = ref(false)
+const DRAFT_VERSION = 1
 const usesAuthorSelector = computed(() => ['EDITORIAL', 'PHOTO', 'VISUAL', 'SUBSIDY'].includes(form.workType))
 const needsContributorWorkCount = computed(() =>
   (form.workType === 'PHOTO' && ['院网', '校报'].includes(form.workInfo.platform)) ||
@@ -384,6 +397,74 @@ const resetWorkInfo = () => {
   editorInputValid.value = true
 }
 
+// 202608120848 - 修复了稿费提交页面刷新后未提交的表单和参与人员数据丢失的问题。
+const feeDraftKey = () => {
+  const info = userStore.userInfo || {}
+  const identity = info.id ?? info.userId ?? info.username ?? info.studentNo
+  return identity == null || identity === '' ? '' : `sja-fee-submit-draft-v${DRAFT_VERSION}-${identity}`
+}
+
+const saveFeeDraft = () => {
+  const key = feeDraftKey()
+  if (!key || !draftReady.value) return
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      version: DRAFT_VERSION,
+      savedAt: Date.now(),
+      workType: form.workType,
+      workInfo: { ...form.workInfo },
+      contributors: form.contributors.map(item => ({
+        userId: item.userId,
+        roleInWork: item.roleInWork,
+        workCount: item.workCount,
+        feeAmount: item.feeAmount,
+        remark: item.remark || ''
+      })),
+      authorNamesInput: authorNamesInput.value,
+      shooterNamesInput: shooterNamesInput.value,
+      editorNamesInput: editorNamesInput.value
+    }))
+  } catch (error) {
+    console.warn('Failed to save fee submission draft:', error)
+  }
+}
+
+const clearFeeDraft = () => {
+  const key = feeDraftKey()
+  if (key) localStorage.removeItem(key)
+}
+
+const restoreFeeDraft = () => {
+  const key = feeDraftKey()
+  if (!key) return false
+  try {
+    const stored = localStorage.getItem(key)
+    if (!stored) return false
+    const draft = JSON.parse(stored)
+    const allowedWorkTypes = workTypeOptions.value.map(item => item.value)
+    if (draft?.version !== DRAFT_VERSION || !allowedWorkTypes.includes(draft.workType)) {
+      localStorage.removeItem(key)
+      return false
+    }
+
+    form.workType = draft.workType
+    form.workInfo = { ...createWorkInfo(draft.workType), ...(draft.workInfo || {}) }
+    form.contributors = Array.isArray(draft.contributors)
+      ? draft.contributors
+        .filter(item => item?.userId != null && item?.roleInWork)
+        .map(item => ({ ...createContributor(item.userId, item.roleInWork), ...item }))
+      : []
+    authorNamesInput.value = String(draft.authorNamesInput || '')
+    shooterNamesInput.value = String(draft.shooterNamesInput || '')
+    editorNamesInput.value = String(draft.editorNamesInput || '')
+    return true
+  } catch (error) {
+    console.warn('Failed to restore fee submission draft:', error)
+    localStorage.removeItem(key)
+    return false
+  }
+}
+
 const handlePlatformChange = () => {
   rememberPlatform(form.workType, form.workInfo.platform)
   if (form.workType === 'EDITORIAL') {
@@ -407,7 +488,12 @@ const adjustPublishDateByWheel = event => {
   const current = parts.length === 3 && parts.every(Number.isFinite)
     ? new Date(parts[0], parts[1] - 1, parts[2])
     : new Date()
-  current.setDate(current.getDate() + (event.deltaY > 0 ? 1 : -1))
+  const originalDay = current.getDate()
+  current.setDate(1)
+  current.setMonth(current.getMonth() + (event.deltaY > 0 ? 1 : -1))
+  const lastDay = new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate()
+  current.setDate(Math.min(originalDay, lastDay))
+  // 202608121041 - 优化了稿费提交日期选择并将鼠标滚轮调整单位由日期改为月份。
   form.workInfo.publishDate = formatDateValue(current)
 }
 
@@ -461,7 +547,9 @@ const authorInitial = userId => authorName(userId).slice(0, 1)
 const validate = () => {
   const title = form.workType === 'VIDEO' ? form.workInfo.videoTitle : form.workInfo.title
   if (!title) return '请填写作品标题'
-  if (form.workType !== 'SUBSIDY' && !form.workInfo.publishDate) return '请选择发布时间'
+  if (form.workType !== 'SUBSIDY' && form.workInfo.isPublished === 1 && !form.workInfo.publishDate) {
+    return '请选择发布时间'
+  }
   if (form.workType === 'SUBSIDY' && !form.workInfo.subsidyMonth) return '请选择补贴月份'
   // 202608101716 - 移除了摄影部稿费提交中的类别字段及对应校验。
   const categoryRequired = form.workType !== 'PHOTO'
@@ -491,9 +579,14 @@ const handleSubmit = async () => {
 
   submitting.value = true
   try {
+    const submittedWorkInfo = { ...form.workInfo }
+    // 202608121145 - 修复了未发布稿费任务仍提交发布日期的问题。
+    if (form.workType !== 'SUBSIDY' && submittedWorkInfo.isPublished !== 1) {
+      delete submittedWorkInfo.publishDate
+    }
     await submitFee({
       workType: form.workType,
-      workInfo: { ...form.workInfo },
+      workInfo: submittedWorkInfo,
       contributors: form.contributors.map(item => ({
         userId: Number(item.userId),
         roleInWork: form.workType === 'VISUAL' ? 'DESIGNER' : (form.workType === 'SUBSIDY' ? 'MEMBER' : (usesAuthorSelector.value ? 'AUTHOR' : item.roleInWork)),
@@ -503,7 +596,11 @@ const handleSubmit = async () => {
       }))
     })
     ElMessage.success('稿费任务已提交')
+    draftReady.value = false
+    clearFeeDraft()
     resetWorkInfo()
+    await nextTick()
+    draftReady.value = true
   } finally {
     submitting.value = false
   }
@@ -519,12 +616,15 @@ const loadUsers = async () => {
 }
 
 resetWorkInfo()
-onMounted(() => {
+onMounted(async () => {
   if (!workTypeOptions.value.some(item => item.value === form.workType) && workTypeOptions.value.length) {
     form.workType = workTypeOptions.value[0].value
     resetWorkInfo()
   }
-  loadUsers()
+  await loadUsers()
+  const restored = restoreFeeDraft()
+  draftReady.value = true
+  if (restored) ElMessage.success('已恢复未提交的稿费草稿')
 })
 
 watch(workTypeOptions, options => {
@@ -533,6 +633,19 @@ watch(workTypeOptions, options => {
     resetWorkInfo()
   }
 })
+
+watch(
+  () => ({
+    workType: form.workType,
+    workInfo: form.workInfo,
+    contributors: form.contributors,
+    authorNamesInput: authorNamesInput.value,
+    shooterNamesInput: shooterNamesInput.value,
+    editorNamesInput: editorNamesInput.value
+  }),
+  saveFeeDraft,
+  { deep: true, flush: 'sync' }
+)
 </script>
 
 <style scoped>
@@ -566,6 +679,12 @@ watch(workTypeOptions, options => {
 .wheel-date-picker,
 .author-selector {
   width: 100%;
+}
+
+/* 202608121123 - 移除了日期选择器中容易误触的跨年双箭头按钮。 */
+:global(.single-year-date-picker .d-arrow-left),
+:global(.single-year-date-picker .d-arrow-right) {
+  display: none;
 }
 
 .author-selector {

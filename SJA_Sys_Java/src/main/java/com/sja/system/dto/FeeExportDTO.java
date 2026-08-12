@@ -14,6 +14,8 @@ public class FeeExportDTO {
     private String month;
     private String status;
 
+    private String contributorName;
+
     @NotEmpty(message = "导出字段不能为空")
     private List<String> fields;
 

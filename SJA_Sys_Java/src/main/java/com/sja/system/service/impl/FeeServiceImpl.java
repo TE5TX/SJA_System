@@ -1,6 +1,8 @@
 package com.sja.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
@@ -76,6 +78,7 @@ public class FeeServiceImpl implements FeeService {
         Map<String, Object> workInfo = dto.getWorkInfo();
         List<FeeSubmitDTO.ContributorDTO> contributors = dto.getContributors();
         ensureCanSubmitWorkType(userId, roleCode, workType);
+        normalizeUnpublishedPublishDate(workType, workInfo);
         // 202608101042 - 修复了作品和同月补贴可以重复计费的问题。
         ensureNotDuplicate(workType, workInfo, contributors, null);
         boolean canSeeAmount = canManageFeeAmount(roleCode);
@@ -148,7 +151,7 @@ public class FeeServiceImpl implements FeeService {
     }
 
     @Override
-    public PageResult<FeeListVO> getFeeList(String deptCode, String month, String status,
+    public PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, String contributorName,
                                             Integer pageNum, Integer pageSize,
                                             Long operatorId, Integer roleCode) {
         int pn = pageNum != null ? Math.max(1, pageNum) : 1;
@@ -185,17 +188,23 @@ public class FeeServiceImpl implements FeeService {
                     .collect(Collectors.toList());
         }
 
+        // 202608121041 - 新增了按参与人员姓名查找稿费任务的功能。
+        if (StringUtils.hasText(contributorName)) {
+            Set<String> matchedTasks = findTasksByContributorName(contributorName);
+            allItems = allItems.stream()
+                    .filter(item -> matchedTasks.contains(feeTaskKey(item.getWorkType(), item.getId())))
+                    .collect(Collectors.toList());
+        }
+
         if (!canManageFeeAmount(roleCode)) {
             allItems.forEach(item -> item.setTotalAmount(null));
         }
 
-        // Sort by createTime desc
-        allItems.sort((a, b) -> {
-            if (a.getCreateTime() == null && b.getCreateTime() == null) return 0;
-            if (a.getCreateTime() == null) return 1;
-            if (b.getCreateTime() == null) return -1;
-            return b.getCreateTime().compareTo(a.getCreateTime());
-        });
+        // 202608121041 - 修复了稿费审核列表未按发布日期由近到远排列的问题。
+        allItems.sort(Comparator
+                .comparing(FeeListVO::getPublishDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(FeeListVO::getCreateTime, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(FeeListVO::getId, Comparator.nullsLast(Comparator.reverseOrder())));
 
         // Manual pagination
         long total = allItems.size();
@@ -370,6 +379,7 @@ public class FeeServiceImpl implements FeeService {
                 ? dto.getWorkInfo()
                 : preserveRestrictedFeeFields(workType, id, dto.getWorkInfo());
 
+        normalizeUnpublishedPublishDate(workType, workInfo);
         ensureNotDuplicate(workType, workInfo, dto.getContributors(), id);
 
         updateWorkInfo(workType, id, workInfo);
@@ -378,11 +388,9 @@ public class FeeServiceImpl implements FeeService {
         deleteQuery.eq("work_type", workType).eq("work_id", id);
         contributorMapper.delete(deleteQuery);
 
-        // 202608111533 - 修复了管理员或秘书长编辑视频计费条件后仍保存旧个人稿费的问题。
-        boolean recalculateAutomatically = !canManageAmount || VIDEO.equals(workType);
-        List<BigDecimal> automaticFees = recalculateAutomatically
-                ? feeCalculationService.calculateAutomaticFees(workType, workInfo, dto.getContributors())
-                : null;
+        // 202608121041 - 修复了管理员或秘书长编辑采编、摄影、视觉任务后仍保存旧个人稿费的问题。
+        List<BigDecimal> automaticFees = feeCalculationService.calculateAutomaticFees(
+                workType, workInfo, dto.getContributors());
         BigDecimal totalAmount = BigDecimal.ZERO;
         if (dto.getContributors() != null) {
             for (int index = 0; index < dto.getContributors().size(); index++) {
@@ -392,9 +400,7 @@ public class FeeServiceImpl implements FeeService {
                 contributor.setWorkId(id);
                 contributor.setUserId(c.getUserId());
                 contributor.setRoleInWork((EDITORIAL.equals(workType) || PHOTO.equals(workType)) ? "AUTHOR" : c.getRoleInWork());
-                contributor.setFeeAmount(normalizeMoney(automaticFees != null
-                        ? automaticFees.get(index)
-                        : (c.getFeeAmount() != null ? c.getFeeAmount() : BigDecimal.ZERO)));
+                contributor.setFeeAmount(normalizeMoney(automaticFees.get(index)));
                 contributor.setWorkCount(c.getWorkCount());
                 contributor.setRemark(c.getRemark());
                 contributorMapper.insert(contributor);
@@ -588,6 +594,12 @@ public class FeeServiceImpl implements FeeService {
                     .filter(item -> !StringUtils.hasText(selectedPlatform) || selectedPlatform.equals(item.getPlatform()))
                     .filter(item -> !StringUtils.hasText(dto.getStatus()) || dto.getStatus().equals(item.getStatus()))
                     .collect(Collectors.toList());
+            if (StringUtils.hasText(dto.getContributorName())) {
+                Set<String> matchedTasks = findTasksByContributorName(dto.getContributorName());
+                allItems = allItems.stream()
+                        .filter(item -> matchedTasks.contains(feeTaskKey(item.getWorkType(), item.getId())))
+                        .collect(Collectors.toList());
+            }
 
             if (dto.getSelectedTasks() != null && !dto.getSelectedTasks().isEmpty()) {
                 Set<String> selectedTaskKeys = dto.getSelectedTasks().stream()
@@ -605,13 +617,10 @@ public class FeeServiceImpl implements FeeService {
                 // 202608111533 - 修复了稿费审核页不能只导出勾选任务的问题。
             }
 
-            // Sort by createTime desc
-            allItems.sort((a, b) -> {
-                if (a.getCreateTime() == null && b.getCreateTime() == null) return 0;
-                if (a.getCreateTime() == null) return 1;
-                if (b.getCreateTime() == null) return -1;
-                return b.getCreateTime().compareTo(a.getCreateTime());
-            });
+            allItems.sort(Comparator
+                    .comparing(FeeListVO::getPublishDate, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(FeeListVO::getCreateTime, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(FeeListVO::getId, Comparator.nullsLast(Comparator.reverseOrder())));
 
             List<List<String>> head = fields.stream()
                     .map(field -> Collections.singletonList(EXPORT_FIELD_LABELS.get(field)))
@@ -1070,6 +1079,31 @@ public class FeeServiceImpl implements FeeService {
             default:
                 throw ApiException.badRequest("不支持的作品类型: " + workType);
         }
+        clearStoredPublishDateIfUnpublished(workType, workId, info);
+    }
+
+    // 202608121145 - 修复了后端仍保存未发布任务发布日期的问题。
+    private void normalizeUnpublishedPublishDate(String workType, Map<String, Object> info) {
+        if (!SUBSIDY.equals(workType) && !Objects.equals(getIntVal(info, "isPublished"), 1)) {
+            info.put("publishDate", null);
+        }
+    }
+
+    private void clearStoredPublishDateIfUnpublished(String workType, Long workId, Map<String, Object> info) {
+        if (SUBSIDY.equals(workType) || Objects.equals(getIntVal(info, "isPublished"), 1)) return;
+        switch (workType) {
+            case EDITORIAL: clearStoredPublishDate(editorialMapper, workId); break;
+            case PHOTO: clearStoredPublishDate(photographyMapper, workId); break;
+            case VIDEO: clearStoredPublishDate(videoMapper, workId); break;
+            case VISUAL: clearStoredPublishDate(visualMapper, workId); break;
+            default: break;
+        }
+    }
+
+    private <T> void clearStoredPublishDate(BaseMapper<T> mapper, Long workId) {
+        UpdateWrapper<T> update = new UpdateWrapper<>();
+        update.eq("id", workId).set("publish_date", null);
+        mapper.update(null, update);
     }
 
     private void ensureCanSubmitWorkType(Long userId, Integer roleCode, String workType) {
@@ -1463,6 +1497,22 @@ public class FeeServiceImpl implements FeeService {
     private void resolveSubmitter(FeeListVO vo, Long submitterId) {
         SysUser user = submitterId != null ? sysUserMapper.selectById(submitterId) : null;
         vo.setSubmitterName(user != null ? user.getRealName() : "未知");
+    }
+
+    private Set<String> findTasksByContributorName(String contributorName) {
+        QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
+        userQuery.select("id")
+                .like("real_name", contributorName.trim());
+        List<Long> userIds = sysUserMapper.selectList(userQuery).stream()
+                .map(SysUser::getId)
+                .collect(Collectors.toList());
+        if (userIds.isEmpty()) return Collections.emptySet();
+
+        QueryWrapper<BizWorkContributor> contributorQuery = new QueryWrapper<>();
+        contributorQuery.select("work_type", "work_id").in("user_id", userIds);
+        return contributorMapper.selectList(contributorQuery).stream()
+                .map(item -> feeTaskKey(item.getWorkType(), item.getWorkId()))
+                .collect(Collectors.toSet());
     }
 
     private void ensureNotDuplicate(String workType, Map<String, Object> info,

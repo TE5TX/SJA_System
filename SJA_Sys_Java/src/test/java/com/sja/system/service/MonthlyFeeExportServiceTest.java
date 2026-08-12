@@ -13,6 +13,11 @@ import com.sja.system.mapper.SysUserDeptMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserRoleMapper;
 import com.sja.system.vo.MonthlyFeeComponentVO;
+import com.sja.system.vo.MonthlyEditorialPlatformVO;
+import org.apache.ibatis.annotations.Select;
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
+import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -23,6 +28,7 @@ import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -44,21 +50,31 @@ class MonthlyFeeExportServiceTest {
 
         SysDept presidium = dept(1L, "主席团", "PRESIDIUM", 1);
         SysDept editorial = dept(2L, "采编部", "EDITORIAL", 2);
-        when(deptMapper.selectList(any())).thenReturn(Arrays.asList(presidium, editorial));
+        SysDept photography = dept(3L, "摄影部", "PHOTOGRAPHY", 3);
+        SysDept visual = dept(4L, "视觉部", "VISUAL", 4);
+        when(deptMapper.selectList(any())).thenReturn(Arrays.asList(presidium, editorial, photography, visual));
         when(userMapper.selectList(any())).thenReturn(Arrays.asList(
-                user(1L, "主席成员", "440100000000000001"),
+                user(1L, "视觉主席", "440100000000000001"),
                 user(2L, "小队成员", null),
                 user(3L, "采编甲", "440100000000000003"),
                 user(4L, "采编乙", "440100000000000004"),
-                user(5L, "老师", "440100000000000005")));
+                user(5L, "老师", "440100000000000005"),
+                user(6L, "采编主席", "440100000000000006"),
+                user(7L, "小队队长", "440100000000000007"),
+                user(8L, "摄影甲", "440100000000000008")));
         when(userDeptMapper.selectList(any())).thenReturn(Arrays.asList(
-                userDept(1L, 1L), userDept(3L, 2L), userDept(4L, 2L)));
+                userDept(1L, 1L), userDept(1L, 4L), userDept(3L, 2L), userDept(4L, 2L),
+                userDept(6L, 1L), userDept(6L, 2L), userDept(8L, 3L)));
         when(roleMapper.selectList(any())).thenReturn(Arrays.asList(
-                role(3L, 3, "秘书长"), role(12L, 12, "校园小队队员"), role(2L, 2, "老师")));
+                role(1L, 1, "主席"), role(3L, 3, "秘书长"), role(2L, 2, "老师")));
         when(userRoleMapper.selectList(any())).thenReturn(Arrays.asList(
-                userRole(1L, 3L), userRole(2L, 12L), userRole(5L, 2L)));
+                userRole(1L, 3L), userRole(5L, 2L), userRole(6L, 1L)));
         when(exportMapper.selectMonthlyComponents(any(), any(), any())).thenReturn(Arrays.asList(
-                component(1L, "30.0"), component(1L, "40.0"), component(2L, "50.0")));
+                component(1L, "30.0", "主席团成员"), component(1L, "40.0", "微信统筹编辑"),
+                component(2L, "50.0", "校园巡查组员"), component(3L, "20.0", null),
+                component(4L, "30.0", null), component(6L, "10.0", "主席团成员"),
+                component(7L, "80.0", "校园巡查组长"), component(8L, "40.0", null)));
+        when(exportMapper.selectEditorialPlatforms()).thenReturn(Collections.emptyList());
 
         MonthlyFeeExportDTO dto = new MonthlyFeeExportDTO();
         dto.setMonth("2026-06");
@@ -70,15 +86,95 @@ class MonthlyFeeExportServiceTest {
             org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
             assertEquals("所属部门", sheet.getRow(0).getCell(0).getStringCellValue());
             assertEquals("主席团成员", sheet.getRow(1).getCell(0).getStringCellValue());
-            assertEquals("主席成员", sheet.getRow(1).getCell(1).getStringCellValue());
-            assertEquals("30+40", sheet.getRow(1).getCell(3).getStringCellValue());
-            assertEquals(70.0, sheet.getRow(1).getCell(4).getNumericCellValue());
-            assertEquals("校园巡查小组", sheet.getRow(2).getCell(0).getStringCellValue());
-            assertEquals("采编部", sheet.getRow(3).getCell(0).getStringCellValue());
-            assertEquals("采编乙", sheet.getRow(4).getCell(1).getStringCellValue());
-            assertEquals(120.0, sheet.getRow(5).getCell(4).getNumericCellValue());
-            assertEquals(1, sheet.getNumMergedRegions());
+            assertEquals("采编主席", sheet.getRow(1).getCell(1).getStringCellValue());
+            assertEquals("视觉主席", sheet.getRow(2).getCell(1).getStringCellValue());
+            assertEquals("30+40", sheet.getRow(2).getCell(3).getStringCellValue());
+            assertEquals(70.0, sheet.getRow(2).getCell(4).getNumericCellValue());
+            assertEquals("主席团+微信编辑", sheet.getRow(2).getCell(5).getStringCellValue());
+            assertEquals("校园巡查小组", sheet.getRow(3).getCell(0).getStringCellValue());
+            assertEquals("小队队长", sheet.getRow(3).getCell(1).getStringCellValue());
+            assertEquals("巡查组长", sheet.getRow(3).getCell(5).getStringCellValue());
+            assertEquals("小队成员", sheet.getRow(4).getCell(1).getStringCellValue());
+            assertEquals("巡查", sheet.getRow(4).getCell(5).getStringCellValue());
+            assertEquals("采编部", sheet.getRow(5).getCell(0).getStringCellValue());
+            assertEquals("摄影部", sheet.getRow(7).getCell(0).getStringCellValue());
+            assertEquals(300.0, sheet.getRow(8).getCell(4).getNumericCellValue());
+            for (org.apache.poi.ss.usermodel.Row row : sheet) {
+                assertFalse("老师".equals(row.getCell(1).getStringCellValue()));
+            }
+            assertEquals(3, sheet.getNumMergedRegions());
+            for (org.apache.poi.ss.usermodel.Row row : sheet) {
+                for (org.apache.poi.ss.usermodel.Cell cell : row) {
+                    assertEquals(HorizontalAlignment.CENTER, cell.getCellStyle().getAlignment());
+                    assertEquals(VerticalAlignment.CENTER, cell.getCellStyle().getVerticalAlignment());
+                    assertEquals(BorderStyle.THIN, cell.getCellStyle().getBorderTop());
+                    assertEquals(BorderStyle.THIN, cell.getCellStyle().getBorderBottom());
+                    assertEquals(BorderStyle.THIN, cell.getCellStyle().getBorderLeft());
+                    assertEquals(BorderStyle.THIN, cell.getCellStyle().getBorderRight());
+                }
+            }
         }
+    }
+
+    @Test
+    void exportsChairmanInResponsibilityOrder() throws Exception {
+        MonthlyFeeExportMapper exportMapper = mock(MonthlyFeeExportMapper.class);
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        SysDeptMapper deptMapper = mock(SysDeptMapper.class);
+        SysUserDeptMapper userDeptMapper = mock(SysUserDeptMapper.class);
+        SysRoleMapper roleMapper = mock(SysRoleMapper.class);
+        SysUserRoleMapper userRoleMapper = mock(SysUserRoleMapper.class);
+        MonthlyFeeExportService service = new MonthlyFeeExportService(exportMapper, userMapper, deptMapper,
+                userDeptMapper, roleMapper, userRoleMapper, mock(OperationLogService.class));
+
+        when(deptMapper.selectList(any())).thenReturn(Arrays.asList(
+                dept(1L, "主席团", "PRESIDIUM", 1), dept(2L, "采编部", "EDITORIAL", 2),
+                dept(3L, "摄影部", "PHOTOGRAPHY", 3), dept(4L, "视觉部", "VISUAL", 4),
+                dept(5L, "视频部", "VIDEO", 5)));
+        when(userMapper.selectList(any())).thenReturn(Arrays.asList(
+                user(1L, "主席", "1"), user(2L, "秘书长", "2"), user(3L, "采编微信", "3"),
+                user(4L, "采编院网", "4"), user(5L, "采编校报", "5"), user(6L, "摄影部长", "6"),
+                user(7L, "视觉部长", "7"), user(8L, "视频部长", "8")));
+        when(userDeptMapper.selectList(any())).thenReturn(Arrays.asList(
+                userDept(1L, 1L), userDept(2L, 1L),
+                userDept(3L, 1L), userDept(3L, 2L), userDept(4L, 1L), userDept(4L, 2L),
+                userDept(5L, 1L), userDept(5L, 2L), userDept(6L, 1L), userDept(6L, 3L),
+                userDept(7L, 1L), userDept(7L, 4L), userDept(8L, 1L), userDept(8L, 5L)));
+        when(roleMapper.selectList(any())).thenReturn(Arrays.asList(
+                role(1L, 1, "主席"), role(3L, 3, "秘书长"), role(4L, 4, "部长"),
+                role(5L, 5, "微信统筹编辑")));
+        when(userRoleMapper.selectList(any())).thenReturn(Arrays.asList(
+                userRole(1L, 1L), userRole(2L, 3L), userRole(3L, 4L), userRole(3L, 5L),
+                userRole(4L, 4L), userRole(5L, 4L), userRole(6L, 4L), userRole(7L, 4L), userRole(8L, 4L)));
+        when(exportMapper.selectMonthlyComponents(any(), any(), any())).thenReturn(Arrays.asList(
+                component(1L, "1.0", "主席团成员"), component(2L, "1.0", "主席团成员"),
+                component(3L, "1.0", "主席团成员"), component(4L, "1.0", "主席团成员"),
+                component(5L, "1.0", "主席团成员"), component(6L, "1.0", "主席团成员"),
+                component(7L, "1.0", "主席团成员"), component(8L, "1.0", "主席团成员")));
+        when(exportMapper.selectEditorialPlatforms()).thenReturn(Collections.singletonList(platform(4L, "院网")));
+
+        MonthlyFeeExportDTO dto = new MonthlyFeeExportDTO();
+        dto.setMonth("2026-06");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        service.export(dto, 99L, 0, "管理员", response);
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(response.getContentAsByteArray()))) {
+            org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
+            String[] expected = {"主席", "秘书长", "采编微信", "采编院网", "采编校报", "摄影部长", "视觉部长", "视频部长"};
+            for (int index = 0; index < expected.length; index++) {
+                assertEquals(expected[index], sheet.getRow(index + 1).getCell(1).getStringCellValue());
+            }
+        }
+    }
+
+    @Test
+    void monthlyComponentQueryOnlyIncludesApprovedTasks() throws Exception {
+        Select select = MonthlyFeeExportMapper.class
+                .getMethod("selectMonthlyComponents", java.time.LocalDate.class, java.time.LocalDate.class, String.class)
+                .getAnnotation(Select.class);
+        String sql = String.join(" ", select.value());
+        assertFalse(sql.contains("SUBMITTED"));
+        assertEquals(5, sql.split("audit_status='APPROVED'", -1).length - 1);
     }
 
     private SysUser user(Long id, String name, String idCard) {
@@ -101,10 +197,18 @@ class MonthlyFeeExportServiceTest {
         return SysUserRole.builder().userId(userId).roleId(roleId).build();
     }
 
-    private MonthlyFeeComponentVO component(Long userId, String amount) {
+    private MonthlyFeeComponentVO component(Long userId, String amount, String subsidyCategory) {
         MonthlyFeeComponentVO component = new MonthlyFeeComponentVO();
         component.setUserId(userId);
         component.setFeeAmount(new BigDecimal(amount));
+        component.setSubsidyCategory(subsidyCategory);
         return component;
+    }
+
+    private MonthlyEditorialPlatformVO platform(Long userId, String platform) {
+        MonthlyEditorialPlatformVO item = new MonthlyEditorialPlatformVO();
+        item.setUserId(userId);
+        item.setPlatform(platform);
+        return item;
     }
 }

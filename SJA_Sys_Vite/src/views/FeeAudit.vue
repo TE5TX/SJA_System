@@ -8,15 +8,34 @@
     <el-card>
       <template #header>
         <div class="toolbar">
-          <el-select v-model="query.deptCode" placeholder="全部部门" clearable>
+          <!-- 202608120849 - 修复了稿费审核筛选条件变化后必须点击查询按钮才会刷新数据的问题。 -->
+          <el-select v-model="query.deptCode" placeholder="全部部门" clearable @change="searchFees">
             <el-option v-for="dept in deptOptions" :key="dept.value" :label="dept.label" :value="dept.value" />
           </el-select>
-          <el-date-picker v-model="query.month" type="month" value-format="YYYY-MM" placeholder="全部月份" clearable />
-          <el-select v-model="query.status" placeholder="全部状态" clearable>
+          <el-date-picker
+            v-model="query.month"
+            type="month"
+            value-format="YYYY-MM"
+            placeholder="全部月份"
+            clearable
+            @change="searchFees"
+          />
+          <el-select v-model="query.status" placeholder="全部状态" clearable @change="searchFees">
             <el-option label="已提交" value="SUBMITTED" />
             <el-option label="已通过" value="APPROVED" />
             <el-option label="已驳回" value="REJECTED" />
           </el-select>
+          <!-- 202608121041 - 新增了按参与人员姓名实时查找稿费任务的功能。 -->
+          <el-input
+            v-model="query.contributorName"
+            class="contributor-search"
+            clearable
+            :prefix-icon="Search"
+            placeholder="查找参与人员"
+            @input="scheduleContributorSearch"
+            @clear="searchFees"
+            @keyup.enter="searchFees"
+          />
           <el-button type="primary" :icon="Search" @click="searchFees">查询</el-button>
           <el-button :icon="Refresh" @click="resetQuery">重置</el-button>
           <el-button v-if="canManageFeeAmount" type="success" :icon="Download" @click="openExport(false)">导出</el-button>
@@ -195,6 +214,7 @@
               type="date"
               value-format="YYYY-MM-DD"
               :teleported="false"
+              popper-class="single-year-date-picker"
             />
           </div>
           <el-date-picker
@@ -233,13 +253,13 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="canManageFeeAmount" :label="editForm.workType === 'VIDEO' ? '金额（自动）' : '金额'" width="150">
+        <el-table-column v-if="canManageFeeAmount" :label="isAutomaticEditType ? '金额（自动）' : '金额'" width="150">
           <template #default="{ row }">
             <el-input-number
               v-model="row.feeAmount"
               :min="0"
               :precision="1"
-              :disabled="editForm.workType === 'VIDEO'"
+              :disabled="isAutomaticEditType"
               controls-position="right"
             />
           </template>
@@ -312,7 +332,7 @@ const stepThousandNumberFields = ['readCount', 'wordCount']
 const numberFieldKeys = ['videoDurationSec', 'likeCount', 'authorCount', 'authorAvgFee']
 
 // 202608111533 - 修复了稿费审核与导出列表单页不能选择100或200条的问题。
-const query = reactive({ deptCode: '', month: '', status: '', pageNum: 1, pageSize: 10 })
+const query = reactive({ deptCode: '', month: '', status: '', contributorName: '', pageNum: 1, pageSize: 10 })
 const records = ref([])
 const total = ref(0)
 const loading = ref(false)
@@ -425,6 +445,8 @@ const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...role
 const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
 const canAuditFee = computed(() => [0, 3].includes(highestRoleCode.value))
 const canEditFeeTask = computed(() => [0, 3, 4].includes(highestRoleCode.value))
+const automaticEditTypes = new Set(['EDITORIAL', 'PHOTO', 'VISUAL', 'VIDEO'])
+const isAutomaticEditType = computed(() => automaticEditTypes.has(editForm.workType))
 const auditDialogTitle = computed(() => {
   const action = auditForm.approved ? '通过' : '驳回'
   return batchAuditMode.value ? `批量${action}稿费任务` : `审核${action}`
@@ -553,14 +575,21 @@ const loadList = async () => {
 }
 
 const searchFees = () => {
+  if (contributorSearchTimer) clearTimeout(contributorSearchTimer)
   clearSelection()
   query.pageNum = 1
   loadList()
 }
 
+let contributorSearchTimer
+const scheduleContributorSearch = () => {
+  if (contributorSearchTimer) clearTimeout(contributorSearchTimer)
+  contributorSearchTimer = setTimeout(searchFees, 300)
+}
+
 const resetQuery = () => {
   clearSelection()
-  Object.assign(query, { deptCode: '', month: '', status: '', pageNum: 1, pageSize: 10 })
+  Object.assign(query, { deptCode: '', month: '', status: '', contributorName: '', pageNum: 1, pageSize: 10 })
   loadList()
 }
 
@@ -609,19 +638,20 @@ const openEdit = async row => {
   editForm.workInfo = { ...(detail.value.workInfo || {}), remark: detail.value.remark || '' }
   editForm.contributors = (detail.value.contributors || []).map(item => ({ ...item }))
   editVisible.value = true
-  if (editForm.workType === 'VIDEO' && canManageFeeAmount.value) {
-    refreshVideoFeePreview()
+  if (isAutomaticEditType.value && canManageFeeAmount.value) {
+    scheduleAutomaticFeePreview()
   }
 }
 
-let videoPreviewSequence = 0
-const refreshVideoFeePreview = async () => {
-  if (!editVisible.value || editForm.workType !== 'VIDEO' || !canManageFeeAmount.value || !editForm.contributors.length) return
-  const sequence = ++videoPreviewSequence
+let feePreviewSequence = 0
+let feePreviewTimer
+const refreshAutomaticFeePreview = async () => {
+  if (!editVisible.value || !isAutomaticEditType.value || !canManageFeeAmount.value || !editForm.contributors.length) return
+  const sequence = ++feePreviewSequence
   videoPreviewLoading.value = true
   try {
     const res = await calculateFee({
-      workType: 'VIDEO',
+      workType: editForm.workType,
       workInfo: { ...editForm.workInfo },
       contributors: editForm.contributors.map(item => ({
         userId: Number(item.userId),
@@ -631,26 +661,31 @@ const refreshVideoFeePreview = async () => {
         remark: item.remark || ''
       }))
     })
-    if (sequence !== videoPreviewSequence) return
+    if (sequence !== feePreviewSequence) return
     ;(res.data || []).forEach((amount, index) => {
       if (editForm.contributors[index]) editForm.contributors[index].feeAmount = Number(amount)
     })
   } finally {
-    if (sequence === videoPreviewSequence) videoPreviewLoading.value = false
+    if (sequence === feePreviewSequence) videoPreviewLoading.value = false
   }
 }
 
+const scheduleAutomaticFeePreview = () => {
+  if (feePreviewTimer) clearTimeout(feePreviewTimer)
+  feePreviewTimer = setTimeout(refreshAutomaticFeePreview, 200)
+}
+
 watch(
-  () => editForm.workType === 'VIDEO' ? JSON.stringify({
-    category: editForm.workInfo.category,
-    likeCount: editForm.workInfo.likeCount,
-    isReposted: editForm.workInfo.isReposted,
-    isComplexEdit: editForm.workInfo.isComplexEdit,
-    isSpecialNode: editForm.workInfo.isSpecialNode,
-    specialMultiplier: editForm.workInfo.specialMultiplier,
-    contributors: editForm.contributors.map(item => ({ userId: item.userId, roleInWork: item.roleInWork }))
+  () => isAutomaticEditType.value ? JSON.stringify({
+    workType: editForm.workType,
+    workInfo: editForm.workInfo,
+    contributors: editForm.contributors.map(item => ({
+      userId: item.userId,
+      roleInWork: item.roleInWork,
+      workCount: item.workCount
+    }))
   }) : '',
-  () => refreshVideoFeePreview()
+  scheduleAutomaticFeePreview
 )
 
 const handleSaveEdit = async () => {
@@ -778,6 +813,7 @@ const handleExport = async () => {
       deptCode: query.deptCode,
       month: query.month,
       status: query.status,
+      contributorName: query.contributorName,
       fields: exportFields.value,
       selectedTasks: exportSelectedOnly.value ? selectedTaskRefs() : null
     })
@@ -818,6 +854,10 @@ onMounted(() => {
   width: 160px;
 }
 
+.toolbar .contributor-search {
+  width: 180px;
+}
+
 .pagination {
   display: flex;
   justify-content: flex-end;
@@ -838,9 +878,16 @@ onMounted(() => {
   width: 100%;
 }
 
+/* 202608121123 - 移除了审核编辑日期选择器中容易误触的跨年双箭头按钮。 */
+:global(.single-year-date-picker .d-arrow-left),
+:global(.single-year-date-picker .d-arrow-right) {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .toolbar :deep(.el-select),
   .toolbar :deep(.el-date-editor),
+  .toolbar .contributor-search,
   .toolbar .el-button {
     width: 100%;
   }

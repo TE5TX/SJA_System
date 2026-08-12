@@ -9,4 +9,5 @@ public class MonthlyFeeComponentVO {
 
     private Long userId;
     private BigDecimal feeAmount;
+    private String subsidyCategory;
 }

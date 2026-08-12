@@ -88,6 +88,7 @@ public class FeeController {
             @RequestParam(required = false) String deptCode,
             @RequestParam(required = false) String month,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String contributorName,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
             HttpServletRequest request) {
@@ -97,7 +98,8 @@ public class FeeController {
         if (operatorId == null) {
             return Result.error(401, "未授权");
         }
-        PageResult<FeeListVO> result = feeService.getFeeList(deptCode, month, status, pageNum, pageSize, operatorId, roleCode);
+        PageResult<FeeListVO> result = feeService.getFeeList(
+                deptCode, month, status, contributorName, pageNum, pageSize, operatorId, roleCode);
         return Result.success(result);
     }
 

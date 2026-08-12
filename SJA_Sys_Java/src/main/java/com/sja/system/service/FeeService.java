@@ -40,8 +40,8 @@ public interface FeeService {
      * @param pageSize page size
      * @return paginated fee list
      */
-    PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, Integer pageNum, Integer pageSize,
-                                     Long operatorId, Integer roleCode);
+    PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, String contributorName,
+                                     Integer pageNum, Integer pageSize, Long operatorId, Integer roleCode);
 
     /**
      * Get detailed information for a specific work's fee record.

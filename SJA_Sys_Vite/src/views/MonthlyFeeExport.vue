@@ -18,7 +18,8 @@
           />
         </el-form-item>
         <el-form-item label="统计范围">
-          <el-tag type="success">已提交、已通过</el-tag>
+          <!-- 202608121123 - 修复了月份稿费导出范围包含未审核通过任务的问题。 -->
+          <el-tag type="success">仅已通过</el-tag>
         </el-form-item>
         <el-form-item label="人员顺序">
           <div class="order-list">
