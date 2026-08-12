@@ -13,4 +13,7 @@ public class LoginDTO {
     @NotBlank(message = "密码不能为空")
     private String password;
 
+    @NotBlank(message = "请先完成滑块验证")
+    private String captchaToken;
+
 }

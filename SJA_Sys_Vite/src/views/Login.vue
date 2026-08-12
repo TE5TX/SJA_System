@@ -49,11 +49,15 @@
 
       <div class="credits">Designed by 校记者团技术部</div>
     </el-card>
+
+    <div v-show="captchaVisible" class="captcha-overlay" @click.self="closeCaptcha">
+      <div id="login-captcha"></div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { nextTick, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { login } from '@/api/auth'
@@ -64,6 +68,8 @@ const userStore = useUserStore()
 const formRef = ref(null)
 const loading = ref(false)
 const loginError = ref('')
+const captchaVisible = ref(false)
+let captchaInstance = null
 
 const loginForm = reactive({
   username: '',
@@ -88,34 +94,92 @@ const handleLogin = async () => {
 
   await formRef.value.validate(async (valid) => {
     if (valid) {
-      loading.value = true
-      try {
-        // 202608121431 - 增加了使用手机号和密码登录系统的功能。
-        const res = await login({ username: loginForm.username, password: loginForm.password })
-        const { token, userInfo, menus, mustChangePassword } = res.data
-
-        userStore.setToken(token)
-        userStore.setUserInfo(userInfo)
-        userStore.setMustChangePassword(mustChangePassword)
-
-        if (menus) {
-          localStorage.setItem('menus', JSON.stringify(menus))
-        }
-
-        ElMessage.success('登录成功')
-
-        setTimeout(() => {
-          router.push(mustChangePassword ? '/change-password' : '/app')
-        }, 100)
-      } catch (error) {
-        console.error('登录失败:', error)
-        loginError.value = error.response?.data?.message || error.message || '登录失败，请稍后重试'
-      } finally {
-        loading.value = false
-      }
+      openCaptcha()
     }
   })
 }
+
+const closeCaptcha = () => {
+  captchaInstance?.destroyWindow()
+  captchaInstance = null
+  captchaVisible.value = false
+}
+
+const openCaptcha = async () => {
+  if (!window.TAC) {
+    loginError.value = '验证码组件加载失败，请刷新页面后重试'
+    return
+  }
+
+  closeCaptcha()
+  captchaVisible.value = true
+  await nextTick()
+
+  // 202608121523 - 登录前增加滑块验证码，验证通过后再提交账号和密码。
+  captchaInstance = new window.TAC({
+    requestCaptchaDataUrl: '/api/v1/auth/captcha/generate',
+    validCaptchaUrl: '/api/v1/auth/captcha/verify',
+    bindEl: '#login-captcha',
+    validSuccess: (res, captcha, tac) => {
+      const captchaToken = res?.data?.token
+      tac.destroyWindow()
+      captchaInstance = null
+      captchaVisible.value = false
+      if (!captchaToken) {
+        loginError.value = '验证码结果无效，请重新验证'
+        return
+      }
+      submitLogin(captchaToken)
+    },
+    validFail: (res, captcha, tac) => {
+      tac.reloadCaptcha()
+    },
+    btnCloseFun: (element, tac) => {
+      tac.destroyWindow()
+      captchaInstance = null
+      captchaVisible.value = false
+    }
+  }, {
+    logoUrl: null,
+    moveTrackMaskBgColor: '#dbeafe',
+    moveTrackMaskBorderColor: '#409eff'
+  })
+  captchaInstance.init()
+}
+
+const submitLogin = async (captchaToken) => {
+  loading.value = true
+  try {
+    // 202608121431 - 增加了使用手机号和密码登录系统的功能。
+    const res = await login({
+      username: loginForm.username,
+      password: loginForm.password,
+      captchaToken
+    })
+    const { token, userInfo, menus, mustChangePassword } = res.data
+
+    userStore.setToken(token)
+    userStore.setUserInfo(userInfo)
+    userStore.setMustChangePassword(mustChangePassword)
+
+    if (menus) {
+      localStorage.setItem('menus', JSON.stringify(menus))
+    }
+
+    ElMessage.success('登录成功')
+
+    setTimeout(() => {
+      router.push(mustChangePassword ? '/change-password' : '/app')
+    }, 100)
+  } catch (error) {
+    console.error('登录失败:', error)
+    loginError.value = error.response?.data?.message || error.message || '登录失败，请稍后重试'
+  } finally {
+    loading.value = false
+  }
+}
+
+onBeforeUnmount(closeCaptcha)
 </script>
 
 <style scoped>
@@ -215,5 +279,23 @@ const handleLogin = async () => {
   margin-top: 20px;
   font-size: 13px;
   color: #899bbd;
+}
+
+.captcha-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+#login-captcha {
+  width: 318px;
+  min-height: 318px;
+  background: #fff;
+  border-radius: 5px;
 }
 </style>

@@ -16,6 +16,7 @@ import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserRoleMapper;
 import com.sja.system.security.JwtUtils;
 import com.sja.system.service.SystemService;
+import com.sja.system.service.LoginCaptchaService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.LoginVO;
 import com.sja.system.vo.MenuTreeVO;
@@ -58,6 +59,7 @@ public class AuthController {
     private final SysDeptMapper sysDeptMapper;
     private final SystemService systemService;
     private final UserService userService;
+    private final LoginCaptchaService loginCaptchaService;
 
     /**
      * User login endpoint.
@@ -66,6 +68,10 @@ public class AuthController {
     @PostMapping("/login")
     public Result<LoginVO> login(@RequestBody @Valid LoginDTO dto) {
         String loginIdentifier = dto.getUsername().trim();
+        // 202608121523 - 登录前消费一次性滑块验证凭证，防止凭证被重复使用。
+        if (!loginCaptchaService.consume(dto.getCaptchaToken().trim())) {
+            throw ApiException.badRequest("滑块验证已失效，请重新验证");
+        }
         try {
             // 1. Authenticate with Spring Security
             Authentication authentication = authenticationManager.authenticate(

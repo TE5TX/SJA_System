@@ -57,6 +57,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                 // Public endpoints
                 .antMatchers(
                     "/api/v1/auth/login",
+                    "/api/v1/auth/captcha/**",
                     "/doc.html",
                     "/webjars/**",
                     "/swagger-resources/**",

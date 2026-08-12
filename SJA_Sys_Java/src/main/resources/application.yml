@@ -7,6 +7,22 @@ spring:
     username: root
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
+  redis:
+    host: 127.0.0.1
+    port: 6379
+    database: 1
+    timeout: 2s
+
+# 202608121523 - 增加了登录滑块验证码，并使用本机 Redis 保存一次性验证凭证。
+captcha:
+  prefix: sja:captcha:challenge
+  expire:
+    default: 120000
+  init-default-resource: true
+  secondary:
+    enabled: true
+    expire: 120000
+    key-prefix: sja:captcha:login
 
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml

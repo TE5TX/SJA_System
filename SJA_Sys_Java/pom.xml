@@ -24,6 +24,7 @@
         <knife4j.version>4.4.0</knife4j.version>
         <easyexcel.version>3.3.3</easyexcel.version>
         <hutool.version>5.8.25</hutool.version>
+        <tianai-captcha.version>1.5.5</tianai-captcha.version>
         <!-- 202608101042 - 修复了JDK 25下Lombok导致javac初始化失败的问题，并固定release 17。 -->
         <lombok.version>1.18.46</lombok.version>
         <maven.compiler.release>17</maven.compiler.release>
@@ -39,6 +40,17 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>cloud.tianai.captcha</groupId>
+            <artifactId>tianai-captcha-springboot-starter</artifactId>
+            <version>${tianai-captcha.version}</version>
         </dependency>
 
         <!-- MyBatis-Plus -->
