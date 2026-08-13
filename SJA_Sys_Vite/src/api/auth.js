@@ -21,7 +21,8 @@ export function logout() {
 export function refreshToken() {
   return request({
     url: '/v1/auth/refresh',
-    method: 'post'
+    method: 'post',
+    headers: { 'X-SJA-Refresh': '1' }
   })
 }
 

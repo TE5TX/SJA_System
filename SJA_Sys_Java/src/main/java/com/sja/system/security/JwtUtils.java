@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * JWT token utility for generating, parsing and validating tokens.
@@ -25,8 +26,11 @@ public class JwtUtils {
     @Value("${jwt.secret}")
     private String secret;
 
-    @Value("${jwt.expiration}")
-    private Long expiration;
+    @Value("${jwt.access-expiration}")
+    private Long accessExpiration;
+
+    @Value("${jwt.refresh-expiration}")
+    private Long refreshExpiration;
 
     private Key signingKey;
 
@@ -40,14 +44,24 @@ public class JwtUtils {
      *
      * @param userId   user primary key
      * @param username login name
-     * @param roleCode highest role code (e.g. 1=admin, 2=dept admin, 3=member)
+     * @param tokenVersion current server-side token version
      * @return signed JWT string
      */
-    public String generateToken(Long userId, String username, Integer roleCode) {
+    public String generateAccessToken(Long userId, String username, Integer tokenVersion) {
+        return generateToken(userId, username, tokenVersion, "ACCESS", accessExpiration);
+    }
+
+    public String generateRefreshToken(Long userId, String username, Integer tokenVersion) {
+        return generateToken(userId, username, tokenVersion, "REFRESH", refreshExpiration);
+    }
+
+    private String generateToken(Long userId, String username, Integer tokenVersion,
+                                 String tokenType, Long expiration) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
         claims.put("username", username);
-        claims.put("roleCode", roleCode);
+        claims.put("tokenVersion", tokenVersion == null ? 0 : tokenVersion);
+        claims.put("tokenType", tokenType);
 
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);
@@ -55,6 +69,7 @@ public class JwtUtils {
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(username)
+                .setId(UUID.randomUUID().toString())
                 .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(signingKey, SignatureAlgorithm.HS256)
@@ -89,11 +104,23 @@ public class JwtUtils {
     }
 
     /**
-     * Extract roleCode claim.
+     * Extract the server-side revocation version claim.
      */
-    public Integer getRoleCode(String token) {
-        Claims claims = parseToken(token);
-        return claims.get("roleCode", Integer.class);
+    public Integer getTokenVersion(String token) {
+        Number version = parseToken(token).get("tokenVersion", Number.class);
+        return version == null ? 0 : version.intValue();
+    }
+
+    public String getTokenType(String token) {
+        return parseToken(token).get("tokenType", String.class);
+    }
+
+    public String getTokenId(String token) {
+        return parseToken(token).getId();
+    }
+
+    public Date getExpiration(String token) {
+        return parseToken(token).getExpiration();
     }
 
     /**
@@ -107,6 +134,18 @@ public class JwtUtils {
             log.warn("JWT validation failed: {}", e.getMessage());
             return false;
         }
+    }
+
+    public boolean validateAccessToken(String token) {
+        return validateToken(token) && "ACCESS".equals(getTokenType(token));
+    }
+
+    public boolean validateRefreshToken(String token) {
+        return validateToken(token) && "REFRESH".equals(getTokenType(token));
+    }
+
+    public long getRefreshExpiration() {
+        return refreshExpiration;
     }
 
     /**

@@ -21,6 +21,9 @@ public final class MaskingUtils {
         String sanitized = detail.replaceAll(
                 "(?i)(idCard|phone|bankCard|dormAddress)\\s*\\[[^\\]]*\\]",
                 "$1 [已脱敏]");
+        sanitized = sanitized.replaceAll(
+                "(?i)(\\\"?(?:idCard|phone|bankCard|dormAddress)\\\"?\\s*:\\s*\\\")[^\\\"]*(\\\")",
+                "$1已脱敏$2");
         sanitized = sanitized.replaceAll("(?<!\\d)1\\d{10}(?!\\d)", "手机号已脱敏");
         sanitized = sanitized.replaceAll("(?<!\\d)\\d{17}[0-9Xx](?!\\d)", "身份证号已脱敏");
         return sanitized.replaceAll("(?<!\\d)\\d{16,19}(?!\\d)", "银行卡号已脱敏");

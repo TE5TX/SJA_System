@@ -139,7 +139,12 @@ public class FeeController {
 
     @PostMapping("/calculate")
     @PreAuthorize("hasAnyAuthority('fee:submit', 'fee:audit', 'fee:edit')")
-    public Result<List<BigDecimal>> calculateFee(@RequestBody @Valid FeeSubmitDTO dto) {
+    public Result<List<BigDecimal>> calculateFee(@RequestBody @Valid FeeSubmitDTO dto,
+                                                  HttpServletRequest request) {
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
+            throw ApiException.forbidden("只有管理员和秘书长可以计算并查看稿费金额");
+        }
         // 202608111533 - 修复了管理员编辑视频计费字段时参与人员稿费不能实时预览的问题。
         return Result.success(feeService.calculateFee(dto));
     }

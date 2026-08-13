@@ -11,6 +11,7 @@ import com.sja.system.dto.ProfileUpdateDTO;
 import com.sja.system.dto.UserBatchUpdateDTO;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserQueryDTO;
+import com.sja.system.dto.UserUpdateDTO;
 import com.sja.system.entity.SysDept;
 import com.sja.system.entity.SysRole;
 import com.sja.system.entity.SysUser;
@@ -22,6 +23,7 @@ import com.sja.system.mapper.SysUserDeptMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserRoleMapper;
 import com.sja.system.service.OperationLogService;
+import com.sja.system.service.AvatarStorageService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.UserVO;
 import com.sja.system.vo.FeeContributorVO;
@@ -35,7 +37,6 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -56,6 +57,7 @@ public class UserServiceImpl implements UserService {
     private final SysUserDeptMapper sysUserDeptMapper;
     private final OperationLogService operationLogService;
     private final PasswordEncoder passwordEncoder;
+    private final AvatarStorageService avatarStorageService;
 
     @Override
     public UserVO getUserProfile(Long userId) {
@@ -101,17 +103,11 @@ public class UserServiceImpl implements UserService {
             changedFields.append("gender; ");
         }
 
-        // 照片URL
-        if (dto.getPhoto() != null && !dto.getPhoto().equals(user.getPhoto())) {
-            update.setPhoto(dto.getPhoto());
-            changedFields.append("photo; ");
-        }
-
         // 身份证号
         if (dto.getIdCard() != null && !dto.getIdCard().equals(user.getIdCard())) {
             // 检查身份证号是否已被其他用户使用
             QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
-            idCardCheck.eq("id_card", dto.getIdCard()).ne("id", userId).eq("is_valid", 1);
+            idCardCheck.eq("id_card", dto.getIdCard()).ne("id", userId);
             if (sysUserMapper.selectCount(idCardCheck) > 0) {
                 throw ApiException.conflict("该身份证号已被其他用户使用");
             }
@@ -123,7 +119,9 @@ public class UserServiceImpl implements UserService {
         if (StringUtils.hasText(dto.getStudentNo()) && !dto.getStudentNo().equals(user.getStudentNo())) {
             // 检查学号是否已被其他用户使用
             QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
-            studentNoCheck.eq("student_no", dto.getStudentNo()).ne("id", userId).eq("is_valid", 1);
+            studentNoCheck.and(query -> query.eq("student_no", dto.getStudentNo())
+                            .or().eq("username", dto.getStudentNo()))
+                    .ne("id", userId);
             if (sysUserMapper.selectCount(studentNoCheck) > 0) {
                 throw ApiException.conflict("该学号已被其他用户使用");
             }
@@ -170,6 +168,9 @@ public class UserServiceImpl implements UserService {
         }
 
         sysUserMapper.updateById(update);
+        if (update.getUsername() != null) {
+            incrementTokenVersion(userId);
+        }
 
         // 记录操作日志
         String logDetail = String.format("更新个人资料，修改字段: %s", changedFields.toString().trim());
@@ -177,8 +178,16 @@ public class UserServiceImpl implements UserService {
             logDetail += String.format("（账号已从 [%s] 同步更新为 [%s]）", user.getUsername(), update.getUsername());
         }
 
-        operationLogService.log(userId, user.getRealName(), "", "UPDATE",
-                "USER", userId, logDetail, "");
+        operationLogService.logChange(userId, user.getRealName(), "", "UPDATE",
+                "USER", userId, logDetail,
+                profileAuditSnapshot(user.getRealName(), user.getStudentNo(), user.getGender(),
+                        user.getCollege(), user.getClassName()),
+                profileAuditSnapshot(
+                        update.getRealName() != null ? update.getRealName() : user.getRealName(),
+                        update.getStudentNo() != null ? update.getStudentNo() : user.getStudentNo(),
+                        update.getGender() != null ? update.getGender() : user.getGender(),
+                        update.getCollege() != null ? update.getCollege() : user.getCollege(),
+                        update.getClassName() != null ? update.getClassName() : user.getClassName()), "");
 
         log.info("User {} updated profile, changed: {}", userId, changedFields);
     }
@@ -201,11 +210,11 @@ public class UserServiceImpl implements UserService {
         }
 
         // Encode and set new password
-        SysUser update = new SysUser();
-        update.setId(userId);
-        update.setPassword(passwordEncoder.encode(dto.getNewPassword()));
-        update.setMustChangePassword(0);
-        sysUserMapper.updateById(update);
+        sysUserMapper.update(null, new UpdateWrapper<SysUser>()
+                .eq("id", userId)
+                .set("password", passwordEncoder.encode(dto.getNewPassword()))
+                .set("must_change_password", 0)
+                .setSql("token_version = token_version + 1"));
 
         operationLogService.log(userId, user.getRealName(), "", "UPDATE",
                 "USER", userId, "修改密码", "");
@@ -221,7 +230,14 @@ public class UserServiceImpl implements UserService {
             throw ApiException.notFound("用户不存在");
         }
 
-        String newPhoto = StringUtils.hasText(photo) ? photo : null;
+        String newPhoto = StringUtils.hasText(photo) ? photo.trim() : null;
+        if (Objects.equals(user.getPhoto(), newPhoto)) {
+            return;
+        }
+        if (newPhoto != null) {
+            avatarStorageService.validateAssignableAvatar(newPhoto, userId);
+            avatarStorageService.deleteAfterRollback(newPhoto);
+        }
         UpdateWrapper<SysUser> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", userId).set("photo", newPhoto);
         sysUserMapper.update(null, updateWrapper);
@@ -229,8 +245,11 @@ public class UserServiceImpl implements UserService {
         String action = StringUtils.hasText(photo) ? "上传照片" : "删除照片";
         String detail = String.format("%s: %s，原照片 [%s]，新照片 [%s]",
                 action, user.getRealName(), user.getPhoto(), newPhoto);
-        operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
-                "USER", userId, detail, "");
+        operationLogService.logChange(operatorId, operatorName, operatorRole, "UPDATE",
+                "USER", userId, detail,
+                String.format("{\"photo\":\"%s\"}", nullToEmpty(user.getPhoto())),
+                String.format("{\"photo\":\"%s\"}", nullToEmpty(newPhoto)), "");
+        avatarStorageService.deleteAfterCommit(user.getPhoto());
     }
 
     @Override
@@ -353,6 +372,7 @@ public class UserServiceImpl implements UserService {
             pageQuery.setCollege(query.getCollege());
             pageQuery.setDeptCode(query.getDeptCode());
             pageQuery.setRoleCode(query.getRoleCode());
+            pageQuery.setIsValid(query.getIsValid());
             pageQuery.setPageNum(pageNum);
             pageQuery.setPageSize(exportPageSize);
 
@@ -398,7 +418,12 @@ public class UserServiceImpl implements UserService {
         user.setMustChangePassword(1);
         user.setRealName(dto.getRealName().trim());
         user.setGender(dto.getGender());
-        user.setPhoto(StringUtils.hasText(dto.getPhoto()) ? dto.getPhoto().trim() : null);
+        String photo = StringUtils.hasText(dto.getPhoto()) ? dto.getPhoto().trim() : null;
+        if (photo != null) {
+            avatarStorageService.validateAssignableAvatar(photo, null);
+            avatarStorageService.deleteAfterRollback(photo);
+        }
+        user.setPhoto(photo);
         user.setIdCard(idCard);
         user.setStudentNo(studentNo);
         user.setCollege(dto.getCollege().trim());
@@ -421,134 +446,75 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateUser(Long userId, Map<String, Object> updates, Long operatorId,
+    public void updateUser(Long userId, UserUpdateDTO dto, Long operatorId,
                            String operatorName, String operatorRole) {
         SysUser user = sysUserMapper.selectById(userId);
         if (user == null) {
             throw ApiException.notFound("用户不存在");
         }
 
-        // Build before-state snapshot for audit
-        StringBuilder detail = new StringBuilder("修改用户信息: ");
-        SysUser update = new SysUser();
-        update.setId(userId);
-        boolean hasUserFieldUpdate = false;
+        validateCompleteUserUpdate(dto);
+        String studentNo = dto.getStudentNo().trim();
+        String idCard = dto.getIdCard().trim().toUpperCase();
+        String phone = normalizeAndValidatePhone(dto.getPhone());
+        String bankCard = dto.getBankCard().trim();
+        List<Long> deptIds = distinctIds(dto.getDeptIds(), "部门");
+        List<Long> roleIds = distinctIds(dto.getRoleIds(), "角色");
+        validateDeptIds(deptIds);
+        validateRoleIds(roleIds);
 
-        if (updates.containsKey("realName")) {
-            String oldVal = user.getRealName();
-            String newVal = (String) updates.get("realName");
-            update.setRealName(newVal);
-            detail.append(String.format("realName [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("photo")) {
-            String oldVal = user.getPhoto();
-            String newVal = (String) updates.get("photo");
-            update.setPhoto(newVal);
-            detail.append(String.format("photo [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("idCard")) {
-            String oldVal = user.getIdCard();
-            String newVal = (String) updates.get("idCard");
-            if (StringUtils.hasText(newVal) && !newVal.equals(oldVal)) {
-                QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
-                idCardCheck.eq("id_card", newVal).ne("id", userId).eq("is_valid", 1);
-                if (sysUserMapper.selectCount(idCardCheck) > 0) {
-                    throw ApiException.conflict("该身份证号已被其他用户使用");
-                }
-            }
-            update.setIdCard(newVal);
-            detail.append(String.format("idCard [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("gender")) {
-            update.setGender(toInteger(updates.get("gender")));
-            detail.append("gender updated; ");
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("phone")) {
-            String oldVal = user.getPhone();
-            String newVal = normalizeAndValidatePhone((String) updates.get("phone"));
-            if (!newVal.equals(oldVal)) {
-                ensurePhoneAvailable(newVal, userId);
-            }
-            update.setPhone(newVal);
-            detail.append(String.format("phone [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("studentNo")) {
-            String oldVal = user.getStudentNo();
-            String newVal = (String) updates.get("studentNo");
-            if (StringUtils.hasText(newVal) && !newVal.equals(oldVal)) {
-                QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
-                studentNoCheck.eq("student_no", newVal).ne("id", userId).eq("is_valid", 1);
-                if (sysUserMapper.selectCount(studentNoCheck) > 0) {
-                    throw ApiException.conflict("该学号已被其他用户使用");
-                }
-                update.setStudentNo(newVal);
-                update.setUsername(newVal);
-                detail.append(String.format("studentNo [%s]->[%s]; username synced; ", oldVal, newVal));
-                hasUserFieldUpdate = true;
-            }
-        }
-        if (updates.containsKey("college")) {
-            String oldVal = user.getCollege();
-            String newVal = (String) updates.get("college");
-            update.setCollege(newVal);
-            detail.append(String.format("college [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("className")) {
-            String oldVal = user.getClassName();
-            String newVal = (String) updates.get("className");
-            update.setClassName(newVal);
-            detail.append(String.format("className [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("dormAddress")) {
-            String oldVal = user.getDormAddress();
-            String newVal = (String) updates.get("dormAddress");
-            update.setDormAddress(newVal);
-            detail.append(String.format("dormAddress [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("bankCard")) {
-            String oldVal = user.getBankCard();
-            String newVal = (String) updates.get("bankCard");
-            update.setBankCard(newVal);
-            detail.append(String.format("bankCard [%s]->[%s]; ", oldVal, newVal));
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("remark")) {
-            update.setRemark((String) updates.get("remark"));
-            detail.append("remark updated; ");
-            hasUserFieldUpdate = true;
-        }
-        if (updates.containsKey("isValid")) {
-            update.setIsValid(toInteger(updates.get("isValid")));
-            detail.append("isValid updated; ");
-            hasUserFieldUpdate = true;
-        }
+        ensureStudentNoAvailable(studentNo, userId);
+        ensureIdCardAvailable(idCard, userId);
+        ensurePhoneAvailable(phone, userId);
 
-        if (hasUserFieldUpdate) {
-            sysUserMapper.updateById(update);
-        }
+        List<Long> oldDeptIds = currentDeptIds(userId);
+        List<Long> oldRoleIds = currentRoleIds(userId);
+        boolean invalidateTokens = !studentNo.equals(user.getStudentNo())
+                || !Objects.equals(dto.getIsValid(), user.getIsValid())
+                || !sameIds(oldDeptIds, deptIds)
+                || !sameIds(oldRoleIds, roleIds);
 
-        if (updates.containsKey("deptIds")) {
-            List<Long> deptIds = toLongList(updates.get("deptIds"));
-            updateUserDepts(userId, deptIds);
-            detail.append("deptIds updated; ");
+        String newPhoto = StringUtils.hasText(dto.getPhoto()) ? dto.getPhoto().trim() : null;
+        if (newPhoto != null && !Objects.equals(newPhoto, user.getPhoto())) {
+            avatarStorageService.validateAssignableAvatar(newPhoto, userId);
+            avatarStorageService.deleteAfterRollback(newPhoto);
         }
+        UpdateWrapper<SysUser> update = new UpdateWrapper<>();
+        update.eq("id", userId)
+                .set("real_name", dto.getRealName().trim())
+                .set("gender", dto.getGender())
+                .set("username", studentNo)
+                .set("student_no", studentNo)
+                .set("photo", newPhoto)
+                .set("id_card", idCard)
+                .set("phone", phone)
+                .set("college", dto.getCollege().trim())
+                .set("class_name", dto.getClassName().trim())
+                .set("dorm_address", dto.getDormAddress().trim())
+                .set("bank_card", bankCard)
+                .set("is_valid", dto.getIsValid())
+                .set("remark", dto.getRemark().trim())
+                .setSql(invalidateTokens, "token_version = token_version + 1");
+        sysUserMapper.update(null, update);
 
-        if (updates.containsKey("roleIds")) {
-            List<Long> roleIds = toLongList(updates.get("roleIds"));
-            updateUserRoles(userId, roleIds);
-            detail.append("roleIds updated; ");
+        updateUserDepts(userId, deptIds);
+        updateUserRoles(userId, roleIds);
+
+        String detail = String.format(
+                "修改人员信息: %s（%s -> %s）；部门 %s -> %s；角色 %s -> %s；状态 %s -> %s",
+                dto.getRealName().trim(), user.getStudentNo(), studentNo,
+                oldDeptIds, deptIds, oldRoleIds, roleIds, user.getIsValid(), dto.getIsValid());
+
+        operationLogService.logChange(operatorId, operatorName, operatorRole, "UPDATE",
+                "USER", userId, detail,
+                userAuditSnapshot(user.getStudentNo(), user.getGender(), user.getCollege(),
+                        user.getClassName(), oldDeptIds, oldRoleIds, user.getIsValid()),
+                userAuditSnapshot(studentNo, dto.getGender(), dto.getCollege().trim(),
+                        dto.getClassName().trim(), deptIds, roleIds, dto.getIsValid()), "");
+
+        if (!Objects.equals(user.getPhoto(), newPhoto)) {
+            avatarStorageService.deleteAfterCommit(user.getPhoto());
         }
-
-        operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
-                "USER", userId, detail.toString(), "");
 
         log.info("User {} updated by operator {}", userId, operatorId);
     }
@@ -599,10 +565,12 @@ public class UserServiceImpl implements UserService {
                 updateUserRoles(userId, roleIds);
             }
             if (dto.getIsValid() != null) {
-                SysUser statusUpdate = new SysUser();
-                statusUpdate.setId(userId);
-                statusUpdate.setIsValid(dto.getIsValid());
-                sysUserMapper.updateById(statusUpdate);
+                sysUserMapper.update(null, new UpdateWrapper<SysUser>()
+                        .eq("id", userId)
+                        .set("is_valid", dto.getIsValid())
+                        .setSql("token_version = token_version + 1"));
+            } else if (roleIds != null) {
+                incrementTokenVersion(userId);
             }
 
             StringBuilder detail = new StringBuilder("批量修改人员信息: ");
@@ -630,10 +598,10 @@ public class UserServiceImpl implements UserService {
             throw ApiException.notFound("用户不存在");
         }
 
-        SysUser update = new SysUser();
-        update.setId(userId);
-        update.setIsValid(status);
-        sysUserMapper.updateById(update);
+        sysUserMapper.update(null, new UpdateWrapper<SysUser>()
+                .eq("id", userId)
+                .set("is_valid", status)
+                .setSql("token_version = token_version + 1"));
 
         String statusDesc = status == 1 ? "启用" : "禁用";
         operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
@@ -800,46 +768,97 @@ public class UserServiceImpl implements UserService {
         }
     }
 
-    private Integer toInteger(Object value) {
-        if (value == null) {
-            return null;
+    private void validateCompleteUserUpdate(UserUpdateDTO dto) {
+        if (dto == null
+                || !StringUtils.hasText(dto.getRealName())
+                || !StringUtils.hasText(dto.getStudentNo())
+                || !StringUtils.hasText(dto.getIdCard())
+                || !StringUtils.hasText(dto.getPhone())
+                || !StringUtils.hasText(dto.getCollege())
+                || !StringUtils.hasText(dto.getClassName())
+                || !StringUtils.hasText(dto.getDormAddress())
+                || !StringUtils.hasText(dto.getBankCard())
+                || !StringUtils.hasText(dto.getRemark())) {
+            throw ApiException.badRequest("除照片外，所有人员字段均为必填项");
         }
-        if (value instanceof Integer) {
-            return (Integer) value;
+        if (dto.getGender() == null || dto.getGender() < 0 || dto.getGender() > 2) {
+            throw ApiException.badRequest("性别参数不正确");
         }
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
+        if (dto.getIsValid() == null || (dto.getIsValid() != 0 && dto.getIsValid() != 1)) {
+            throw ApiException.badRequest("账号状态只能为 0 或 1");
         }
-        return Integer.valueOf(value.toString());
+        if (!dto.getIdCard().trim().matches("^\\d{17}[\\dXx]$")) {
+            throw ApiException.badRequest("身份证号格式不正确");
+        }
+        if (!dto.getBankCard().trim().matches("^\\d{10,30}$")) {
+            throw ApiException.badRequest("银行卡号格式不正确");
+        }
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Long> toLongList(Object value) {
-        if (value == null) {
-            return Collections.emptyList();
+    private void ensureStudentNoAvailable(String studentNo, Long excludedUserId) {
+        QueryWrapper<SysUser> query = new QueryWrapper<>();
+        query.and(wrapper -> wrapper.eq("student_no", studentNo).or().eq("username", studentNo));
+        if (excludedUserId != null) query.ne("id", excludedUserId);
+        if (sysUserMapper.selectCount(query) > 0) {
+            throw ApiException.conflict("该学号或登录账号已被其他用户使用");
         }
-        if (!(value instanceof List)) {
-            return Collections.singletonList(toLong(value));
-        }
-        List<Object> values = (List<Object>) value;
-        return values.stream()
-                .map(this::toLong)
-                .filter(Objects::nonNull)
-                .distinct()
-                .collect(Collectors.toList());
     }
 
-    private Long toLong(Object value) {
-        if (value == null) {
-            return null;
+    private void ensureIdCardAvailable(String idCard, Long excludedUserId) {
+        QueryWrapper<SysUser> query = new QueryWrapper<>();
+        query.eq("id_card", idCard);
+        if (excludedUserId != null) query.ne("id", excludedUserId);
+        if (sysUserMapper.selectCount(query) > 0) {
+            throw ApiException.conflict("该身份证号已被其他用户使用");
         }
-        if (value instanceof Long) {
-            return (Long) value;
-        }
-        if (value instanceof Number) {
-            return ((Number) value).longValue();
-        }
-        String text = value.toString();
-        return StringUtils.hasText(text) ? Long.valueOf(text) : null;
+    }
+
+    private List<Long> currentDeptIds(Long userId) {
+        return sysUserDeptMapper.selectList(new QueryWrapper<SysUserDept>().eq("user_id", userId))
+                .stream().map(SysUserDept::getDeptId).distinct().collect(Collectors.toList());
+    }
+
+    private List<Long> currentRoleIds(Long userId) {
+        return sysUserRoleMapper.selectList(new QueryWrapper<SysUserRole>().eq("user_id", userId))
+                .stream().map(SysUserRole::getRoleId).distinct().collect(Collectors.toList());
+    }
+
+    private boolean sameIds(List<Long> left, List<Long> right) {
+        return left.size() == right.size() && left.containsAll(right) && right.containsAll(left);
+    }
+
+    private void incrementTokenVersion(Long userId) {
+        sysUserMapper.update(null, new UpdateWrapper<SysUser>()
+                .eq("id", userId)
+                .setSql("token_version = token_version + 1"));
+    }
+
+    private String userAuditSnapshot(String studentNo, Integer gender, String college,
+                                     String className, List<Long> deptIds,
+                                     List<Long> roleIds, Integer isValid) {
+        return String.format(
+                "{\"studentNo\":\"%s\",\"gender\":%s,\"college\":\"%s\","
+                        + "\"className\":\"%s\",\"deptIds\":\"%s\","
+                        + "\"roleIds\":\"%s\",\"isValid\":%s}",
+                escapeAudit(studentNo), gender, escapeAudit(college), escapeAudit(className),
+                deptIds, roleIds, isValid);
+    }
+
+    private String profileAuditSnapshot(String realName, String studentNo, Integer gender,
+                                        String college, String className) {
+        return String.format(
+                "{\"realName\":\"%s\",\"studentNo\":\"%s\",\"gender\":%s,"
+                        + "\"college\":\"%s\",\"className\":\"%s\","
+                        + "\"sensitiveFields\":\"已脱敏\"}",
+                escapeAudit(realName), escapeAudit(studentNo), gender,
+                escapeAudit(college), escapeAudit(className));
+    }
+
+    private String escapeAudit(String value) {
+        return nullToEmpty(value).replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 }

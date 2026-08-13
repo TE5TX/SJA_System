@@ -6,11 +6,11 @@ import com.sja.system.dto.ProfileUpdateDTO;
 import com.sja.system.dto.UserBatchUpdateDTO;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserQueryDTO;
+import com.sja.system.dto.UserUpdateDTO;
 import com.sja.system.vo.UserVO;
 import com.sja.system.vo.FeeContributorVO;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * User management service interface.
@@ -73,12 +73,12 @@ public interface UserService {
      * Admin update of a user's arbitrary fields.
      *
      * @param userId       target user
-     * @param updates      field name -> value map
+     * @param dto          validated complete user update
      * @param operatorId   who made the change
      * @param operatorName operator display name
      * @param operatorRole operator role name
      */
-    void updateUser(Long userId, Map<String, Object> updates, Long operatorId, String operatorName, String operatorRole);
+    void updateUser(Long userId, UserUpdateDTO dto, Long operatorId, String operatorName, String operatorRole);
 
     /**
      * Replace roles and/or update account status for multiple users.

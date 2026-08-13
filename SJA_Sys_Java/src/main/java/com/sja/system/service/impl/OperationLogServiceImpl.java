@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sja.system.common.PageResult;
 import com.sja.system.common.MaskingUtils;
+import com.sja.system.dto.OperationLogQueryDTO;
 import com.sja.system.entity.SysOperationLog;
 import com.sja.system.mapper.SysOperationLogMapper;
 import com.sja.system.service.OperationLogService;
@@ -12,6 +13,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+import com.sja.system.security.RequestTraceFilter;
+
+import javax.servlet.http.HttpServletRequest;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -31,31 +38,98 @@ public class OperationLogServiceImpl implements OperationLogService {
     @Transactional(rollbackFor = Exception.class)
     public void log(Long userId, String realName, String roleName, String operationType,
                     String targetModule, Long targetId, String detail, String ipAddress) {
-        try {
-            SysOperationLog logEntity = new SysOperationLog();
-            logEntity.setUserId(userId);
-            logEntity.setRealName(realName);
-            logEntity.setRoleName(roleName);
-            logEntity.setOperationType(operationType);
-            logEntity.setTargetModule(targetModule);
-            logEntity.setTargetId(targetId);
-            logEntity.setDetail(MaskingUtils.sanitizeLogDetail(detail));
-            logEntity.setIpAddress(ipAddress);
+        logChange(userId, realName, roleName, operationType, targetModule, targetId,
+                detail, null, null, ipAddress);
+    }
 
-            sysOperationLogMapper.insert(logEntity);
-        } catch (Exception e) {
-            // Log failure should not break the main business flow
-            log.error("Failed to write operation log: {}", e.getMessage(), e);
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void logChange(Long userId, String realName, String roleName, String operationType,
+                          String targetModule, Long targetId, String detail,
+                          String beforeData, String afterData, String ipAddress) {
+        insertLog(userId, realName, roleName, operationType, targetModule, targetId,
+                detail, beforeData, afterData, ipAddress, "SUCCESS");
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public void logFailure(Long userId, String realName, String roleName, String operationType,
+                           String targetModule, String detail) {
+        insertLog(userId, realName, roleName, operationType, targetModule, null,
+                detail, null, null, null, "FAILURE");
+    }
+
+    private void insertLog(Long userId, String realName, String roleName, String operationType,
+                           String targetModule, Long targetId, String detail,
+                           String beforeData, String afterData, String ipAddress,
+                           String resultStatus) {
+        SysOperationLog logEntity = new SysOperationLog();
+        logEntity.setUserId(userId);
+        logEntity.setRealName(realName);
+        logEntity.setRoleName(roleName);
+        logEntity.setOperationType(operationType);
+        logEntity.setTargetModule(targetModule);
+        logEntity.setTargetId(targetId);
+        logEntity.setDetail(MaskingUtils.sanitizeLogDetail(detail));
+        logEntity.setBeforeData(MaskingUtils.sanitizeLogDetail(beforeData));
+        logEntity.setAfterData(MaskingUtils.sanitizeLogDetail(afterData));
+        logEntity.setResultStatus(resultStatus);
+
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes != null) {
+            HttpServletRequest request = attributes.getRequest();
+            Object requestId = request.getAttribute(RequestTraceFilter.REQUEST_ID_ATTRIBUTE);
+            Object start = request.getAttribute(RequestTraceFilter.REQUEST_START_ATTRIBUTE);
+            logEntity.setRequestId(requestId == null ? null : requestId.toString());
+            logEntity.setRequestMethod(request.getMethod());
+            logEntity.setRequestUri(truncate(request.getRequestURI(), 255));
+            logEntity.setUserAgent(truncate(request.getHeader("User-Agent"), 500));
+            logEntity.setIpAddress(request.getRemoteAddr());
+            if (start instanceof Long) {
+                logEntity.setDurationMs(Math.max(0, System.currentTimeMillis() - (Long) start));
+            }
+        } else {
+            logEntity.setIpAddress(ipAddress);
+        }
+
+        int inserted = sysOperationLogMapper.insert(logEntity);
+        if (inserted != 1) {
+            throw new IllegalStateException("操作日志写入失败");
         }
     }
 
     @Override
     public PageResult<OperationLogVO> getLogList(Integer pageNum, Integer pageSize) {
-        int pn = pageNum != null ? pageNum : 1;
-        int ps = pageSize != null ? pageSize : 10;
+        OperationLogQueryDTO query = new OperationLogQueryDTO();
+        query.setPageNum(pageNum);
+        query.setPageSize(pageSize);
+        return getLogList(query);
+    }
+
+    @Override
+    public PageResult<OperationLogVO> getLogList(OperationLogQueryDTO filter) {
+        int pn = filter.getPageNum() != null ? Math.max(1, filter.getPageNum()) : 1;
+        int ps = filter.getPageSize() != null ? Math.min(200, Math.max(1, filter.getPageSize())) : 10;
 
         Page<SysOperationLog> page = new Page<>(pn, ps);
         QueryWrapper<SysOperationLog> query = new QueryWrapper<>();
+        if (org.springframework.util.StringUtils.hasText(filter.getRealName())) {
+            query.like("real_name", filter.getRealName().trim());
+        }
+        if (org.springframework.util.StringUtils.hasText(filter.getOperationType())) {
+            query.eq("operation_type", filter.getOperationType().trim());
+        }
+        if (org.springframework.util.StringUtils.hasText(filter.getTargetModule())) {
+            query.eq("target_module", filter.getTargetModule().trim());
+        }
+        if (org.springframework.util.StringUtils.hasText(filter.getResultStatus())) {
+            query.eq("result_status", filter.getResultStatus().trim());
+        }
+        if (org.springframework.util.StringUtils.hasText(filter.getRequestId())) {
+            query.eq("request_id", filter.getRequestId().trim());
+        }
+        query.ge(filter.getStartTime() != null, "create_time", filter.getStartTime());
+        query.le(filter.getEndTime() != null, "create_time", filter.getEndTime());
         query.orderByDesc("create_time");
 
         Page<SysOperationLog> resultPage = sysOperationLogMapper.selectPage(page, query);
@@ -78,7 +152,20 @@ public class OperationLogServiceImpl implements OperationLogService {
         vo.setTargetId(entity.getTargetId());
         vo.setDetail(MaskingUtils.sanitizeLogDetail(entity.getDetail()));
         vo.setIpAddress(entity.getIpAddress());
+        vo.setRequestId(entity.getRequestId());
+        vo.setRequestMethod(entity.getRequestMethod());
+        vo.setRequestUri(entity.getRequestUri());
+        vo.setResultStatus(entity.getResultStatus());
+        vo.setBeforeData(MaskingUtils.sanitizeLogDetail(entity.getBeforeData()));
+        vo.setAfterData(MaskingUtils.sanitizeLogDetail(entity.getAfterData()));
+        vo.setUserAgent(entity.getUserAgent());
+        vo.setDurationMs(entity.getDurationMs());
         vo.setCreateTime(entity.getCreateTime());
         return vo;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) return value;
+        return value.substring(0, maxLength);
     }
 }

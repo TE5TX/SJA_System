@@ -2,11 +2,17 @@ package com.sja.system.service.impl;
 
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeSubmitDTO;
+import com.sja.system.entity.BizEditorialArticle;
+import com.sja.system.entity.BizWorkContributor;
 import com.sja.system.entity.SysDept;
+import com.sja.system.entity.SysUser;
 import com.sja.system.entity.SysUserDept;
 import com.sja.system.mapper.BizEditorialArticleMapper;
+import com.sja.system.mapper.BizWorkContributorMapper;
 import com.sja.system.mapper.SysDeptMapper;
+import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserDeptMapper;
+import com.sja.system.vo.FeeDetailVO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -14,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -21,9 +28,9 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @ExtendWith(MockitoExtension.class)
 class FeeServiceImplPermissionAndDuplicateTest {
@@ -34,46 +41,45 @@ class FeeServiceImplPermissionAndDuplicateTest {
     private SysUserDeptMapper sysUserDeptMapper;
     @Mock
     private SysDeptMapper sysDeptMapper;
+    @Mock
+    private BizWorkContributorMapper contributorMapper;
+    @Mock
+    private SysUserMapper sysUserMapper;
 
     @InjectMocks
     private FeeServiceImpl feeService;
 
     @Test
-    void ministerCannotEditAnotherDepartmentsTask() {
-        SysUserDept membership = new SysUserDept();
-        membership.setUserId(93L);
-        membership.setDeptId(5L);
-        SysDept visual = new SysDept();
-        visual.setId(5L);
-        visual.setDeptCode("VISUAL");
-        when(sysUserDeptMapper.selectList(any())).thenReturn(Collections.singletonList(membership));
-        when(sysDeptMapper.selectById(5L)).thenReturn(visual);
+    void ministerCanViewAnyDepartmentButNeverReceivesAmounts() {
+        BizEditorialArticle article = new BizEditorialArticle();
+        article.setId(1L);
+        article.setTitle("跨部门稿件");
+        article.setPlatform("微信");
+        article.setIsValid(1);
+        article.setIsSpecialNode(1);
+        article.setSpecialMultiplier(3);
+        article.setTotalAmount(new BigDecimal("300.00"));
+        article.setAuditStatus("SUBMITTED");
+        when(editorialMapper.selectById(1L)).thenReturn(article);
 
-        ApiException error = assertThrows(ApiException.class,
-                () -> feeService.updateFee(1L, "EDITORIAL", new FeeSubmitDTO(),
-                        93L, "张静文", "4", 4));
+        BizWorkContributor contributor = new BizWorkContributor();
+        contributor.setUserId(8L);
+        contributor.setRoleInWork("AUTHOR");
+        contributor.setFeeAmount(new BigDecimal("300.00"));
+        when(contributorMapper.selectList(any())).thenReturn(Collections.singletonList(contributor));
 
-        assertEquals(403, error.getStatus());
-        verify(editorialMapper, never()).updateById(any());
-    }
+        SysUser author = new SysUser();
+        author.setRealName("测试作者");
+        author.setStudentNo("2026000000001");
+        when(sysUserMapper.selectById(8L)).thenReturn(author);
 
-    @Test
-    void ministerCannotDeleteAnotherDepartmentsTask() {
-        SysUserDept membership = new SysUserDept();
-        membership.setUserId(93L);
-        membership.setDeptId(5L);
-        SysDept visual = new SysDept();
-        visual.setId(5L);
-        visual.setDeptCode("VISUAL");
-        when(sysUserDeptMapper.selectList(any())).thenReturn(Collections.singletonList(membership));
-        when(sysDeptMapper.selectById(5L)).thenReturn(visual);
+        FeeDetailVO detail = feeService.getFeeDetail(1L, "EDITORIAL", 93L, 4);
 
-        ApiException error = assertThrows(ApiException.class,
-                () -> feeService.invalidateRejectedFee(1L, "EDITORIAL", 93L,
-                        "张静文", "4", 4));
-
-        assertEquals(403, error.getStatus());
-        verify(editorialMapper, never()).deleteById(any(Long.class));
+        assertEquals("跨部门稿件", detail.getWorkInfo().get("title"));
+        assertNull(detail.getTotalAmount());
+        assertNull(detail.getContributors().get(0).getFeeAmount());
+        assertFalse(detail.getWorkInfo().containsKey("isSpecialNode"));
+        assertFalse(detail.getWorkInfo().containsKey("specialMultiplier"));
     }
 
     @Test
@@ -96,6 +102,6 @@ class FeeServiceImplPermissionAndDuplicateTest {
                 () -> feeService.submitFee(2L, "secretary", "秘书长", 3, dto));
 
         assertEquals(409, error.getStatus());
-        verify(editorialMapper, never()).insert(any());
+        org.mockito.Mockito.verify(editorialMapper, org.mockito.Mockito.never()).insert(any());
     }
 }

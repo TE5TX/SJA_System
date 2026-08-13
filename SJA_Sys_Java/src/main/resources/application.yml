@@ -1,17 +1,22 @@
 server:
-  port: 8080
+  port: ${SJA_SERVER_PORT:8080}
 
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/sja_system_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: ${SJA_DB_URL:jdbc:mysql://localhost:3306/sja_system_db?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${SJA_DB_USERNAME}
+    password: ${SJA_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   redis:
-    host: 127.0.0.1
-    port: 6379
-    database: 1
+    host: ${SJA_REDIS_HOST:127.0.0.1}
+    port: ${SJA_REDIS_PORT:6379}
+    password: ${SJA_REDIS_PASSWORD:}
+    database: ${SJA_REDIS_DATABASE:1}
     timeout: 2s
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
 
 # 202608121523 - 增加了登录滑块验证码，并使用本机 Redis 保存一次性验证凭证。
 captcha:
@@ -32,8 +37,22 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
 jwt:
-  secret: sja-system-jwt-secret-key-2026-must-be-at-least-256-bits-long
-  expiration: 86400000
+  secret: ${SJA_JWT_SECRET}
+  access-expiration: ${SJA_JWT_ACCESS_EXPIRATION:900000}
+  refresh-expiration: ${SJA_JWT_REFRESH_EXPIRATION:604800000}
+
+sja:
+  security:
+    cors-allowed-origins: ${SJA_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175}
+    refresh-cookie-secure: ${SJA_REFRESH_COOKIE_SECURE:false}
+  upload:
+    avatar-dir: ${SJA_AVATAR_DIR:${user.dir}/uploads/avatars}
+    max-pixels: ${SJA_AVATAR_MAX_PIXELS:20000000}
+    max-dimension: ${SJA_AVATAR_MAX_DIMENSION:6000}
+    output-dimension: ${SJA_AVATAR_OUTPUT_DIMENSION:1024}
 
 knife4j:
-  enable: true
+  enable: ${SJA_API_DOCS_ENABLED:false}
+springfox:
+  documentation:
+    enabled: ${SJA_API_DOCS_ENABLED:false}

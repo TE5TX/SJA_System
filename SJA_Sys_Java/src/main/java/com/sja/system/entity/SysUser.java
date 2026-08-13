@@ -26,6 +26,8 @@ public class SysUser {
 
     private Integer mustChangePassword;
 
+    private Integer tokenVersion;
+
     private String realName;
 
     private Integer gender;

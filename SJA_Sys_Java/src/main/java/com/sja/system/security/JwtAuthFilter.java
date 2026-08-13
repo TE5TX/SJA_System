@@ -3,7 +3,6 @@ package com.sja.system.security;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -17,8 +16,6 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * JWT authentication filter that runs once per request.
@@ -40,29 +37,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String token = resolveToken(request);
 
-        if (StringUtils.hasText(token) && jwtUtils.validateToken(token)) {
+        if (StringUtils.hasText(token) && jwtUtils.validateAccessToken(token)) {
             try {
                 String username = jwtUtils.getUsername(token);
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-
-                // Build authorities from the JWT roleCode claim as a fallback.
-                // The UserDetailsService already loads full authorities, but we
-                // ensure the ROLE_ prefix authority is present.
-                Integer roleCode = jwtUtils.getRoleCode(token);
-                List<SimpleGrantedAuthority> authorities = userDetails.getAuthorities().stream()
-                        .map(a -> new SimpleGrantedAuthority(a.getAuthority()))
-                        .collect(Collectors.toList());
-
-                // Ensure ROLE_{roleCode} is present
-                String roleAuthority = "ROLE_" + roleCode;
-                boolean hasRoleAuth = authorities.stream()
-                        .anyMatch(a -> a.getAuthority().equals(roleAuthority));
-                if (!hasRoleAuth) {
-                    authorities.add(new SimpleGrantedAuthority(roleAuthority));
+                if (!(userDetails instanceof SjaUserPrincipal)) {
+                    throw new IllegalStateException("Unsupported authenticated principal");
+                }
+                SjaUserPrincipal principal = (SjaUserPrincipal) userDetails;
+                if (!principal.getUserId().equals(jwtUtils.getUserId(token))
+                        || !principal.getTokenVersion().equals(jwtUtils.getTokenVersion(token))) {
+                    throw new IllegalStateException("Token has been revoked");
                 }
 
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, authorities);
+                        new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);

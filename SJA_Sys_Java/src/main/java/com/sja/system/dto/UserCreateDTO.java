@@ -35,7 +35,7 @@ public class UserCreateDTO {
     private String photo;
 
     @NotBlank(message = "身份证号不能为空")
-    @Size(max = 18, message = "身份证号不能超过 18 个字符")
+    @Pattern(regexp = "^\\d{17}[\\dXx]$", message = "身份证号格式不正确")
     private String idCard;
 
     @NotBlank(message = "手机号不能为空")
@@ -55,14 +55,16 @@ public class UserCreateDTO {
     private String dormAddress;
 
     @NotBlank(message = "银行卡号不能为空")
-    @Size(max = 30, message = "银行卡号不能超过 30 个字符")
+    @Pattern(regexp = "^\\d{10,30}$", message = "银行卡号格式不正确")
     private String bankCard;
 
     @NotEmpty(message = "请至少选择一个部门")
-    private List<Long> deptIds;
+    @Size(max = 10, message = "部门数量不能超过 10 个")
+    private List<@NotNull(message = "部门ID不能为空") Long> deptIds;
 
     @NotEmpty(message = "请至少选择一个角色")
-    private List<Long> roleIds;
+    @Size(max = 20, message = "角色数量不能超过 20 个")
+    private List<@NotNull(message = "角色ID不能为空") Long> roleIds;
 
     @NotNull(message = "账号状态不能为空")
     @Min(value = 0, message = "账号状态只能为 0 或 1")

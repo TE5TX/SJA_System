@@ -13,6 +13,7 @@ import com.sja.system.mapper.SysUserDeptMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserRoleMapper;
 import com.sja.system.service.OperationLogService;
+import com.sja.system.service.AvatarStorageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -39,7 +40,8 @@ class UserServiceImplCreateTest {
         OperationLogService operationLogService = mock(OperationLogService.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         UserServiceImpl service = new UserServiceImpl(userMapper, roleMapper, deptMapper,
-                userRoleMapper, userDeptMapper, operationLogService, passwordEncoder);
+                userRoleMapper, userDeptMapper, operationLogService, passwordEncoder,
+                mock(AvatarStorageService.class));
 
         SysDept dept = new SysDept();
         dept.setId(2L);
@@ -78,7 +80,8 @@ class UserServiceImplCreateTest {
         OperationLogService operationLogService = mock(OperationLogService.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         UserServiceImpl service = new UserServiceImpl(userMapper, roleMapper, deptMapper,
-                userRoleMapper, userDeptMapper, operationLogService, passwordEncoder);
+                userRoleMapper, userDeptMapper, operationLogService, passwordEncoder,
+                mock(AvatarStorageService.class));
         when(userMapper.selectCount(any())).thenReturn(0L, 0L, 1L);
 
         ApiException exception = assertThrows(ApiException.class,

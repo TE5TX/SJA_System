@@ -2,6 +2,7 @@ package com.sja.system.service;
 
 import com.sja.system.common.PageResult;
 import com.sja.system.vo.OperationLogVO;
+import com.sja.system.dto.OperationLogQueryDTO;
 
 /**
  * Operation log service interface.
@@ -24,6 +25,13 @@ public interface OperationLogService {
     void log(Long userId, String realName, String roleName, String operationType,
              String targetModule, Long targetId, String detail, String ipAddress);
 
+    void logChange(Long userId, String realName, String roleName, String operationType,
+                   String targetModule, Long targetId, String detail,
+                   String beforeData, String afterData, String ipAddress);
+
+    void logFailure(Long userId, String realName, String roleName, String operationType,
+                    String targetModule, String detail);
+
     /**
      * Retrieve paginated operation logs, newest first.
      *
@@ -32,4 +40,6 @@ public interface OperationLogService {
      * @return paginated log list
      */
     PageResult<OperationLogVO> getLogList(Integer pageNum, Integer pageSize);
+
+    PageResult<OperationLogVO> getLogList(OperationLogQueryDTO query);
 }

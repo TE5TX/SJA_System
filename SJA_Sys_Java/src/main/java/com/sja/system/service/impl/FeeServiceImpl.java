@@ -142,12 +142,12 @@ public class FeeServiceImpl implements FeeService {
         // 4. Log operation
         operationLogService.log(userId, realName, "", "CREATE",
                 "FEE", workId,
-                String.format("提交稿费申请 [%s] 总金额: %.1f, 贡献者: %d人",
-                        workType, totalAmount, contributors != null ? contributors.size() : 0),
+                String.format("提交稿费申请 [%s]，贡献者: %d人",
+                        workType, contributors != null ? contributors.size() : 0),
                 "");
 
-        log.info("Fee submitted: type={}, id={}, total={}, contributors={}",
-                workType, workId, totalAmount, contributors != null ? contributors.size() : 0);
+        log.info("Fee submitted: type={}, id={}, contributors={}",
+                workType, workId, contributors != null ? contributors.size() : 0);
     }
 
     @Override
@@ -415,8 +415,6 @@ public class FeeServiceImpl implements FeeService {
 
         String detail = "REJECTED".equals(originalStatus)
                 ? String.format("修改并重新提交稿费任务 [%s] id=%d", workType, id)
-                : canManageAmount
-                ? String.format("修改稿费任务 [%s] id=%d，总金额 %.1f", workType, id, totalAmount)
                 : String.format("修改未审核稿费任务 [%s] id=%d", workType, id);
         operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE", "FEE", id, detail, "");
     }
@@ -1135,8 +1133,9 @@ public class FeeServiceImpl implements FeeService {
     }
 
     private boolean isGlobalTaskViewer(Integer roleCode) {
-        // 202608101042 - 修复了部长可以查看、编辑和删除其他部门稿费任务的问题。
-        return roleCode != null && (roleCode == 0 || roleCode == 1 || roleCode == 2 || roleCode == 3);
+        // 部长可以查看和编辑所有部门的任务元数据，但金额仍在服务端统一清空。
+        return roleCode != null && (roleCode == 0 || roleCode == 1 || roleCode == 2
+                || roleCode == 3 || roleCode == 4);
     }
 
     private boolean isManagementRole(Integer roleCode) {

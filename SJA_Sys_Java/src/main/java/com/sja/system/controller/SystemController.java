@@ -2,6 +2,7 @@ package com.sja.system.controller;
 
 import com.sja.system.common.PageResult;
 import com.sja.system.common.Result;
+import com.sja.system.common.ApiException;
 import com.sja.system.entity.SysDept;
 import com.sja.system.entity.SysRole;
 import com.sja.system.security.SecurityUtils;
@@ -9,6 +10,7 @@ import com.sja.system.service.OperationLogService;
 import com.sja.system.service.SystemService;
 import com.sja.system.vo.MenuTreeVO;
 import com.sja.system.vo.OperationLogVO;
+import com.sja.system.dto.OperationLogQueryDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.validation.Valid;
 import java.util.List;
 
 /**
@@ -70,9 +73,13 @@ public class SystemController {
     @GetMapping("/logs")
     @PreAuthorize("hasAuthority('sys:log:view')")
     public Result<PageResult<OperationLogVO>> getOperationLogs(
-            @RequestParam(defaultValue = "1") Integer pageNum,
-            @RequestParam(defaultValue = "10") Integer pageSize) {
-        PageResult<OperationLogVO> result = operationLogService.getLogList(pageNum, pageSize);
+            @Valid OperationLogQueryDTO query,
+            HttpServletRequest request) {
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
+            throw ApiException.forbidden("只有管理员或秘书长可以查看操作日志");
+        }
+        PageResult<OperationLogVO> result = operationLogService.getLogList(query);
         return Result.success(result);
     }
 }

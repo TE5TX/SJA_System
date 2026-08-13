@@ -9,7 +9,7 @@ public class LoginVO {
 
     private String token;
 
-    private UserVO userInfo;
+    private SessionUserVO userInfo;
 
     private List<MenuTreeVO> menus;
 

@@ -27,5 +27,10 @@ class MaskingUtilsTest {
                 "idCard [440101200001011234]->[440101200001015678]; phone [13812345678]->[13912345678]");
         assertFalse(sanitized.contains("440101200001011234"));
         assertFalse(sanitized.contains("13812345678"));
+
+        String json = MaskingUtils.sanitizeLogDetail(
+                "{\"phone\":\"13812345678\",\"bankCard\":\"6222021234567890123\"}");
+        assertFalse(json.contains("13812345678"));
+        assertFalse(json.contains("6222021234567890123"));
     }
 }

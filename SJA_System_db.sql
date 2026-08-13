@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   `username` VARCHAR(50) NOT NULL COMMENT '用户名（登录账号）',
   `password` VARCHAR(255) NOT NULL COMMENT '密码',
   `must_change_password` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '首次登录是否必须修改密码',
+  `token_version` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '令牌版本，修改密码/权限或注销时递增',
   `real_name` VARCHAR(50) NOT NULL COMMENT '真实姓名',
   `gender` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '性别：0-未知，1-男，2-女',
   `photo` VARCHAR(255) DEFAULT NULL COMMENT '照片URL',
@@ -62,10 +63,33 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_username` (`username`),
   UNIQUE KEY `uk_student_no` (`student_no`),
-  UNIQUE KEY `uk_phone` (`phone_unique`)
+  UNIQUE KEY `uk_phone` (`phone_unique`),
+  UNIQUE KEY `uk_id_card` (`id_card`),
+  UNIQUE KEY `uk_photo` (`photo`),
+  CONSTRAINT `chk_sys_user_gender` CHECK (`gender` IN (0, 1, 2)),
+  CONSTRAINT `chk_sys_user_valid` CHECK (`is_valid` IN (0, 1)),
+  CONSTRAINT `chk_sys_user_must_change_password` CHECK (`must_change_password` IN (0, 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
--- 1.4 用户-角色关联表
+-- 1.4 刷新令牌表
+CREATE TABLE IF NOT EXISTS `sys_refresh_token` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `token_id` VARCHAR(64) NOT NULL COMMENT 'JWT jti',
+  `token_hash` CHAR(64) NOT NULL COMMENT '刷新令牌SHA-256摘要',
+  `token_family` VARCHAR(64) NOT NULL COMMENT '轮换令牌家族ID',
+  `user_id` BIGINT UNSIGNED NOT NULL,
+  `expires_at` DATETIME NOT NULL,
+  `revoked_at` DATETIME DEFAULT NULL,
+  `replaced_by` VARCHAR(64) DEFAULT NULL COMMENT '轮换后的token_id',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_refresh_token_id` (`token_id`),
+  KEY `idx_refresh_user_active` (`user_id`, `revoked_at`, `expires_at`),
+  KEY `idx_refresh_family_active` (`token_family`, `revoked_at`),
+  CONSTRAINT `fk_refresh_token_user` FOREIGN KEY (`user_id`) REFERENCES `sys_user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='可轮换刷新令牌表';
+
+-- 1.5 用户-角色关联表
 CREATE TABLE IF NOT EXISTS `sys_user_role` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` BIGINT UNSIGNED NOT NULL,
@@ -74,10 +98,12 @@ CREATE TABLE IF NOT EXISTS `sys_user_role` (
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_role` (`user_id`, `role_id`),
-  KEY `idx_role_id` (`role_id`)
+  KEY `idx_role_id` (`role_id`),
+  CONSTRAINT `fk_user_role_user` FOREIGN KEY (`user_id`) REFERENCES `sys_user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_user_role_role` FOREIGN KEY (`role_id`) REFERENCES `sys_role` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户角色关联表';
 
--- 1.5 用户-部门关联表
+-- 1.6 用户-部门关联表
 CREATE TABLE IF NOT EXISTS `sys_user_dept` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id` BIGINT UNSIGNED NOT NULL,
@@ -86,7 +112,9 @@ CREATE TABLE IF NOT EXISTS `sys_user_dept` (
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_user_dept` (`user_id`, `dept_id`),
-  KEY `idx_dept_id` (`dept_id`)
+  KEY `idx_dept_id` (`dept_id`),
+  CONSTRAINT `fk_user_dept_user` FOREIGN KEY (`user_id`) REFERENCES `sys_user` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_user_dept_dept` FOREIGN KEY (`dept_id`) REFERENCES `sys_dept` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户部门关联表';
 
 
@@ -114,7 +142,11 @@ CREATE TABLE IF NOT EXISTS `biz_editorial_article` (
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_editorial_submitter` (`submitter_id`),
+  CONSTRAINT `fk_editorial_submitter` FOREIGN KEY (`submitter_id`) REFERENCES `sys_user` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_editorial_valid` CHECK (`is_valid` IN (0, 1)),
+  CONSTRAINT `chk_editorial_audit` CHECK (`audit_status` IN ('SUBMITTED', 'APPROVED', 'REJECTED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采编部稿件表';
 
 -- 2.2 摄影部作品表
@@ -137,7 +169,11 @@ CREATE TABLE IF NOT EXISTS `biz_photography_work` (
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_photo_submitter` (`submitter_id`),
+  CONSTRAINT `fk_photo_submitter` FOREIGN KEY (`submitter_id`) REFERENCES `sys_user` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_photo_valid` CHECK (`is_valid` IN (0, 1)),
+  CONSTRAINT `chk_photo_audit` CHECK (`audit_status` IN ('SUBMITTED', 'APPROVED', 'REJECTED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='摄影部作品表';
 
 -- 2.3 视频部作品表
@@ -161,7 +197,11 @@ CREATE TABLE IF NOT EXISTS `biz_video_work` (
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_video_submitter` (`submitter_id`),
+  CONSTRAINT `fk_video_submitter` FOREIGN KEY (`submitter_id`) REFERENCES `sys_user` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_video_valid` CHECK (`is_valid` IN (0, 1)),
+  CONSTRAINT `chk_video_audit` CHECK (`audit_status` IN ('SUBMITTED', 'APPROVED', 'REJECTED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频部作品表';
 
 -- 2.4 视觉部作品表
@@ -183,7 +223,11 @@ CREATE TABLE IF NOT EXISTS `biz_visual_work` (
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_visual_submitter` (`submitter_id`),
+  CONSTRAINT `fk_visual_submitter` FOREIGN KEY (`submitter_id`) REFERENCES `sys_user` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_visual_valid` CHECK (`is_valid` IN (0, 1)),
+  CONSTRAINT `chk_visual_audit` CHECK (`audit_status` IN ('SUBMITTED', 'APPROVED', 'REJECTED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视觉部作品表';
 
 -- 2.5 月度编辑、管理及巡查补贴表
@@ -199,7 +243,11 @@ CREATE TABLE IF NOT EXISTS `biz_monthly_subsidy` (
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_subsidy_submitter` (`submitter_id`),
+  CONSTRAINT `fk_subsidy_submitter` FOREIGN KEY (`submitter_id`) REFERENCES `sys_user` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `chk_subsidy_valid` CHECK (`is_valid` IN (0, 1)),
+  CONSTRAINT `chk_subsidy_audit` CHECK (`audit_status` IN ('SUBMITTED', 'APPROVED', 'REJECTED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='月度编辑、管理及巡查补贴表';
 
 -- 2.6 统一的稿费人员分配表
@@ -215,7 +263,10 @@ CREATE TABLE IF NOT EXISTS `biz_work_contributor` (
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_work_user` (`work_type`, `work_id`, `user_id`, `role_in_work`),
-  KEY `idx_user_id` (`user_id`)
+  KEY `idx_user_id` (`user_id`),
+  CONSTRAINT `fk_work_contributor_user` FOREIGN KEY (`user_id`) REFERENCES `sys_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `chk_contributor_fee` CHECK (`fee_amount` >= 0),
+  CONSTRAINT `chk_contributor_count` CHECK (`work_count` >= 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一稿费人员分配表';
 
 -- 2.7 稿费标准配置表
@@ -314,7 +365,10 @@ CREATE TABLE IF NOT EXISTS `sys_role_menu` (
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_role_menu` (`role_id`, `menu_id`)
+  UNIQUE KEY `uk_role_menu` (`role_id`, `menu_id`),
+  KEY `idx_role_menu_menu` (`menu_id`),
+  CONSTRAINT `fk_role_menu_role` FOREIGN KEY (`role_id`) REFERENCES `sys_role` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_role_menu_menu` FOREIGN KEY (`menu_id`) REFERENCES `sys_menu` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色菜单关联表';
 
 -- 3.3 操作日志表
@@ -328,11 +382,23 @@ CREATE TABLE IF NOT EXISTS `sys_operation_log` (
   `target_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '操作对象的ID',
   `detail` TEXT DEFAULT NULL COMMENT '操作详情/修改前后的数据对比(JSON格式)',
   `ip_address` VARCHAR(50) DEFAULT NULL COMMENT '操作IP地址',
+  `request_id` VARCHAR(64) DEFAULT NULL COMMENT '请求追踪ID',
+  `request_method` VARCHAR(10) DEFAULT NULL COMMENT 'HTTP方法',
+  `request_uri` VARCHAR(255) DEFAULT NULL COMMENT '请求路径',
+  `result_status` VARCHAR(20) NOT NULL DEFAULT 'SUCCESS' COMMENT '结果：SUCCESS/FAILURE',
+  `before_data` TEXT DEFAULT NULL COMMENT '变更前数据（已脱敏）',
+  `after_data` TEXT DEFAULT NULL COMMENT '变更后数据（已脱敏）',
+  `user_agent` VARCHAR(500) DEFAULT NULL COMMENT '客户端User-Agent',
+  `duration_ms` BIGINT UNSIGNED DEFAULT NULL COMMENT '请求耗时毫秒',
   `remark` VARCHAR(500) DEFAULT NULL COMMENT '备注',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
   PRIMARY KEY (`id`),
   KEY `idx_user_id` (`user_id`),
-  KEY `idx_create_time` (`create_time`)
+  KEY `idx_create_time` (`create_time`),
+  KEY `idx_log_request_id` (`request_id`),
+  KEY `idx_log_module_target` (`target_module`, `target_id`),
+  CONSTRAINT `fk_operation_log_user` FOREIGN KEY (`user_id`) REFERENCES `sys_user` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `chk_operation_log_result` CHECK (`result_status` IN ('SUCCESS', 'FAILURE'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统操作日志表';
 
 -- ==========================================
@@ -342,8 +408,8 @@ CREATE TABLE IF NOT EXISTS `sys_operation_log` (
 -- 4.1 插入角色数据 (sys_role)
 INSERT INTO `sys_role` (`role_name`, `role_code`, `sort_order`, `is_valid`, `remark`) VALUES
 -- 核心管理层
-('主席', 1, 1, 1, '最高权限，可查看/修改所有人信息'),
-('老师', 2, 2, 1, '指导老师，可查看所有人信息及已审核的稿费、操作日志'),
+('主席', 1, 1, 1, '可查看/修改所有人信息及查看稿费任务，不查看金额'),
+('老师', 2, 2, 1, '指导老师，可查看/修改所有人信息及查看稿费任务，不查看金额'),
 ('秘书长', 3, 3, 1, '负责审核明细表、导出月度稿费发放表、管理所有用户信息及查看日志'),
 
 -- 部门管理层
@@ -440,7 +506,7 @@ INSERT INTO `sys_menu` (`id`, `menu_name`, `permission_code`, `menu_type`, `pare
 --   8=实习部员(一轮), 9=实习部员(二轮), 10=留任部员
 --   11=校园小队队长, 12=校园小队队员, 13=游客
 
--- ===== 主席 (role_id=1)：全部权限 =====
+-- ===== 主席 (role_id=1)：人员管理 + 稿费查看（不含金额）+ 素拓 =====
 INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (1, 1,  '个人管理-目录'),
 (1, 2,  '个人信息-菜单'),
@@ -451,10 +517,6 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (1, 4,  '稿费提交-菜单'),
 (1, 20, '提交稿费按钮'),
 (1, 24, '选择稿费作者'),
-(1, 5,  '稿费审核-菜单'),
-(1, 21, '审核稿费按钮'),
-(1, 6,  '稿费导出-菜单'),
-(1, 22, '导出稿费按钮'),
 (1, 7,  '稿费列表-菜单'),
 (1, 23, '查看稿费按钮'),
 (1, 8,  '系统管理-目录'),
@@ -467,12 +529,10 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (1, 35, '查看部门'),
 (1, 36, '菜单管理-菜单'),
 (1, 37, '查看菜单'),
-(1, 38, '日志管理-菜单'),
-(1, 39, '查看日志'),
 (1, 40, '素拓工具-菜单'),
 (1, 41, '使用素拓工具');
 
--- ===== 老师 (role_id=2)：个人信息 + 人员管理 + 稿费查看 + 日志查看 + 素拓 =====
+-- ===== 老师 (role_id=2)：个人信息 + 人员管理 + 稿费查看（不含金额）+ 素拓 =====
 INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (2, 1,  '个人管理-目录'),
 (2, 2,  '个人信息-菜单'),
@@ -490,8 +550,6 @@ INSERT INTO `sys_role_menu` (`role_id`, `menu_id`, `remark`) VALUES
 (2, 33, '查看角色'),
 (2, 34, '部门管理-菜单'),
 (2, 35, '查看部门'),
-(2, 38, '日志管理-菜单'),
-(2, 39, '查看日志'),
 (2, 40, '素拓工具-菜单'),
 (2, 41, '使用素拓工具');
 

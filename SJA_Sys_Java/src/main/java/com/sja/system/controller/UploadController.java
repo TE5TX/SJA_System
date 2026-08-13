@@ -1,8 +1,17 @@
 package com.sja.system.controller;
 
+import com.sja.system.common.ApiException;
 import com.sja.system.common.Result;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.util.StringUtils;
+import com.sja.system.service.AvatarStorageService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -12,55 +21,36 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Locale;
+import java.time.Duration;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 
-@Slf4j
 @RestController
 @RequestMapping("/api/v1/upload")
+@RequiredArgsConstructor
 public class UploadController {
 
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "gif", "webp");
-    private static final long MAX_SIZE = 5 * 1024 * 1024L;
+    private final AvatarStorageService avatarStorageService;
 
     @PostMapping("/avatar")
     public Result<Map<String, String>> uploadAvatar(@RequestParam("file") MultipartFile file) {
-        if (file == null || file.isEmpty()) {
-            return Result.error("请选择要上传的照片");
-        }
-        if (file.getSize() > MAX_SIZE) {
-            return Result.error("照片大小不能超过 5MB");
-        }
-
-        String originalName = file.getOriginalFilename();
-        String extension = getExtension(originalName);
-        if (!ALLOWED_EXTENSIONS.contains(extension)) {
-            return Result.error("只支持 jpg、jpeg、png、gif、webp 格式");
-        }
-
-        try {
-            Path uploadDir = Paths.get(System.getProperty("user.dir"), "uploads", "avatars");
-            Files.createDirectories(uploadDir);
-
-            String filename = UUID.randomUUID() + "." + extension;
-            Path target = uploadDir.resolve(filename);
-            file.transferTo(target.toFile());
-
-            String url = "/uploads/avatars/" + filename;
-            return Result.success(Map.of("url", url));
-        } catch (IOException e) {
-            log.error("Avatar upload failed", e);
-            return Result.error("照片上传失败");
-        }
+        return Result.success(Map.of("url", avatarStorageService.store(file)));
     }
 
-    private String getExtension(String filename) {
-        if (!StringUtils.hasText(filename) || !filename.contains(".")) {
-            return "";
+    @GetMapping("/avatar/{filename:.+}")
+    public ResponseEntity<Resource> getAvatar(@PathVariable String filename) {
+        Path path = avatarStorageService.resolveFilename(filename);
+        if (!Files.isRegularFile(path)) {
+            throw ApiException.notFound("照片不存在");
         }
-        return filename.substring(filename.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
+        try {
+            MediaType mediaType = filename.endsWith(".png") ? MediaType.IMAGE_PNG : MediaType.IMAGE_JPEG;
+            return ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .cacheControl(CacheControl.maxAge(Duration.ofMinutes(15)).cachePrivate())
+                    .header("X-Content-Type-Options", "nosniff")
+                    .body(new UrlResource(path.toUri()));
+        } catch (IOException e) {
+            throw ApiException.notFound("照片不存在");
+        }
     }
 }

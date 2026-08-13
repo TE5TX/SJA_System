@@ -9,6 +9,7 @@ import com.sja.system.mapper.SysUserDeptMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserRoleMapper;
 import com.sja.system.service.OperationLogService;
+import com.sja.system.service.AvatarStorageService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -37,7 +38,8 @@ class UserServiceImplBatchUpdateTest {
                 userRoleMapper,
                 mock(SysUserDeptMapper.class),
                 operationLogService,
-                mock(PasswordEncoder.class));
+                mock(PasswordEncoder.class),
+                mock(AvatarStorageService.class));
 
         SysRole role = new SysRole();
         role.setId(8L);
@@ -63,7 +65,7 @@ class UserServiceImplBatchUpdateTest {
 
         verify(userRoleMapper, times(2)).delete(any());
         verify(userRoleMapper, times(2)).insert(any());
-        verify(userMapper, times(2)).updateById(any(SysUser.class));
+        verify(userMapper, times(2)).update(any(), any());
         verify(operationLogService, times(2)).log(
                 eq(1L), eq("管理员"), eq("0"), eq("UPDATE"), eq("USER"), any(), any(), eq(""));
     }

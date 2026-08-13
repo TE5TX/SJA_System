@@ -29,7 +29,11 @@ public class FeeStandardController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('fee:audit')")
-    public Result<List<BizFeeStandard>> list() {
+    public Result<List<BizFeeStandard>> list(HttpServletRequest request) {
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
+            throw ApiException.forbidden("只有管理员或秘书长可以查看稿费标准");
+        }
         return Result.success(feeStandardService.list());
     }
 

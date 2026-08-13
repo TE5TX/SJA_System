@@ -10,6 +10,9 @@ import com.sja.system.dto.UserBatchUpdateDTO;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserExportDTO;
 import com.sja.system.dto.UserQueryDTO;
+import com.sja.system.dto.UserUpdateDTO;
+import com.sja.system.dto.UserStatusUpdateDTO;
+import com.sja.system.dto.UserPhotoUpdateDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.OperationLogService;
 import com.sja.system.service.UserService;
@@ -84,14 +87,13 @@ public class UserController {
     }
 
     @PutMapping("/user/profile/photo")
-    public Result<Void> updateProfilePhoto(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+    public Result<Void> updateProfilePhoto(@RequestBody @Valid UserPhotoUpdateDTO body, HttpServletRequest request) {
         Long userId = securityUtils.getCurrentUserId(request);
         Integer roleCode = securityUtils.getCurrentRoleCode(request);
         if (userId == null) {
             return Result.error(401, "未授权");
         }
-        String photo = body.get("photo") != null ? body.get("photo").toString() : null;
-        userService.updateProfilePhoto(userId, photo, userId,
+        userService.updateProfilePhoto(userId, body.getPhoto(), userId,
                 securityUtils.getCurrentUsernameFromToken(request),
                 roleCode != null ? String.valueOf(roleCode) : "");
         return Result.success();
@@ -128,7 +130,7 @@ public class UserController {
      */
     @GetMapping("/users")
     @PreAuthorize("hasAuthority('sys:users:view')")
-    public Result<PageResult<UserVO>> queryUsers(UserQueryDTO query) {
+    public Result<PageResult<UserVO>> queryUsers(@Valid UserQueryDTO query) {
         PageResult<UserVO> result = userService.queryUsers(query);
         return Result.success(result);
     }
@@ -235,7 +237,7 @@ public class UserController {
     @PutMapping("/users/{id}")
     @PreAuthorize("hasAuthority('sys:users:edit')")
     public Result<Void> updateUser(@PathVariable Long id,
-                                   @RequestBody Map<String, Object> updates,
+                                    @RequestBody @Valid UserUpdateDTO updates,
                                    HttpServletRequest request) {
         Long operatorId = securityUtils.getCurrentUserId(request);
         String operatorName = securityUtils.getCurrentUsernameFromToken(request);
@@ -252,15 +254,14 @@ public class UserController {
     @PutMapping("/users/{id}/photo")
     @PreAuthorize("hasAuthority('sys:users:edit')")
     public Result<Void> updateUserPhoto(@PathVariable Long id,
-                                        @RequestBody Map<String, Object> body,
+                                         @RequestBody @Valid UserPhotoUpdateDTO body,
                                         HttpServletRequest request) {
         Long operatorId = securityUtils.getCurrentUserId(request);
         Integer roleCode = securityUtils.getCurrentRoleCode(request);
         if (operatorId == null) {
             return Result.error(401, "未授权");
         }
-        String photo = body.get("photo") != null ? body.get("photo").toString() : null;
-        userService.updateProfilePhoto(id, photo, operatorId,
+        userService.updateProfilePhoto(id, body.getPhoto(), operatorId,
                 securityUtils.getCurrentUsernameFromToken(request),
                 roleCode != null ? String.valueOf(roleCode) : "");
         return Result.success();
@@ -286,7 +287,7 @@ public class UserController {
     @PutMapping("/users/{id}/status")
     @PreAuthorize("hasAuthority('sys:users:edit')")
     public Result<Void> updateUserStatus(@PathVariable Long id,
-                                         @RequestBody Map<String, Object> body,
+                                         @RequestBody @Valid UserStatusUpdateDTO body,
                                          HttpServletRequest request) {
         Long operatorId = securityUtils.getCurrentUserId(request);
         String operatorName = securityUtils.getCurrentUsernameFromToken(request);
@@ -297,12 +298,7 @@ public class UserController {
             return Result.error(401, "未授权");
         }
 
-        Integer status = (Integer) body.get("status");
-        if (status == null) {
-            return Result.error("缺少 status 参数");
-        }
-
-        userService.updateUserStatus(id, status, operatorId, operatorName, operatorRole);
+        userService.updateUserStatus(id, body.getStatus(), operatorId, operatorName, operatorRole);
         return Result.success();
     }
 

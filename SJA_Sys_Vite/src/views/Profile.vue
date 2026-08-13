@@ -374,9 +374,9 @@ const refreshProfile = async () => {
 }
 
 const beforeAvatarUpload = file => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif']
   if (!allowedTypes.includes(file.type)) {
-    ElMessage.warning('只支持 jpg、png、gif、webp 格式')
+    ElMessage.warning('只支持 JPEG、PNG、GIF 格式')
     return false
   }
   if (file.size > 5 * 1024 * 1024) {
@@ -427,7 +427,8 @@ const handleSubmit = async () => {
     if (valid) {
       submitLoading.value = true
       try {
-        await updateUserProfile({ ...editForm })
+        const { photo: _photo, ...profileFields } = editForm
+        await updateUserProfile(profileFields)
         ElMessage.success('保存成功')
 
         // 刷新个人资料（学号修改后账号会同步更新）

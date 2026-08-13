@@ -14,7 +14,6 @@ import com.sja.system.mapper.SysUserRoleMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -69,6 +68,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         // 3. Load role details and build authorities
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+        Integer highestRoleCode = 13;
 
         if (userRoles != null && !userRoles.isEmpty()) {
             List<Long> roleIds = userRoles.stream()
@@ -78,6 +78,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             for (Long roleId : roleIds) {
                 SysRole role = sysRoleMapper.selectById(roleId);
                 if (role != null && role.getIsValid() != null && role.getIsValid() == 1) {
+                    highestRoleCode = Math.min(highestRoleCode, role.getRoleCode());
                     // Add ROLE_{roleCode} authority (for role-based checks)
                     authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getRoleCode()));
 
@@ -107,6 +108,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         log.debug("Loaded user: {}, authorities: {}", user.getUsername(), authorities);
 
-        return new User(user.getUsername(), user.getPassword(), authorities);
+        return new SjaUserPrincipal(user.getId(), user.getUsername(), user.getPassword(),
+                highestRoleCode, user.getTokenVersion(), authorities);
     }
 }
