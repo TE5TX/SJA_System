@@ -46,6 +46,11 @@ public interface UserService {
     void updatePassword(Long userId, PasswordUpdateDTO dto);
 
     /**
+     * Re-authenticate the current user before a sensitive batch operation.
+     */
+    void verifyCurrentPassword(Long userId, String currentPassword);
+
+    /**
      * Paginated user query with optional filters.
      *
      * @param query filter criteria
@@ -79,6 +84,8 @@ public interface UserService {
      * @param operatorRole operator role name
      */
     void updateUser(Long userId, UserUpdateDTO dto, Long operatorId, String operatorName, String operatorRole);
+
+    void resetUserPassword(Long userId, Long operatorId, String operatorName, String operatorRole);
 
     /**
      * Replace roles and/or update account status for multiple users.

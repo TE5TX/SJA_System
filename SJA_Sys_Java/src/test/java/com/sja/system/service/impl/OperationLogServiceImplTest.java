@@ -17,7 +17,7 @@ class OperationLogServiceImplTest {
     @Test
     void throwsWhenAuditInsertFails() {
         SysOperationLogMapper mapper = mock(SysOperationLogMapper.class);
-        when(mapper.insert(any())).thenReturn(0);
+        when(mapper.insert(any(SysOperationLog.class))).thenReturn(0);
         OperationLogServiceImpl service = new OperationLogServiceImpl(mapper);
 
         assertThrows(IllegalStateException.class,
@@ -27,7 +27,7 @@ class OperationLogServiceImplTest {
     @Test
     void marksIndependentFailureAuditAsFailure() {
         SysOperationLogMapper mapper = mock(SysOperationLogMapper.class);
-        when(mapper.insert(any())).thenReturn(1);
+        when(mapper.insert(any(SysOperationLog.class))).thenReturn(1);
         OperationLogServiceImpl service = new OperationLogServiceImpl(mapper);
 
         service.logFailure(1L, "管理员", "0", "PUT", "USER", "请求失败，HTTP状态码=400");

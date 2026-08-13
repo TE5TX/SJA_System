@@ -83,6 +83,13 @@ export function updateUser(id, data) {
   })
 }
 
+export function resetUserPassword(id) {
+  return request({
+    url: `/v1/users/${id}/password/reset`,
+    method: 'put'
+  })
+}
+
 export function updateUserPhoto(id, photo) {
   return request({
     url: `/v1/users/${id}/photo`,

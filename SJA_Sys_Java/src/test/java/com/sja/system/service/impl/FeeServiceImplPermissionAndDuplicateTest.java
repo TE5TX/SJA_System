@@ -102,6 +102,7 @@ class FeeServiceImplPermissionAndDuplicateTest {
                 () -> feeService.submitFee(2L, "secretary", "秘书长", 3, dto));
 
         assertEquals(409, error.getStatus());
-        org.mockito.Mockito.verify(editorialMapper, org.mockito.Mockito.never()).insert(any());
+        org.mockito.Mockito.verify(editorialMapper, org.mockito.Mockito.never())
+                .insert(any(BizEditorialArticle.class));
     }
 }

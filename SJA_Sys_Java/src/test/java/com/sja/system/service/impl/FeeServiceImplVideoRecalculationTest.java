@@ -23,7 +23,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,7 +82,16 @@ class FeeServiceImplVideoRecalculationTest {
         existing.setId(8L);
         existing.setIsValid(1);
         existing.setAuditStatus("SUBMITTED");
-        when(videoMapper.selectById(8L)).thenReturn(existing);
+
+        BizVideoWork reloaded = new BizVideoWork();
+        reloaded.setId(8L);
+        reloaded.setIsValid(1);
+        reloaded.setAuditStatus("SUBMITTED");
+        reloaded.setVideoTitle("计费重算测试");
+        reloaded.setCategory("活动新闻类视频");
+        reloaded.setLikeCount(300);
+        reloaded.setTotalAmount(new BigDecimal("550.0"));
+        when(videoMapper.selectById(8L)).thenReturn(existing, existing, existing, reloaded);
 
         FeeSubmitDTO dto = new FeeSubmitDTO();
         dto.setWorkType("VIDEO");
@@ -115,6 +126,23 @@ class FeeServiceImplVideoRecalculationTest {
         assertEquals(new BigDecimal("550.0"), videoCaptor.getAllValues().stream()
                 .filter(item -> item.getTotalAmount() != null)
                 .findFirst().orElseThrow(AssertionError::new).getTotalAmount());
+
+        ArgumentCaptor<String> detailCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> beforeCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> afterCaptor = ArgumentCaptor.forClass(String.class);
+        verify(operationLogService).logChange(
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq("0"),
+                org.mockito.ArgumentMatchers.eq("UPDATE"),
+                org.mockito.ArgumentMatchers.eq("FEE"),
+                org.mockito.ArgumentMatchers.eq(8L),
+                detailCaptor.capture(), beforeCaptor.capture(), afterCaptor.capture(),
+                org.mockito.ArgumentMatchers.anyString());
+        assertTrue(detailCaptor.getValue().contains("变更"));
+        assertTrue(beforeCaptor.getValue().contains("\"workInfo\""));
+        assertTrue(afterCaptor.getValue().contains("\"workInfo\""));
+        assertNotEquals(beforeCaptor.getValue(), afterCaptor.getValue());
     }
 
     @Test

@@ -8,20 +8,21 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -32,9 +33,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @Configuration
 @EnableWebSecurity
-@EnableGlobalMethodSecurity(prePostEnabled = true)
+@EnableMethodSecurity
 @RequiredArgsConstructor
-public class SecurityConfig extends WebSecurityConfigurerAdapter {
+public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
     private final PasswordChangeRequiredFilter passwordChangeRequiredFilter;
@@ -48,33 +49,22 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
     /**
      * Main security configuration.
      */
-    @Override
-    protected void configure(HttpSecurity http) throws Exception {
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            // Disable CSRF for stateless REST API
-            .csrf().disable()
-            // Enable CORS
-            .cors().configurationSource(corsConfigurationSource())
-            .and()
-            // Stateless session management (no HTTP sessions)
-            .sessionManagement()
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-            .and()
-            // Authorization rules
-            .authorizeRequests()
-                .antMatchers(HttpMethod.GET, "/api/v1/upload/avatar/**").permitAll()
-                // Public endpoints
-                .antMatchers(
-                    "/api/v1/auth/login",
-                    "/api/v1/auth/refresh",
-                    "/api/v1/auth/captcha/**",
-                    "/favicon.ico"
+            .csrf(csrf -> csrf.disable())
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(authorize -> authorize
+                .requestMatchers(HttpMethod.GET, "/api/v1/upload/avatar/**").permitAll()
+                .requestMatchers(
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/captcha/**",
+                        "/favicon.ico"
                 ).permitAll()
-                // All other requests require authentication
-                .anyRequest().authenticated()
-            .and()
-            // Custom authentication entry point for 401 responses
-            .exceptionHandling()
+                .anyRequest().authenticated())
+            .exceptionHandling(exceptions -> exceptions
                 .authenticationEntryPoint((request, response, authException) -> {
                     response.setContentType("application/json;charset=UTF-8");
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -86,13 +76,19 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
                     response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     Result<?> result = Result.error(403, "权限不足，无法访问该资源");
                     response.getWriter().write(objectMapper.writeValueAsString(result));
-                })
-            .and()
-            // Add JWT filter before UsernamePasswordAuthenticationFilter
+                }))
+            .headers(headers -> headers
+                .contentTypeOptions(contentType -> {})
+                .frameOptions(frame -> frame.deny())
+                .httpStrictTransportSecurity(hsts -> hsts
+                        .includeSubDomains(true)
+                        .preload(true)
+                        .maxAgeInSeconds(31536000)))
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(requestTraceFilter, JwtAuthFilter.class)
             .addFilterAfter(passwordChangeRequiredFilter, JwtAuthFilter.class)
             .addFilterAfter(failedOperationAuditFilter, PasswordChangeRequiredFilter.class);
+        return http.build();
     }
 
     /**
@@ -133,8 +129,7 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
      * Expose AuthenticationManager bean for use in AuthController.
      */
     @Bean
-    @Override
-    public AuthenticationManager authenticationManagerBean() throws Exception {
-        return super.authenticationManagerBean();
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
+        return configuration.getAuthenticationManager();
     }
 }

@@ -57,6 +57,7 @@
 
       <el-table
         ref="feeTableRef"
+        class="centered-data-table"
         :data="records"
         v-loading="loading"
         border
@@ -65,6 +66,10 @@
       >
         <!-- 202608111533 - 修复了稿费审核与导出列表没有任务勾选框和批量操作入口的问题。 -->
         <el-table-column type="selection" width="48" fixed reserve-selection />
+        <!-- 202608131617 - 为稿费审核与导出列表增加了跨分页连续序号。 -->
+        <el-table-column label="序号" width="76" align="center" fixed>
+          <template #default="{ $index }">{{ rowNumber($index) }}</template>
+        </el-table-column>
         <el-table-column prop="workType" label="类型" width="100">
           <template #default="{ row }">
             <el-tag>{{ workTypeName(row.workType) }}</el-tag>
@@ -159,10 +164,22 @@
     </el-dialog>
 
     <el-dialog v-model="editVisible" title="编辑稿费任务" width="760px">
+      <el-alert
+        v-if="hasAutomaticReadOnlyFields"
+        class="automatic-field-notice"
+        type="info"
+        :closable="false"
+        show-icon
+        title="标记为“自动计算”的内容由稿费标准和参与人员生成，不能手工修改。"
+      />
       <el-form label-width="110px" class="edit-work-form">
         <el-form-item v-for="field in editWorkFields" :key="field.key" :label="field.label">
+          <div v-if="field.readonly" class="readonly-field" aria-readonly="true">
+            <span>{{ formatReadonlyWorkField(field.key, editForm.workInfo[field.key]) }}</span>
+            <el-tag size="small" type="info" effect="plain">自动计算</el-tag>
+          </div>
           <el-select
-            v-if="field.key === 'platform'"
+            v-else-if="field.key === 'platform'"
             v-model="editForm.workInfo[field.key]"
             @change="handleEditPlatformChange"
           >
@@ -253,13 +270,17 @@
             </el-select>
           </template>
         </el-table-column>
-        <el-table-column v-if="canManageFeeAmount" :label="isAutomaticEditType ? '金额（自动）' : '金额'" width="150">
+        <el-table-column v-if="canManageFeeAmount" :label="isAutomaticEditType ? '金额（自动计算）' : '金额'" width="170">
           <template #default="{ row }">
+            <div v-if="isAutomaticEditType" class="readonly-money" aria-readonly="true">
+              <span>¥{{ money(row.feeAmount) }}</span>
+              <el-tag size="small" type="info" effect="plain">只读</el-tag>
+            </div>
             <el-input-number
+              v-else
               v-model="row.feeAmount"
               :min="0"
               :precision="1"
-              :disabled="isAutomaticEditType"
               controls-position="right"
             />
           </template>
@@ -283,6 +304,9 @@
           {{ preset.label }}
         </el-radio-button>
       </el-radio-group>
+      <div v-if="usesFixedWorkbookTemplate" class="export-template-tip">
+        当前类型将按现有部门工作表版式导出，字段顺序与样表保持一致。
+      </div>
       <div class="export-actions">
         <el-button text class="export-action-btn" @click="toggleAllExportFields">
           {{ allExportFieldsSelected ? '取消全选' : '全选' }}
@@ -431,6 +455,8 @@ const exportPresetFields = {
 const exportPreset = ref('CUSTOM')
 const exportFields = ref([...defaultExportFields])
 const allExportFieldsSelected = computed(() => exportFields.value.length === exportFieldOptions.length)
+const fixedWorkbookTemplates = new Set(['EDITORIAL_WECHAT', 'EDITORIAL_WEBSITE', 'PHOTO', 'VISUAL', 'VIDEO'])
+const usesFixedWorkbookTemplate = computed(() => fixedWorkbookTemplates.has(exportPreset.value))
 
 // 202608101716 - 将稿费金额统一显示为四舍五入后的一位小数。
 const money = value => Number(value || 0).toFixed(1)
@@ -447,6 +473,10 @@ const canAuditFee = computed(() => [0, 3].includes(highestRoleCode.value))
 const canEditFeeTask = computed(() => [0, 3, 4].includes(highestRoleCode.value))
 const automaticEditTypes = new Set(['EDITORIAL', 'PHOTO', 'VISUAL', 'VIDEO'])
 const isAutomaticEditType = computed(() => automaticEditTypes.has(editForm.workType))
+const automaticReadonlyWorkFields = new Set(['authorCount', 'authorAvgFee'])
+const hasAutomaticReadOnlyFields = computed(() =>
+  isAutomaticEditType.value || editWorkFields.value.some(field => field.readonly)
+)
 const auditDialogTitle = computed(() => {
   const action = auditForm.approved ? '通过' : '驳回'
   return batchAuditMode.value ? `批量${action}稿费任务` : `审核${action}`
@@ -489,7 +519,11 @@ const editWorkFields = computed(() => Object.keys(editForm.workInfo || {})
   .filter(key => canManageFeeAmount.value || !amountSensitiveFields.has(key))
   .filter(key => !(editForm.workType === 'VIDEO' && key === 'videoDurationSec'))
   .filter(key => key !== 'specialMultiplier' || Number(editForm.workInfo?.isSpecialNode) === 1)
-  .map(key => ({ key, label: fieldLabelMap[key] || key })))
+  .map(key => ({
+    key,
+    label: fieldLabelMap[key] || key,
+    readonly: automaticReadonlyWorkFields.has(key)
+  })))
 const detailShowsWorkCount = computed(() => (detail.value?.contributors || []).some(item => item.workCount != null))
 const editShowsWorkCount = computed(() => (editForm.contributors || []).some(item => item.workCount != null))
 const editCategoryOptions = computed(() => {
@@ -537,6 +571,11 @@ const selectNumberInputText = event => {
   if (input?.select) {
     requestAnimationFrame(() => input.select())
   }
+}
+
+const formatReadonlyWorkField = (key, value) => {
+  if (key === 'authorAvgFee') return `¥${money(value)}`
+  return value ?? '-'
 }
 
 const handleEditPlatformChange = () => {
@@ -632,6 +671,29 @@ const handleBatchCommand = command => {
   else if (command === 'export') openExport(true)
 }
 
+const rowNumber = index => (query.pageNum - 1) * query.pageSize + index + 1
+
+const requestBatchPassword = async actionName => {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `请输入当前用户密码以执行${actionName}`,
+      '批量操作身份校验',
+      {
+        confirmButtonText: '确认执行',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputPlaceholder: '当前用户密码',
+        inputValidator: value => String(value || '').trim() ? true : '请输入当前用户密码',
+        closeOnClickModal: false,
+        showClose: false
+      }
+    )
+    return value
+  } catch {
+    return ''
+  }
+}
+
 const openEdit = async row => {
   await openDetail(row)
   editForm.workType = detail.value.workType
@@ -717,10 +779,13 @@ const handleAudit = async () => {
   auditing.value = true
   try {
     if (batchAuditMode.value) {
+      const currentPassword = await requestBatchPassword(`批量${auditForm.approved ? '通过' : '驳回'}`)
+      if (!currentPassword) return
       await batchAuditFee({
         tasks: selectedTaskRefs(),
         approved: auditForm.approved,
-        opinion: auditForm.opinion
+        opinion: auditForm.opinion,
+        currentPassword
       })
       ElMessage.success(`已批量${auditForm.approved ? '通过' : '驳回'} ${selectedRecords.value.length} 个任务`)
       clearSelection()
@@ -814,6 +879,7 @@ const handleExport = async () => {
       month: query.month,
       status: query.status,
       contributorName: query.contributorName,
+      templateType: exportPreset.value,
       fields: exportFields.value,
       selectedTasks: exportSelectedOnly.value ? selectedTaskRefs() : null
     })
@@ -821,7 +887,14 @@ const handleExport = async () => {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${exportSelectedOnly.value ? '已选稿费清单' : '稿费清单'}_${query.month || '全部'}.xlsx`
+    const templateFileNames = {
+      EDITORIAL_WECHAT: '校学生记者团稿费统计（微信）',
+      EDITORIAL_WEBSITE: '校学生记者团稿费统计（院网）',
+      PHOTO: '校学生记者团稿费统计（摄影）',
+      VISUAL: '校学生记者团稿费统计（视觉）',
+      VIDEO: '校学生记者团稿费统计（视频）'
+    }
+    link.download = `${templateFileNames[exportPreset.value] || (exportSelectedOnly.value ? '已选稿费清单' : '稿费清单')}_${query.month || '全部'}.xlsx`
     link.click()
     window.URL.revokeObjectURL(url)
     exportVisible.value = false
@@ -878,6 +951,35 @@ onMounted(() => {
   width: 100%;
 }
 
+/* 202608131646 - 统一了稿费审核与导出主表各列的居中对齐样式。 */
+.centered-data-table :deep(.el-table__cell .cell) {
+  text-align: center;
+}
+
+.automatic-field-notice {
+  margin-bottom: 18px;
+}
+
+.readonly-field,
+.readonly-money {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  color: #374151;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+}
+
+.readonly-money {
+  min-height: 28px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 202608121123 - 移除了审核编辑日期选择器中容易误触的跨年双箭头按钮。 */
 :global(.single-year-date-picker .d-arrow-left),
 :global(.single-year-date-picker .d-arrow-right) {
@@ -896,6 +998,7 @@ onMounted(() => {
 .action-buttons {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-wrap: nowrap;
   gap: 10px;
   white-space: nowrap;
@@ -910,6 +1013,13 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.export-template-tip {
+  margin: -6px 0 12px;
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .export-preset-list {

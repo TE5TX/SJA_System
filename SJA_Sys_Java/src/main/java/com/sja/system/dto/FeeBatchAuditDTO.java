@@ -2,10 +2,11 @@ package com.sja.system.dto;
 
 import lombok.Data;
 
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Size;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 
 @Data
@@ -20,4 +21,8 @@ public class FeeBatchAuditDTO {
 
     @Size(max = 500, message = "审核意见不能超过500字")
     private String opinion;
+
+    @NotBlank(message = "请输入当前用户密码")
+    @Size(max = 50, message = "当前用户密码不能超过50个字符")
+    private String currentPassword;
 }

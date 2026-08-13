@@ -18,7 +18,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "jwt.secret=01234567890123456789012345678901",
         "sja.security.cors-allowed-origins=http://localhost:5173",
         "knife4j.enable=false",
-        "springfox.documentation.enabled=false"
+        "springdoc.api-docs.enabled=false",
+        "springdoc.swagger-ui.enabled=false"
 })
 @AutoConfigureMockMvc
 class SecurityBoundaryIntegrationTest {

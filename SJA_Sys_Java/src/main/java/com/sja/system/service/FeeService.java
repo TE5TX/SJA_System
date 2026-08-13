@@ -8,7 +8,7 @@ import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.vo.FeeDetailVO;
 import com.sja.system.vo.FeeListVO;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.math.BigDecimal;
 import java.util.List;
 

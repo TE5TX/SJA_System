@@ -10,6 +10,7 @@ $env:SJA_DB_PASSWORD = "replace-with-a-long-random-password"
 # [Convert]::ToBase64String($bytes)
 $env:SJA_JWT_SECRET = "replace-with-at-least-32-random-bytes"
 
-$env:SJA_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5175,http://127.0.0.1:5175"
+$env:SJA_CORS_ALLOWED_ORIGINS = "http://localhost:5175"
 $env:SJA_API_DOCS_ENABLED = "false"
 $env:SJA_REFRESH_COOKIE_SECURE = "false" # Set to true when production uses HTTPS.
+$env:SJA_AVATAR_DIR = "C:\ProgramData\SJA-System\uploads\avatars"

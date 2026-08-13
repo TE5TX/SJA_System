@@ -3,6 +3,7 @@ package com.sja.system.service.impl;
 import com.sja.system.dto.UserBatchUpdateDTO;
 import com.sja.system.entity.SysRole;
 import com.sja.system.entity.SysUser;
+import com.sja.system.entity.SysUserRole;
 import com.sja.system.mapper.SysDeptMapper;
 import com.sja.system.mapper.SysRoleMapper;
 import com.sja.system.mapper.SysUserDeptMapper;
@@ -64,7 +65,7 @@ class UserServiceImplBatchUpdateTest {
         service.batchUpdateUsers(dto, 1L, "管理员", "0");
 
         verify(userRoleMapper, times(2)).delete(any());
-        verify(userRoleMapper, times(2)).insert(any());
+        verify(userRoleMapper, times(2)).insert(any(SysUserRole.class));
         verify(userMapper, times(2)).update(any(), any());
         verify(operationLogService, times(2)).log(
                 eq(1L), eq("管理员"), eq("0"), eq("UPDATE"), eq("USER"), any(), any(), eq(""));

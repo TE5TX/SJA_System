@@ -8,6 +8,8 @@ import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.ExcelWriter;
 import com.alibaba.excel.write.metadata.WriteSheet;
 import com.alibaba.excel.write.style.column.LongestMatchColumnWidthStyleStrategy;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sja.system.common.PageResult;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeAuditDTO;
@@ -28,7 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -56,7 +58,12 @@ public class FeeServiceImpl implements FeeService {
     private static final String VIDEO = "VIDEO";
     private static final String VISUAL = "VISUAL";
     private static final String SUBSIDY = "SUBSIDY";
+    private static final Set<String> EXPORT_TEMPLATE_TYPES = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
+            "EDITORIAL_WECHAT", "EDITORIAL_WEBSITE", "EDITORIAL_NEWSPAPER",
+            "PHOTO", "VISUAL", "VIDEO", "SUBSIDY", "CUSTOM")));
     private static final Map<String, String> EXPORT_FIELD_LABELS = createExportFieldLabels();
+    private static final ObjectMapper AUDIT_OBJECT_MAPPER = new ObjectMapper().findAndRegisterModules();
+    private static final Map<String, String> FEE_AUDIT_FIELD_LABELS = createFeeAuditFieldLabels();
 
     private final BizEditorialArticleMapper editorialMapper;
     private final BizPhotographyWorkMapper photographyMapper;
@@ -375,6 +382,8 @@ public class FeeServiceImpl implements FeeService {
             throw ApiException.badRequest("部长只能修改待审核或已驳回的稿费任务");
         }
 
+        FeeDetailVO before = getFeeDetail(id, workType, operatorId, roleCode);
+
         Map<String, Object> workInfo = canManageAmount
                 ? dto.getWorkInfo()
                 : preserveRestrictedFeeFields(workType, id, dto.getWorkInfo());
@@ -413,10 +422,13 @@ public class FeeServiceImpl implements FeeService {
             updateAuditStatus(workType, id, "SUBMITTED");
         }
 
+        FeeDetailVO after = getFeeDetail(id, workType, operatorId, roleCode);
         String detail = "REJECTED".equals(originalStatus)
                 ? String.format("修改并重新提交稿费任务 [%s] id=%d", workType, id)
                 : String.format("修改未审核稿费任务 [%s] id=%d", workType, id);
-        operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE", "FEE", id, detail, "");
+        detail += "；变更字段：" + summarizeFeeChanges(before, after);
+        operationLogService.logChange(operatorId, operatorName, operatorRole, "UPDATE", "FEE", id,
+                detail, feeAuditSnapshot(before), feeAuditSnapshot(after), "");
     }
 
     @Override
@@ -565,10 +577,16 @@ public class FeeServiceImpl implements FeeService {
         if (fields.size() != dto.getFields().size() || !EXPORT_FIELD_LABELS.keySet().containsAll(fields)) {
             throw ApiException.badRequest("包含重复或不支持的导出字段");
         }
+        String templateType = StringUtils.hasText(dto.getTemplateType()) ? dto.getTemplateType() : "CUSTOM";
+        if (!EXPORT_TEMPLATE_TYPES.contains(templateType)) {
+            throw ApiException.badRequest("不支持的稿费导出模板");
+        }
+        boolean fixedTemplate = FeeTemplateExportWriter.supports(templateType);
         try {
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("UTF-8");
-            String fileName = URLEncoder_encode("稿费清单_" + (dto.getMonth() != null ? dto.getMonth() : "全部") + ".xlsx");
+            String exportName = fixedTemplate ? templateExportFileName(templateType) : "稿费清单";
+            String fileName = URLEncoder_encode(exportName + "_" + (dto.getMonth() != null ? dto.getMonth() : "全部") + ".xlsx");
             response.setHeader("Content-Disposition", "attachment;filename=" + fileName);
 
             List<FeeListVO> allItems = new ArrayList<>();
@@ -599,6 +617,12 @@ public class FeeServiceImpl implements FeeService {
                         .collect(Collectors.toList());
             }
 
+            if (fixedTemplate) {
+                allItems = allItems.stream()
+                        .filter(item -> FeeTemplateExportWriter.matches(templateType, item))
+                        .collect(Collectors.toList());
+            }
+
             if (dto.getSelectedTasks() != null && !dto.getSelectedTasks().isEmpty()) {
                 Set<String> selectedTaskKeys = dto.getSelectedTasks().stream()
                         .map(this::feeTaskKey)
@@ -610,7 +634,9 @@ public class FeeServiceImpl implements FeeService {
                         .filter(item -> selectedTaskKeys.contains(feeTaskKey(item.getWorkType(), item.getId())))
                         .collect(Collectors.toList());
                 if (allItems.size() != selectedTaskKeys.size()) {
-                    throw ApiException.badRequest("部分选中任务不存在、已失效或无权导出");
+                    throw ApiException.badRequest(fixedTemplate
+                            ? "部分选中任务与当前导出模板不匹配"
+                            : "部分选中任务不存在、已失效或无权导出");
                 }
                 // 202608111533 - 修复了稿费审核页不能只导出勾选任务的问题。
             }
@@ -620,31 +646,42 @@ public class FeeServiceImpl implements FeeService {
                     .thenComparing(FeeListVO::getCreateTime, Comparator.nullsLast(Comparator.reverseOrder()))
                     .thenComparing(FeeListVO::getId, Comparator.nullsLast(Comparator.reverseOrder())));
 
-            List<List<String>> head = fields.stream()
-                    .map(field -> Collections.singletonList(EXPORT_FIELD_LABELS.get(field)))
-                    .collect(Collectors.toList());
-            // 202608101042 - 修复了稿费导出不符合分部门工作表习惯的问题，并设置自适应列宽和分表合计。
-            Map<String, List<FeeListVO>> grouped = allItems.stream()
-                    .collect(Collectors.groupingBy(FeeListVO::getWorkType, LinkedHashMap::new, Collectors.toList()));
-            try (ExcelWriter writer = EasyExcel.write(response.getOutputStream())
-                    .registerWriteHandler(new LongestMatchColumnWidthStyleStrategy())
-                    .build()) {
-                int sheetIndex = 0;
-                for (String type : Arrays.asList(EDITORIAL, PHOTO, VIDEO, VISUAL, SUBSIDY)) {
-                    List<FeeListVO> items = grouped.get(type);
-                    if (items == null || items.isEmpty()) continue;
-                    List<List<String>> data = buildExportRows(items, fields, operatorId, roleCode);
-                    WriteSheet sheet = EasyExcel.writerSheet(sheetIndex++, exportSheetName(type))
-                            .head(head).build();
-                    writer.write(data, sheet);
+            if (fixedTemplate) {
+                List<FeeTemplateExportWriter.ExportItem> exportItems = new ArrayList<>();
+                for (FeeListVO item : allItems) {
+                    exportItems.add(new FeeTemplateExportWriter.ExportItem(item,
+                            getFeeDetail(item.getId(), item.getWorkType(), operatorId, roleCode)));
                 }
-                if (sheetIndex == 0) {
-                    writer.write(Collections.emptyList(), EasyExcel.writerSheet(0, "稿费明细").head(head).build());
+                FeeTemplateExportWriter.write(response.getOutputStream(), templateType, exportItems, dto.getMonth());
+                // 202608131708 - 将稿费审核页的微信、院网、摄影、视觉和视频导出改为现有部门工作表模板版式。
+            } else {
+                List<List<String>> head = fields.stream()
+                        .map(field -> Collections.singletonList(EXPORT_FIELD_LABELS.get(field)))
+                        .collect(Collectors.toList());
+                // 202608101042 - 修复了稿费导出不符合分部门工作表习惯的问题，并设置自适应列宽和分表合计。
+                Map<String, List<FeeListVO>> grouped = allItems.stream()
+                        .collect(Collectors.groupingBy(FeeListVO::getWorkType, LinkedHashMap::new, Collectors.toList()));
+                try (ExcelWriter writer = EasyExcel.write(response.getOutputStream())
+                        .registerWriteHandler(new LongestMatchColumnWidthStyleStrategy())
+                        .build()) {
+                    int sheetIndex = 0;
+                    for (String type : Arrays.asList(EDITORIAL, PHOTO, VIDEO, VISUAL, SUBSIDY)) {
+                        List<FeeListVO> items = grouped.get(type);
+                        if (items == null || items.isEmpty()) continue;
+                        List<List<String>> data = buildExportRows(items, fields, operatorId, roleCode);
+                        WriteSheet sheet = EasyExcel.writerSheet(sheetIndex++, exportSheetName(type))
+                                .head(head).build();
+                        writer.write(data, sheet);
+                    }
+                    if (sheetIndex == 0) {
+                        writer.write(Collections.emptyList(), EasyExcel.writerSheet(0, "稿费明细").head(head).build());
+                    }
                 }
             }
 
             operationLogService.log(operatorId, "用户" + operatorId, String.valueOf(roleCode), "EXPORT",
-                    "FEE", null, String.format("导出稿费明细 %d 条，字段：%s", allItems.size(), fields), "");
+                    "FEE", null, String.format("导出稿费明细 %d 条，模板：%s，字段：%s",
+                            allItems.size(), templateType, fields), "");
 
         } catch (ApiException e) {
             throw e;
@@ -655,6 +692,17 @@ public class FeeServiceImpl implements FeeService {
     }
 
     // ======================== Private helpers ========================
+
+    private String templateExportFileName(String templateType) {
+        switch (templateType) {
+            case "EDITORIAL_WECHAT": return "校学生记者团稿费统计（微信）";
+            case "EDITORIAL_WEBSITE": return "校学生记者团稿费统计（院网）";
+            case "PHOTO": return "校学生记者团稿费统计（摄影）";
+            case "VISUAL": return "校学生记者团稿费统计（视觉）";
+            case "VIDEO": return "校学生记者团稿费统计（视频）";
+            default: return "稿费清单";
+        }
+    }
 
     private static Map<String, String> createExportFieldLabels() {
         Map<String, String> fields = new LinkedHashMap<>();
@@ -1052,8 +1100,7 @@ public class FeeServiceImpl implements FeeService {
                 update.setId(workId);
                 update.setTitle(getStringVal(info, "title"));
                 update.setCategory(canonicalVisualCategory(getStringVal(info, "category")));
-                update.setAuthorCount(getIntVal(info, "authorCount"));
-                update.setAuthorAvgFee(getBigDecimalVal(info, "authorAvgFee"));
+                // 人数和人均金额由参与人员及稿费标准计算，不能接受客户端直接修改。
                 update.setPublishDate(getLocalDateVal(info, "publishDate"));
                 update.setArticleLink(getStringVal(info, "articleLink"));
                 update.setIsPublished(getIntVal(info, "isPublished"));
@@ -1152,6 +1199,74 @@ public class FeeServiceImpl implements FeeService {
 
     private String normalizeAuditStatus(String status) {
         return StringUtils.hasText(status) ? status : "SUBMITTED";
+    }
+
+    private String summarizeFeeChanges(FeeDetailVO before, FeeDetailVO after) {
+        List<String> changed = new ArrayList<>();
+        Map<String, Object> beforeInfo = before.getWorkInfo() != null ? before.getWorkInfo() : Collections.emptyMap();
+        Map<String, Object> afterInfo = after.getWorkInfo() != null ? after.getWorkInfo() : Collections.emptyMap();
+        Set<String> keys = new LinkedHashSet<>();
+        keys.addAll(beforeInfo.keySet());
+        keys.addAll(afterInfo.keySet());
+        for (String key : keys) {
+            if (!auditValuesEqual(beforeInfo.get(key), afterInfo.get(key))) {
+                changed.add(FEE_AUDIT_FIELD_LABELS.getOrDefault(key, key));
+            }
+        }
+        if (!auditValuesEqual(before.getContributors(), after.getContributors())) changed.add("参与人员及金额");
+        if (!auditValuesEqual(before.getTotalAmount(), after.getTotalAmount())) changed.add("总金额");
+        if (!auditValuesEqual(before.getStatus(), after.getStatus())) changed.add("审核状态");
+        if (!auditValuesEqual(before.getRemark(), after.getRemark())) changed.add("备注");
+        return changed.isEmpty() ? "无实际变化" : String.join("、", changed);
+    }
+
+    private boolean auditValuesEqual(Object left, Object right) {
+        if (left instanceof BigDecimal && right instanceof BigDecimal) {
+            return ((BigDecimal) left).compareTo((BigDecimal) right) == 0;
+        }
+        return Objects.equals(left, right);
+    }
+
+    private String feeAuditSnapshot(FeeDetailVO detail) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("workType", detail.getWorkType());
+        snapshot.put("workInfo", detail.getWorkInfo());
+        snapshot.put("contributors", detail.getContributors());
+        snapshot.put("status", detail.getStatus());
+        snapshot.put("totalAmount", detail.getTotalAmount());
+        snapshot.put("remark", detail.getRemark());
+        try {
+            return AUDIT_OBJECT_MAPPER.writeValueAsString(snapshot);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("稿费变更快照序列化失败", exception);
+        }
+    }
+
+    private static Map<String, String> createFeeAuditFieldLabels() {
+        Map<String, String> labels = new LinkedHashMap<>();
+        labels.put("title", "标题");
+        labels.put("videoTitle", "视频标题");
+        labels.put("platform", "发布平台");
+        labels.put("category", "类别");
+        labels.put("wordCount", "字数");
+        labels.put("readCount", "阅读量");
+        labels.put("photoCount", "图片数量");
+        labels.put("videoDurationSec", "视频时长");
+        labels.put("likeCount", "点赞数");
+        labels.put("reprintStatus", "转载情况");
+        labels.put("isReposted", "是否官方转载");
+        labels.put("isComplexEdit", "是否复杂剪辑");
+        labels.put("authorCount", "参与人数");
+        labels.put("authorAvgFee", "人均金额");
+        labels.put("publishDate", "发布时间");
+        labels.put("articleLink", "文章链接");
+        labels.put("videoLink", "视频链接");
+        labels.put("isPublished", "是否已发布");
+        labels.put("isSpecialNode", "特殊节点");
+        labels.put("specialMultiplier", "特殊节点倍数");
+        labels.put("subsidyMonth", "补贴月份");
+        labels.put("remark", "备注");
+        return Collections.unmodifiableMap(labels);
     }
 
     private String getAuditStatus(String workType, Long workId) {

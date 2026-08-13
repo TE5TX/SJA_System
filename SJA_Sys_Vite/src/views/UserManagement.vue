@@ -33,6 +33,7 @@
 
       <el-table
         ref="userTableRef"
+        class="centered-data-table"
         :data="users"
         v-loading="loading"
         border
@@ -40,6 +41,10 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" fixed reserve-selection />
+        <!-- 202608131617 - 为人员信息管理列表增加了跨分页连续序号。 -->
+        <el-table-column label="序号" width="76" align="center" fixed>
+          <template #default="{ $index }">{{ rowNumber($index) }}</template>
+        </el-table-column>
         <el-table-column prop="realName" label="姓名" width="110" fixed />
         <el-table-column prop="studentNo" label="学号" min-width="130" />
         <el-table-column prop="phone" label="手机号" min-width="130" />
@@ -187,6 +192,9 @@
         </el-form-item>
       </el-form>
       <template #footer>
+        <el-button v-if="!isCreating" type="warning" :loading="resetPasswordSaving" @click="handleResetPassword">
+          重置密码
+        </el-button>
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveEdit">{{ isCreating ? '确认新增' : '保存修改' }}</el-button>
       </template>
@@ -240,10 +248,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Download, Edit, Plus, Refresh, Search, SwitchButton } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDetail, getUserList, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
+import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDetail, getUserList, resetUserPassword, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
 import { getDeptList, getRoleList } from '@/api/system'
 import { uploadAvatar } from '@/api/upload'
 
@@ -252,6 +260,7 @@ const users = ref([])
 const total = ref(0)
 const loading = ref(false)
 const saving = ref(false)
+const resetPasswordSaving = ref(false)
 const exportLoading = ref(false)
 const batchSaving = ref(false)
 const editVisible = ref(false)
@@ -295,32 +304,29 @@ const editForm = reactive({
 })
 const isCreating = computed(() => dialogMode.value === 'create')
 const requiredText = label => [{ required: true, whitespace: true, message: `请输入${label}`, trigger: 'blur' }]
-const userFormRules = {
-  realName: requiredText('姓名'),
-  gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
+// 202608131153 - 放宽了有人员编辑权限的管理人员修改人员信息时的格式校验。
+// 202608131454 - 新增人员时仅要求填写学号，其余资料允许后续补充。
+const userFormRules = computed(() => ({
+  realName: [],
+  gender: [],
   studentNo: requiredText('学号'),
-  phone: [
-    ...requiredText('手机号'),
-    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的11位手机号', trigger: 'blur' }
-  ],
+  phone: [],
   password: [
-    { required: true, message: '请输入初始密码', trigger: 'blur' },
-    { min: 6, max: 50, message: '密码长度应为 6 到 50 个字符', trigger: 'blur' }
+    { validator: (_rule, value, callback) => !value || (value.length >= 6 && value.length <= 50) ? callback() : callback(new Error('密码长度应为 6 到 50 个字符')), trigger: 'blur' }
   ],
   confirmPassword: [
-    { required: true, message: '请再次输入初始密码', trigger: 'blur' },
     { validator: (_rule, value, callback) => value === editForm.password ? callback() : callback(new Error('两次输入的密码不一致')), trigger: 'blur' }
   ],
-  idCard: requiredText('身份证号'),
-  college: [{ required: true, message: '请选择学院', trigger: 'change' }],
-  className: requiredText('班级'),
-  dormAddress: requiredText('宿舍地址'),
-  bankCard: requiredText('银行卡号'),
-  deptIds: [{ type: 'array', required: true, min: 1, message: '请至少选择一个部门', trigger: 'change' }],
-  roleIds: [{ type: 'array', required: true, min: 1, message: '请至少选择一个角色', trigger: 'change' }],
-  isValid: [{ required: true, message: '请选择账号状态', trigger: 'change' }],
-  remark: requiredText('备注')
-}
+  idCard: [],
+  college: [],
+  className: [],
+  dormAddress: [],
+  bankCard: [],
+  deptIds: [],
+  roleIds: [],
+  isValid: [],
+  remark: []
+}))
 const batchForm = reactive({
   updateRoles: true,
   roleIds: [],
@@ -350,28 +356,44 @@ const exportFields = ref([...defaultExportFields])
 const allExportFieldsSelected = computed(() => exportFields.value.length === exportFieldOptions.length)
 
 const join = value => Array.isArray(value) && value.length ? value.join('、') : '-'
+let loadSequence = 0
 const loadUsers = async () => {
+  const currentSequence = ++loadSequence
   loading.value = true
   try {
     const res = await getUserList({ ...query })
+    if (currentSequence !== loadSequence) return
     users.value = res.data?.list || []
     total.value = Number(res.data?.total || 0)
   } finally {
-    loading.value = false
+    if (currentSequence === loadSequence) loading.value = false
   }
 }
 
 const search = () => {
+  clearTimeout(realtimeQueryTimer)
   clearSelection()
   query.pageNum = 1
   loadUsers()
 }
 
+// 202608131443 - 增加了人员管理筛选条件输入或选择后的实时查询。
+let realtimeQueryTimer
+watch(
+  () => [query.realName, query.studentNo, query.college, query.deptCode, query.roleCode, query.isValid],
+  () => {
+    clearTimeout(realtimeQueryTimer)
+    realtimeQueryTimer = setTimeout(search, 300)
+  }
+)
+
+onBeforeUnmount(() => clearTimeout(realtimeQueryTimer))
+
 const reset = () => {
   clearSelection()
   // 202608111533 - 修复了人员管理分页不能选择100或200条并使用9999条加载全部数据的问题。
   Object.assign(query, { realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', isValid: '', pageNum: 1, pageSize: 10 })
-  loadUsers()
+  nextTick(search)
 }
 
 const handleSelectionChange = selection => {
@@ -394,6 +416,8 @@ const openBatchEdit = () => {
   batchVisible.value = true
 }
 
+const rowNumber = index => (query.pageNum - 1) * query.pageSize + index + 1
+
 const saveBatchEdit = async () => {
   if (!batchForm.updateRoles && !batchForm.updateStatus) {
     ElMessage.warning('请至少选择一项需要修改的内容')
@@ -404,19 +428,30 @@ const saveBatchEdit = async () => {
     return
   }
 
+  let currentPassword = ''
   try {
-    await ElMessageBox.confirm(
-      `确认批量修改选中的 ${selectedUsers.value.length} 名人员？`,
-      '批量修改确认',
-      { type: 'warning' }
+    const result = await ElMessageBox.prompt(
+      `请输入当前用户密码，确认批量修改选中的 ${selectedUsers.value.length} 名人员`,
+      '批量修改身份校验',
+      {
+        type: 'warning',
+        confirmButtonText: '确认修改',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputPlaceholder: '当前用户密码',
+        inputValidator: value => String(value || '').trim() ? true : '请输入当前用户密码',
+        closeOnClickModal: false,
+        showClose: false
+      }
     )
+    currentPassword = result.value
   } catch {
     return
   }
 
   batchSaving.value = true
   try {
-    const data = { userIds: selectedUsers.value.map(user => user.id) }
+    const data = { userIds: selectedUsers.value.map(user => user.id), currentPassword }
     if (batchForm.updateRoles) data.roleIds = [...batchForm.roleIds]
     if (batchForm.updateStatus) data.isValid = batchForm.isValid
     await batchUpdateUsers(data)
@@ -578,6 +613,28 @@ const saveEdit = async () => {
   }
 }
 
+// 202608131456 - 增加了管理人员重置他人密码为 asdf123456 的功能。
+const handleResetPassword = async () => {
+  if (!editingId.value) return
+  try {
+    await ElMessageBox.confirm(
+      '确认将该人员密码重置为 asdf123456？重置后该人员需要重新登录并修改密码。',
+      '重置密码确认',
+      { type: 'warning', confirmButtonText: '确认重置' }
+    )
+  } catch {
+    return
+  }
+
+  resetPasswordSaving.value = true
+  try {
+    await resetUserPassword(editingId.value)
+    ElMessage.success('密码已重置为 asdf123456')
+  } finally {
+    resetPasswordSaving.value = false
+  }
+}
+
 const beforeAvatarUpload = file => {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif']
   if (!allowedTypes.includes(file.type)) {
@@ -679,6 +736,11 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 18px;
+}
+
+/* 202608131646 - 统一了人员信息管理主表各列的居中对齐样式。 */
+.centered-data-table :deep(.el-table__cell .cell) {
+  text-align: center;
 }
 
 :deep(.el-dialog .el-select) {

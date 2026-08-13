@@ -28,9 +28,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -186,6 +186,8 @@ public class FeeController {
         if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
             return Result.error(403, "只有管理员或秘书长可以批量审核稿费");
         }
+        // 202608131617 - 为稿费批量审核增加了当前用户密码二次校验。
+        userService.verifyCurrentPassword(auditorId, dto.getCurrentPassword());
         // 202608111533 - 修复了稿费审核页缺少批量通过和批量驳回能力的问题。
         feeService.batchAuditFee(dto, auditorId,
                 securityUtils.getCurrentUsernameFromToken(request), String.valueOf(roleCode));

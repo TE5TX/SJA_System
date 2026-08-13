@@ -67,16 +67,36 @@
         <el-descriptions-item label="操作人">{{ selectedLog.realName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="对象">{{ selectedLog.targetModule || '-' }} / {{ selectedLog.targetId || '-' }}</el-descriptions-item>
         <el-descriptions-item label="详情">{{ selectedLog.detail || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="变更前"><pre>{{ selectedLog.beforeData || '-' }}</pre></el-descriptions-item>
-        <el-descriptions-item label="变更后"><pre>{{ selectedLog.afterData || '-' }}</pre></el-descriptions-item>
         <el-descriptions-item label="客户端">{{ selectedLog.userAgent || '-' }}</el-descriptions-item>
       </el-descriptions>
+
+      <template v-if="selectedChangeRows.length">
+        <h3 class="change-title">字段变更</h3>
+        <el-table :data="selectedChangeRows" border size="small" class="change-table">
+          <el-table-column prop="label" label="字段" min-width="130" />
+          <el-table-column label="变更前" min-width="180">
+            <template #default="{ row }"><span class="snapshot-value removed-value">{{ row.before }}</span></template>
+          </el-table-column>
+          <el-table-column label="变更后" min-width="180">
+            <template #default="{ row }"><span class="snapshot-value added-value">{{ row.after }}</span></template>
+          </el-table-column>
+        </el-table>
+      </template>
+
+      <el-empty v-else description="该日志没有记录字段级变更" :image-size="72" />
+
+      <el-collapse v-if="selectedLog?.beforeData || selectedLog?.afterData" class="raw-snapshot">
+        <el-collapse-item title="查看原始变更快照" name="raw">
+          <div class="raw-block"><strong>变更前</strong><pre>{{ prettySnapshot(selectedLog.beforeData) }}</pre></div>
+          <div class="raw-block"><strong>变更后</strong><pre>{{ prettySnapshot(selectedLog.afterData) }}</pre></div>
+        </el-collapse-item>
+      </el-collapse>
     </el-drawer>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { getOperationLogs } from '@/api/system'
 
@@ -91,6 +111,83 @@ const loading = ref(false)
 const detailVisible = ref(false)
 const selectedLog = ref(null)
 const time = value => value ? String(value).replace('T', ' ').slice(0, 16) : '-'
+const snapshotLabels = {
+  workType: '作品类型', status: '审核状态', totalAmount: '总金额', remark: '备注', contributors: '参与人员',
+  title: '标题', videoTitle: '视频标题', platform: '发布平台', category: '类别', readCount: '阅读量',
+  wordCount: '字数', photoCount: '图片数量', videoDurationSec: '视频时长（秒）', likeCount: '点赞数',
+  reprintStatus: '转载情况', isReposted: '是否官方转载', isComplexEdit: '是否复杂剪辑',
+  authorCount: '参与人数', authorAvgFee: '人均金额', publishDate: '发布时间', articleLink: '文章链接',
+  videoLink: '视频链接', isPublished: '是否已发布', isSpecialNode: '特殊节点',
+  specialMultiplier: '特殊节点倍数', subsidyMonth: '补贴月份', realName: '姓名', studentNo: '学号',
+  userId: '用户ID', roleInWork: '参与角色', feeAmount: '个人金额', workCount: '作品数量'
+}
+
+const parseSnapshot = value => {
+  if (!value) return null
+  try { return JSON.parse(value) } catch { return null }
+}
+
+const formatSnapshotValue = value => {
+  if (value == null || value === '') return '-'
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  if (Array.isArray(value)) {
+    return value.map(item => {
+      if (!item || typeof item !== 'object') return String(item)
+      const name = item.realName || `用户 ${item.userId ?? '-'}`
+      const details = [
+        item.studentNo ? `学号 ${item.studentNo}` : '',
+        item.roleInWork ? `角色 ${item.roleInWork}` : '',
+        item.feeAmount != null ? `金额 ¥${Number(item.feeAmount).toFixed(1)}` : '',
+        item.workCount != null ? `作品 ${item.workCount}` : ''
+      ].filter(Boolean)
+      return `${name}${details.length ? `（${details.join('，')}）` : ''}`
+    }).join('；') || '-'
+  }
+  if (typeof value === 'object') return JSON.stringify(value, null, 2)
+  return String(value)
+}
+
+const flattenSnapshot = (value, prefix = '', target = {}) => {
+  if (Array.isArray(value) || value == null || typeof value !== 'object') {
+    target[prefix] = value
+    return target
+  }
+  Object.entries(value).forEach(([key, child]) => {
+    const path = prefix ? `${prefix}.${key}` : key
+    if (key === 'contributors' || Array.isArray(child)) target[path] = child
+    else flattenSnapshot(child, path, target)
+  })
+  return target
+}
+
+const snapshotPathLabel = path => {
+  const parts = path.split('.')
+  const leaf = snapshotLabels[parts.at(-1)] || parts.at(-1)
+  return parts[0] === 'workInfo' ? `作品 / ${leaf}` : leaf
+}
+
+const selectedChangeRows = computed(() => {
+  const before = parseSnapshot(selectedLog.value?.beforeData)
+  const after = parseSnapshot(selectedLog.value?.afterData)
+  if (!before || !after) return []
+  const beforeFlat = flattenSnapshot(before)
+  const afterFlat = flattenSnapshot(after)
+  const paths = [...new Set([...Object.keys(beforeFlat), ...Object.keys(afterFlat)])]
+  return paths
+    .filter(path => JSON.stringify(beforeFlat[path] ?? null) !== JSON.stringify(afterFlat[path] ?? null))
+    .map(path => ({
+      path,
+      label: snapshotPathLabel(path),
+      before: formatSnapshotValue(beforeFlat[path]),
+      after: formatSnapshotValue(afterFlat[path])
+    }))
+})
+
+const prettySnapshot = value => {
+  if (!value) return '-'
+  const parsed = parseSnapshot(value)
+  return parsed ? JSON.stringify(parsed, null, 2) : value
+}
 
 const loadLogs = async () => {
   loading.value = true
@@ -147,6 +244,40 @@ pre {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.change-title {
+  margin: 22px 0 10px;
+  font-size: 16px;
+  color: #1f2937;
+}
+
+.change-table {
+  margin-bottom: 18px;
+}
+
+.snapshot-value {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.removed-value {
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.added-value {
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.raw-snapshot {
+  margin-top: 12px;
+}
+
+.raw-block + .raw-block {
+  margin-top: 14px;
 }
 
 @media (max-width: 1100px) {

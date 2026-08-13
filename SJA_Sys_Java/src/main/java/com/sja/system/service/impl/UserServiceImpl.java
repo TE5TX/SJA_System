@@ -36,8 +36,11 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -47,6 +50,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
+
+    private static final String DEFAULT_INITIAL_PASSWORD = "asdf123456";
 
     private static final String PHONE_PATTERN = "^1[3-9]\\d{9}$";
 
@@ -223,6 +228,18 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public void verifyCurrentPassword(Long userId, String currentPassword) {
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null || !Objects.equals(user.getIsValid(), 1)) {
+            throw ApiException.unauthorized("当前用户不存在或已禁用");
+        }
+        if (!StringUtils.hasText(currentPassword)
+                || !passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw ApiException.forbidden("当前用户密码错误，批量操作未执行");
+        }
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateProfilePhoto(Long userId, String photo, Long operatorId, String operatorName, String operatorRole) {
         SysUser user = sysUserMapper.selectById(userId);
@@ -351,9 +368,38 @@ public class UserServiceImpl implements UserService {
         query.select("id", "real_name", "student_no", "is_valid")
                 .eq("is_valid", 1)
                 .orderByAsc("real_name", "id");
-        return sysUserMapper.selectList(query).stream()
+        List<SysUser> users = sysUserMapper.selectList(query);
+        if (users.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Long> userIds = users.stream().map(SysUser::getId).collect(Collectors.toList());
+        List<SysUserRole> userRoles = sysUserRoleMapper.selectList(
+                new QueryWrapper<SysUserRole>().in("user_id", userIds));
+        Set<Long> roleIds = userRoles.stream().map(SysUserRole::getRoleId).collect(Collectors.toSet());
+        Map<Long, Integer> roleCodeById = roleIds.isEmpty()
+                ? Collections.emptyMap()
+                : sysRoleMapper.selectList(new QueryWrapper<SysRole>()
+                        .select("id", "role_code")
+                        .in("id", roleIds)
+                        .eq("is_valid", 1))
+                        .stream()
+                        .collect(Collectors.toMap(SysRole::getId, SysRole::getRoleCode));
+        Map<Long, List<Integer>> roleCodesByUserId = new HashMap<>();
+        userRoles.forEach(userRole -> {
+            Integer roleCode = roleCodeById.get(userRole.getRoleId());
+            if (roleCode != null) {
+                roleCodesByUserId.computeIfAbsent(userRole.getUserId(), ignored -> new ArrayList<>())
+                        .add(roleCode);
+            }
+        });
+
+        // 202608131602 - 修复了月度补贴必须手动输入人员名单而未使用系统角色数据的问题。
+        return users.stream()
                 .map(user -> new FeeContributorVO(
-                        user.getId(), user.getRealName(), user.getStudentNo(), user.getIsValid()))
+                        user.getId(), user.getRealName(), user.getStudentNo(), user.getIsValid(),
+                        roleCodesByUserId.getOrDefault(user.getId(), Collections.emptyList()).stream()
+                                .distinct().sorted().collect(Collectors.toList())))
                 .collect(Collectors.toList());
     }
 
@@ -390,8 +436,15 @@ public class UserServiceImpl implements UserService {
     public Long createUser(UserCreateDTO dto, Long operatorId,
                            String operatorName, String operatorRole) {
         String studentNo = dto.getStudentNo().trim();
-        String idCard = dto.getIdCard().trim();
-        String phone = normalizeAndValidatePhone(dto.getPhone());
+        // 202608131454 - 新增人员时仅要求学号，并为其余系统必需字段设置安全默认值。
+        String idCard = trimToNull(dto.getIdCard());
+        if (idCard != null) idCard = idCard.toUpperCase();
+        String phone = trimToNull(dto.getPhone());
+        if (phone != null) phone = normalizeAndValidatePhone(phone);
+        String password = StringUtils.hasText(dto.getPassword()) ? dto.getPassword() : DEFAULT_INITIAL_PASSWORD;
+        if (password.length() < 6 || password.length() > 50) {
+            throw ApiException.badRequest("初始密码长度应为 6 到 50 个字符");
+        }
 
         QueryWrapper<SysUser> studentNoCheck = new QueryWrapper<>();
         studentNoCheck.eq("student_no", studentNo).or().eq("username", studentNo);
@@ -399,25 +452,20 @@ public class UserServiceImpl implements UserService {
             throw ApiException.conflict("该学号或登录账号已被其他用户使用");
         }
 
-        QueryWrapper<SysUser> idCardCheck = new QueryWrapper<>();
-        idCardCheck.eq("id_card", idCard);
-        if (sysUserMapper.selectCount(idCardCheck) > 0) {
-            throw ApiException.conflict("该身份证号已被其他用户使用");
-        }
+        if (idCard != null) ensureIdCardAvailable(idCard, null);
+        if (phone != null) ensurePhoneAvailable(phone, null);
 
-        ensurePhoneAvailable(phone, null);
-
-        List<Long> deptIds = distinctIds(dto.getDeptIds(), "部门");
-        List<Long> roleIds = distinctIds(dto.getRoleIds(), "角色");
+        List<Long> deptIds = optionalDistinctIds(dto.getDeptIds());
+        List<Long> roleIds = optionalDistinctIds(dto.getRoleIds());
         validateDeptIds(deptIds);
         validateRoleIds(roleIds);
 
         SysUser user = new SysUser();
         user.setUsername(studentNo);
-        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setPassword(passwordEncoder.encode(password));
         user.setMustChangePassword(1);
-        user.setRealName(dto.getRealName().trim());
-        user.setGender(dto.getGender());
+        user.setRealName(StringUtils.hasText(dto.getRealName()) ? dto.getRealName().trim() : studentNo);
+        user.setGender(dto.getGender() == null ? 0 : dto.getGender());
         String photo = StringUtils.hasText(dto.getPhoto()) ? dto.getPhoto().trim() : null;
         if (photo != null) {
             avatarStorageService.validateAssignableAvatar(photo, null);
@@ -426,13 +474,13 @@ public class UserServiceImpl implements UserService {
         user.setPhoto(photo);
         user.setIdCard(idCard);
         user.setStudentNo(studentNo);
-        user.setCollege(dto.getCollege().trim());
-        user.setClassName(dto.getClassName().trim());
-        user.setDormAddress(dto.getDormAddress().trim());
+        user.setCollege(trimToNull(dto.getCollege()));
+        user.setClassName(trimToNull(dto.getClassName()));
+        user.setDormAddress(trimToNull(dto.getDormAddress()));
         user.setPhone(phone);
-        user.setBankCard(dto.getBankCard().trim());
-        user.setIsValid(dto.getIsValid());
-        user.setRemark(dto.getRemark().trim());
+        user.setBankCard(trimToNull(dto.getBankCard()));
+        user.setIsValid(dto.getIsValid() == null ? 1 : dto.getIsValid());
+        user.setRemark(trimToNull(dto.getRemark()));
         sysUserMapper.insert(user);
 
         updateUserDepts(user.getId(), deptIds);
@@ -446,6 +494,28 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    public void resetUserPassword(Long userId, Long operatorId,
+                                  String operatorName, String operatorRole) {
+        if (Objects.equals(userId, operatorId)) {
+            throw ApiException.badRequest("请通过个人管理修改自己的密码");
+        }
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw ApiException.notFound("用户不存在");
+        }
+
+        sysUserMapper.update(null, new UpdateWrapper<SysUser>()
+                .eq("id", userId)
+                .set("password", passwordEncoder.encode(DEFAULT_INITIAL_PASSWORD))
+                .set("must_change_password", 1)
+                .setSql("token_version = token_version + 1"));
+        operationLogService.log(operatorId, operatorName, operatorRole, "UPDATE",
+                "USER", userId, "重置人员密码并要求下次登录修改", "");
+        log.info("User {} password reset by operator {}", userId, operatorId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
     public void updateUser(Long userId, UserUpdateDTO dto, Long operatorId,
                            String operatorName, String operatorRole) {
         SysUser user = sysUserMapper.selectById(userId);
@@ -455,17 +525,23 @@ public class UserServiceImpl implements UserService {
 
         validateCompleteUserUpdate(dto);
         String studentNo = dto.getStudentNo().trim();
-        String idCard = dto.getIdCard().trim().toUpperCase();
-        String phone = normalizeAndValidatePhone(dto.getPhone());
-        String bankCard = dto.getBankCard().trim();
+        // 202608131443 - 允许有人员编辑权限的管理人员将非核心人员资料留空。
+        String idCard = trimToNull(dto.getIdCard());
+        if (idCard != null) idCard = idCard.toUpperCase();
+        String phone = trimToNull(dto.getPhone());
+        String bankCard = trimToNull(dto.getBankCard());
+        String college = trimToNull(dto.getCollege());
+        String className = trimToNull(dto.getClassName());
+        String dormAddress = trimToNull(dto.getDormAddress());
+        String remark = trimToNull(dto.getRemark());
         List<Long> deptIds = distinctIds(dto.getDeptIds(), "部门");
         List<Long> roleIds = distinctIds(dto.getRoleIds(), "角色");
         validateDeptIds(deptIds);
         validateRoleIds(roleIds);
 
         ensureStudentNoAvailable(studentNo, userId);
-        ensureIdCardAvailable(idCard, userId);
-        ensurePhoneAvailable(phone, userId);
+        if (idCard != null) ensureIdCardAvailable(idCard, userId);
+        if (phone != null) ensurePhoneAvailable(phone, userId);
 
         List<Long> oldDeptIds = currentDeptIds(userId);
         List<Long> oldRoleIds = currentRoleIds(userId);
@@ -488,12 +564,12 @@ public class UserServiceImpl implements UserService {
                 .set("photo", newPhoto)
                 .set("id_card", idCard)
                 .set("phone", phone)
-                .set("college", dto.getCollege().trim())
-                .set("class_name", dto.getClassName().trim())
-                .set("dorm_address", dto.getDormAddress().trim())
+                .set("college", college)
+                .set("class_name", className)
+                .set("dorm_address", dormAddress)
                 .set("bank_card", bankCard)
                 .set("is_valid", dto.getIsValid())
-                .set("remark", dto.getRemark().trim())
+                .set("remark", remark)
                 .setSql(invalidateTokens, "token_version = token_version + 1");
         sysUserMapper.update(null, update);
 
@@ -509,8 +585,8 @@ public class UserServiceImpl implements UserService {
                 "USER", userId, detail,
                 userAuditSnapshot(user.getStudentNo(), user.getGender(), user.getCollege(),
                         user.getClassName(), oldDeptIds, oldRoleIds, user.getIsValid()),
-                userAuditSnapshot(studentNo, dto.getGender(), dto.getCollege().trim(),
-                        dto.getClassName().trim(), deptIds, roleIds, dto.getIsValid()), "");
+                userAuditSnapshot(studentNo, dto.getGender(), college,
+                        className, deptIds, roleIds, dto.getIsValid()), "");
 
         if (!Objects.equals(user.getPhoto(), newPhoto)) {
             avatarStorageService.deleteAfterCommit(user.getPhoto());
@@ -772,14 +848,8 @@ public class UserServiceImpl implements UserService {
         if (dto == null
                 || !StringUtils.hasText(dto.getRealName())
                 || !StringUtils.hasText(dto.getStudentNo())
-                || !StringUtils.hasText(dto.getIdCard())
-                || !StringUtils.hasText(dto.getPhone())
-                || !StringUtils.hasText(dto.getCollege())
-                || !StringUtils.hasText(dto.getClassName())
-                || !StringUtils.hasText(dto.getDormAddress())
-                || !StringUtils.hasText(dto.getBankCard())
-                || !StringUtils.hasText(dto.getRemark())) {
-            throw ApiException.badRequest("除照片外，所有人员字段均为必填项");
+                ) {
+            throw ApiException.badRequest("姓名和学号不能为空");
         }
         if (dto.getGender() == null || dto.getGender() < 0 || dto.getGender() > 2) {
             throw ApiException.badRequest("性别参数不正确");
@@ -787,12 +857,17 @@ public class UserServiceImpl implements UserService {
         if (dto.getIsValid() == null || (dto.getIsValid() != 0 && dto.getIsValid() != 1)) {
             throw ApiException.badRequest("账号状态只能为 0 或 1");
         }
-        if (!dto.getIdCard().trim().matches("^\\d{17}[\\dXx]$")) {
-            throw ApiException.badRequest("身份证号格式不正确");
-        }
-        if (!dto.getBankCard().trim().matches("^\\d{10,30}$")) {
-            throw ApiException.badRequest("银行卡号格式不正确");
-        }
+    }
+
+    private List<Long> optionalDistinctIds(List<Long> ids) {
+        return ids == null ? Collections.emptyList() : ids.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private String trimToNull(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     private void ensureStudentNoAvailable(String studentNo, Long excludedUserId) {

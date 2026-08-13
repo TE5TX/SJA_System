@@ -2,13 +2,12 @@ package com.sja.system.dto;
 
 import lombok.Data;
 
-import javax.validation.constraints.Max;
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
-import javax.validation.constraints.Size;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 
 @Data
@@ -30,28 +29,22 @@ public class UserUpdateDTO {
     @Size(max = 255, message = "照片地址不能超过 255 个字符")
     private String photo;
 
-    @NotBlank(message = "身份证号不能为空")
-    @Pattern(regexp = "^\\d{17}[\\dXx]$", message = "身份证号格式不正确")
+    @Size(max = 18, message = "身份证号不能超过 18 个字符")
     private String idCard;
 
-    @NotBlank(message = "手机号不能为空")
-    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
+    @Size(max = 20, message = "手机号不能超过 20 个字符")
     private String phone;
 
-    @NotBlank(message = "学院不能为空")
     @Size(max = 100, message = "学院不能超过 100 个字符")
     private String college;
 
-    @NotBlank(message = "班级不能为空")
     @Size(max = 50, message = "班级不能超过 50 个字符")
     private String className;
 
-    @NotBlank(message = "宿舍地址不能为空")
     @Size(max = 100, message = "宿舍地址不能超过 100 个字符")
     private String dormAddress;
 
-    @NotBlank(message = "银行卡号不能为空")
-    @Pattern(regexp = "^\\d{10,30}$", message = "银行卡号格式不正确")
+    @Size(max = 30, message = "银行卡号不能超过 30 个字符")
     private String bankCard;
 
     @NotEmpty(message = "请至少选择一个部门")
@@ -67,7 +60,6 @@ public class UserUpdateDTO {
     @Max(value = 1, message = "账号状态只能为 0 或 1")
     private Integer isValid;
 
-    @NotBlank(message = "备注不能为空")
     @Size(max = 500, message = "备注不能超过 500 个字符")
     private String remark;
 }

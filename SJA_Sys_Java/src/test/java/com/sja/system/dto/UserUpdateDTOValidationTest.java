@@ -2,8 +2,8 @@ package com.sja.system.dto;
 
 import org.junit.jupiter.api.Test;
 
-import javax.validation.Validation;
-import javax.validation.Validator;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,6 +26,46 @@ class UserUpdateDTOValidationTest {
         UserUpdateDTO dto = validDto();
         dto.setBankCard(" ");
         dto.setIsValid(2);
+
+        assertFalse(validator.validate(dto).isEmpty());
+    }
+
+    @Test
+    void acceptsLegacyIdentityPhoneAndBankValuesForPrivilegedEditing() {
+        UserUpdateDTO dto = validDto();
+        dto.setIdCard("legacy-id");
+        dto.setPhone("legacy-phone");
+        dto.setBankCard("1");
+
+        assertTrue(validator.validate(dto).isEmpty());
+    }
+
+    @Test
+    void acceptsMissingOptionalInformationForPrivilegedEditing() {
+        UserUpdateDTO dto = validDto();
+        dto.setIdCard(null);
+        dto.setPhone("");
+        dto.setCollege(null);
+        dto.setClassName("");
+        dto.setDormAddress(null);
+        dto.setBankCard("");
+        dto.setRemark(null);
+
+        assertTrue(validator.validate(dto).isEmpty());
+    }
+
+    @Test
+    void keepsStrictFormatValidationForSelfServiceProfileEditing() {
+        ProfileUpdateDTO dto = new ProfileUpdateDTO();
+        dto.setRealName("Test User");
+        dto.setGender(1);
+        dto.setStudentNo("20240001");
+        dto.setIdCard("legacy-id");
+        dto.setPhone("legacy-phone");
+        dto.setCollege("Test College");
+        dto.setClassName("Test Class");
+        dto.setDormAddress("Test Dormitory");
+        dto.setBankCard("1");
 
         assertFalse(validator.validate(dto).isEmpty());
     }

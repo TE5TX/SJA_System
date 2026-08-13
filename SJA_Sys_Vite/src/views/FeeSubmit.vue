@@ -216,7 +216,28 @@
             </div>
           </template>
 
-          <template v-if="usesAuthorSelector">
+          <template v-if="form.workType === 'SUBSIDY'">
+            <el-alert
+              class="role-match-alert"
+              type="info"
+              :closable="false"
+              show-icon
+              :title="`已按“${form.workInfo.category || '补贴类型'}”角色自动匹配 ${form.contributors.length} 人`"
+            />
+
+            <div v-for="item in form.contributors" :key="item.key" class="author-row">
+              <div class="author-identity">
+                <el-avatar class="person-avatar" :size="38">{{ authorInitial(item.userId) }}</el-avatar>
+                <div>
+                  <strong>{{ authorName(item.userId) }}</strong>
+                  <span>{{ authorStudentNo(item.userId) }}</span>
+                </div>
+              </div>
+            </div>
+            <el-empty v-if="form.contributors.length === 0" description="当前角色暂无有效人员" />
+          </template>
+
+          <template v-else-if="usesAuthorSelector">
             <AuthorInput
               v-model="authorNamesInput"
               :users="users"
@@ -328,7 +349,7 @@ const editorInputValid = ref(true)
 const form = reactive({ workType: 'EDITORIAL', workInfo: {}, contributors: [] })
 const draftReady = ref(false)
 const DRAFT_VERSION = 1
-const usesAuthorSelector = computed(() => ['EDITORIAL', 'PHOTO', 'VISUAL', 'SUBSIDY'].includes(form.workType))
+const usesAuthorSelector = computed(() => ['EDITORIAL', 'PHOTO', 'VISUAL'].includes(form.workType))
 const needsContributorWorkCount = computed(() =>
   (form.workType === 'PHOTO' && ['院网', '校报'].includes(form.workInfo.platform)) ||
   (form.workType === 'VISUAL' && form.workInfo.category === '校园网首页大图'))
@@ -339,6 +360,14 @@ const inputPersonLabel = computed(() => form.workType === 'SUBSIDY'
   ? '补贴人员'
   : (form.workType === 'VISUAL' ? '设计人员' : '作者'))
 const categoryOptions = computed(() => editorialCategoryOptions[form.workInfo.platform] || [])
+const subsidyRoleCodes = {
+  微信统筹编辑: [5],
+  排版编辑: [6],
+  校对: [7],
+  主席团成员: [1, 3, 4],
+  校园巡查组长: [11],
+  校园巡查组员: [12]
+}
 
 // 202608101716 - 分别记住采编部和摄影部上次选择的发布平台。
 const preferredPlatform = workType => {
@@ -522,6 +551,18 @@ const handleAuthorValidation = validation => {
     existing.get(String(user.id)) || createContributor(user.id, role))
 }
 
+// 202608131602 - 修复了月度补贴必须手动输入人员名单而未使用系统角色数据的问题。
+const syncSubsidyContributors = () => {
+  if (form.workType !== 'SUBSIDY') return
+  const expectedRoleCodes = subsidyRoleCodes[form.workInfo.category] || []
+  const existing = new Map(form.contributors.map(item => [String(item.userId), item]))
+  form.contributors = users.value
+    .filter(user => (user.roleCodes || []).some(roleCode => expectedRoleCodes.includes(Number(roleCode))))
+    .map(user => existing.get(String(user.id)) || createContributor(user.id, 'MEMBER'))
+  authorNamesInput.value = ''
+  authorInputValid.value = true
+}
+
 const handleVideoValidation = (role, validation) => {
   if (role === 'SHOOTER') shooterInputValid.value = validation.valid
   else editorInputValid.value = validation.valid
@@ -562,7 +603,10 @@ const validate = () => {
   }
   if (usesAuthorSelector.value && !authorInputValid.value) return '请修正未识别或重名的人员'
   if (form.workType === 'VIDEO' && (!shooterInputValid.value || !editorInputValid.value)) return '请修正未识别或重名的视频参与人员'
-  if (form.contributors.length === 0) return usesAuthorSelector.value ? '请添加作者' : '请添加参与人员'
+  if (form.contributors.length === 0) {
+    if (form.workType === 'SUBSIDY') return '当前补贴类型未配置有效人员，请先在人员管理中维护对应角色'
+    return usesAuthorSelector.value ? '请添加作者' : '请添加参与人员'
+  }
   if (form.contributors.some(item => !item.userId || !item.roleInWork)) return '请补全参与人员和角色'
   if (needsContributorWorkCount.value && form.contributors.some(item => Number(item.workCount) <= 0)) {
     return '请填写每位人员对应的作品数量'
@@ -623,6 +667,7 @@ onMounted(async () => {
   }
   await loadUsers()
   const restored = restoreFeeDraft()
+  syncSubsidyContributors()
   draftReady.value = true
   if (restored) ElMessage.success('已恢复未提交的稿费草稿')
 })
@@ -633,6 +678,11 @@ watch(workTypeOptions, options => {
     resetWorkInfo()
   }
 })
+
+watch(
+  () => [form.workType, form.workInfo.category, users.value],
+  syncSubsidyContributors
+)
 
 watch(
   () => ({
@@ -704,6 +754,10 @@ watch(
 }
 
 :deep(.author-input) {
+  margin-bottom: 14px;
+}
+
+.role-match-alert {
   margin-bottom: 14px;
 }
 

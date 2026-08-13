@@ -3,6 +3,8 @@ package com.sja.system.vo;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * Minimal active-user information used when selecting fee contributors.
  */
@@ -14,4 +16,5 @@ public class FeeContributorVO {
     private String realName;
     private String studentNo;
     private Integer isValid;
+    private List<Integer> roleCodes;
 }

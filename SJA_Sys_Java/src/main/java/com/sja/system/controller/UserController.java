@@ -29,9 +29,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -225,6 +225,8 @@ public class UserController {
             return Result.error(401, "未授权");
         }
 
+        // 202608131617 - 为人员信息批量修改增加了当前用户密码二次校验。
+        userService.verifyCurrentPassword(operatorId, dto.getCurrentPassword());
         userService.batchUpdateUsers(dto, operatorId,
                 securityUtils.getCurrentUsernameFromToken(request),
                 roleCode != null ? String.valueOf(roleCode) : "");
@@ -248,6 +250,20 @@ public class UserController {
             return Result.error(401, "未授权");
         }
         userService.updateUser(id, updates, operatorId, operatorName, operatorRole);
+        return Result.success();
+    }
+
+    @PutMapping("/users/{id}/password/reset")
+    @PreAuthorize("hasAuthority('sys:users:edit')")
+    public Result<Void> resetUserPassword(@PathVariable Long id, HttpServletRequest request) {
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) {
+            return Result.error(401, "未授权");
+        }
+        userService.resetUserPassword(id, operatorId,
+                securityUtils.getCurrentUsernameFromToken(request),
+                roleCode != null ? String.valueOf(roleCode) : "");
         return Result.success();
     }
 

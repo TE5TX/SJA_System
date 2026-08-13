@@ -27,6 +27,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 class UserServiceImplCreateTest {
 
@@ -90,6 +91,35 @@ class UserServiceImplCreateTest {
         assertEquals(409, exception.getStatus());
         assertEquals("该手机号已被其他用户使用", exception.getMessage());
         verify(userMapper, never()).insert(any(SysUser.class));
+    }
+
+    @Test
+    void createsUserWithOnlyStudentNumberAndSafeDefaults() {
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserServiceImpl service = new UserServiceImpl(userMapper, mock(SysRoleMapper.class),
+                mock(SysDeptMapper.class), mock(SysUserRoleMapper.class), mock(SysUserDeptMapper.class),
+                mock(OperationLogService.class), passwordEncoder, mock(AvatarStorageService.class));
+        when(passwordEncoder.encode("asdf123456")).thenReturn("encoded-default-password");
+        when(userMapper.insert(any(SysUser.class))).thenAnswer(invocation -> {
+            invocation.<SysUser>getArgument(0).setId(100L);
+            return 1;
+        });
+
+        UserCreateDTO dto = new UserCreateDTO();
+        dto.setStudentNo("2026000000002");
+        Long userId = service.createUser(dto, 1L, "admin", "8");
+
+        ArgumentCaptor<SysUser> userCaptor = ArgumentCaptor.forClass(SysUser.class);
+        verify(userMapper).insert(userCaptor.capture());
+        SysUser created = userCaptor.getValue();
+        assertEquals(100L, userId);
+        assertEquals("2026000000002", created.getRealName());
+        assertEquals(0, created.getGender());
+        assertEquals(1, created.getIsValid());
+        assertEquals(1, created.getMustChangePassword());
+        assertEquals("encoded-default-password", created.getPassword());
+        verify(passwordEncoder).encode("asdf123456");
     }
 
     private UserCreateDTO createDto() {

@@ -61,7 +61,7 @@ class FeeServiceImplResetAuditTest {
                 () -> feeService.resetAudit(13L, "EDITORIAL", 1L, "管理员", "0"));
 
         assertEquals("只有已通过的稿费任务可以退回待审核", error.getMessage());
-        verify(editorialMapper, never()).updateById(any());
+        verify(editorialMapper, never()).updateById(any(BizEditorialArticle.class));
         verify(operationLogService, never()).log(any(), any(), any(), any(), any(), any(), any(), any());
     }
 
@@ -79,7 +79,7 @@ class FeeServiceImplResetAuditTest {
                 () -> feeService.auditFee(16L, "EDITORIAL", dto, 1L, "管理员", "0"));
 
         assertEquals("只有待审核的稿费任务可以审核", error.getMessage());
-        verify(editorialMapper, never()).updateById(any());
+        verify(editorialMapper, never()).updateById(any(BizEditorialArticle.class));
     }
 
     @Test
@@ -111,6 +111,6 @@ class FeeServiceImplResetAuditTest {
                 () -> feeService.invalidateRejectedFee(15L, "EDITORIAL", 1L, "管理员", "0", 0));
 
         assertEquals("只有已驳回的稿费任务可以删除", error.getMessage());
-        verify(editorialMapper, never()).updateById(any());
+        verify(editorialMapper, never()).updateById(any(BizEditorialArticle.class));
     }
 }
