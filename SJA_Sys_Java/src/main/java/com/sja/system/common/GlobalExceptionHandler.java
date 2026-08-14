@@ -7,6 +7,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,6 +38,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Result<?>> handleApiException(ApiException e, HttpServletRequest request) {
         log.warn("业务请求失败 [{}]: {}", request.getRequestURI(), e.getMessage());
+        // 202608140858 - 登录限流响应增加标准 Retry-After 头。
+        if (e.getRetryAfterSeconds() != null) {
+            return ResponseEntity.status(e.getStatus())
+                    .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+                    .body(Result.error(e.getStatus(), e.getMessage()));
+        }
         return response(e.getStatus(), e.getMessage());
     }
 

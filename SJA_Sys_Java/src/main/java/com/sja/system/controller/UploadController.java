@@ -21,7 +21,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.Map;
 
 @RestController
@@ -38,7 +37,8 @@ public class UploadController {
 
     @GetMapping("/avatar/{filename:.+}")
     public ResponseEntity<Resource> getAvatar(@PathVariable String filename) {
-        Path path = avatarStorageService.resolveFilename(filename);
+        // 202608140858 - 头像仅允许认证用户读取，且禁止缓存和读取未绑定文件。
+        Path path = avatarStorageService.resolveReferencedFilename(filename);
         if (!Files.isRegularFile(path)) {
             throw ApiException.notFound("照片不存在");
         }
@@ -46,7 +46,7 @@ public class UploadController {
             MediaType mediaType = filename.endsWith(".png") ? MediaType.IMAGE_PNG : MediaType.IMAGE_JPEG;
             return ResponseEntity.ok()
                     .contentType(mediaType)
-                    .cacheControl(CacheControl.maxAge(Duration.ofMinutes(15)).cachePrivate())
+                    .cacheControl(CacheControl.noStore())
                     .header("X-Content-Type-Options", "nosniff")
                     .body(new UrlResource(path.toUri()));
         } catch (IOException e) {

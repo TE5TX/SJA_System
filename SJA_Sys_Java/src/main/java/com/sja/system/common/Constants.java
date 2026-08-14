@@ -11,7 +11,10 @@ public final class Constants {
     public static final int FORBIDDEN = 403;
     public static final int NOT_FOUND = 404;
     public static final int CONFLICT = 409;
+    // 202608140858 - 增加了登录限流和保护服务异常对应的 HTTP 状态码。
+    public static final int TOO_MANY_REQUESTS = 429;
     public static final int ERROR = 500;
+    public static final int SERVICE_UNAVAILABLE = 503;
 
     public static final String TOKEN_PREFIX = "Bearer ";
     public static final String TOKEN_HEADER = "Authorization";

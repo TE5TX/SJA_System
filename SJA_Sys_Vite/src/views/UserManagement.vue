@@ -90,7 +90,7 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="editVisible" :title="isCreating ? '新增人员' : '编辑人员信息'" width="720px" :close-on-click-modal="false">
+    <el-dialog v-model="editVisible" :title="isCreating ? '新增人员' : '编辑人员信息'" width="720px" :close-on-click-modal="false" @closed="clearAvatarPreview">
       <el-form ref="userFormRef" :model="editForm" :rules="userFormRules" label-width="96px">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -156,7 +156,7 @@
             :before-upload="beforeAvatarUpload"
             :http-request="handleAvatarUpload"
           >
-            <el-avatar v-if="editForm.photo" :src="editForm.photo" :size="52" />
+            <AuthenticatedAvatar v-if="editForm.photo" :src="avatarPreviewUrl || editForm.photo" :size="52" />
             <el-button v-else type="primary">上传证件照</el-button>
             <el-button v-if="editForm.photo" class="edit-btn" type="primary" link>重新上传</el-button>
           </el-upload>
@@ -254,6 +254,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDetail, getUserList, resetUserPassword, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
 import { getDeptList, getRoleList } from '@/api/system'
 import { uploadAvatar } from '@/api/upload'
+import AuthenticatedAvatar from '@/components/AuthenticatedAvatar.vue'
 
 const query = reactive({ realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', isValid: '', pageNum: 1, pageSize: 10 })
 const users = ref([])
@@ -302,6 +303,12 @@ const editForm = reactive({
   password: '',
   confirmPassword: ''
 })
+const avatarPreviewUrl = ref('')
+// 202608140858 - 新增人员的未绑定头像使用本地 Blob 预览，避免绕过后端绑定校验。
+const clearAvatarPreview = () => {
+  if (avatarPreviewUrl.value) URL.revokeObjectURL(avatarPreviewUrl.value)
+  avatarPreviewUrl.value = ''
+}
 const isCreating = computed(() => dialogMode.value === 'create')
 const requiredText = label => [{ required: true, whitespace: true, message: `请输入${label}`, trigger: 'blur' }]
 // 202608131153 - 放宽了有人员编辑权限的管理人员修改人员信息时的格式校验。
@@ -387,7 +394,10 @@ watch(
   }
 )
 
-onBeforeUnmount(() => clearTimeout(realtimeQueryTimer))
+onBeforeUnmount(() => {
+  clearTimeout(realtimeQueryTimer)
+  clearAvatarPreview()
+})
 
 const reset = () => {
   clearSelection()
@@ -537,6 +547,7 @@ const formatDateForFilename = date => {
 }
 
 const resetUserForm = () => {
+  clearAvatarPreview()
   Object.assign(editForm, {
     realName: '',
     gender: 0,
@@ -566,6 +577,7 @@ const openCreate = () => {
 }
 
 const openEdit = async row => {
+  clearAvatarPreview()
   const detail = (await getUserDetail(row.id)).data
   dialogMode.value = 'edit'
   editingId.value = detail.id
@@ -650,6 +662,8 @@ const beforeAvatarUpload = file => {
 
 const handleAvatarUpload = async options => {
   try {
+    clearAvatarPreview()
+    avatarPreviewUrl.value = URL.createObjectURL(options.file)
     const res = await uploadAvatar(options.file)
     const url = res.data?.url || ''
     editForm.photo = url
@@ -662,11 +676,13 @@ const handleAvatarUpload = async options => {
     }
     options.onSuccess?.(res)
   } catch (error) {
+    clearAvatarPreview()
     options.onError?.(error)
   }
 }
 
 const handleDeleteAvatar = async () => {
+  clearAvatarPreview()
   if (isCreating.value) {
     editForm.photo = ''
     return

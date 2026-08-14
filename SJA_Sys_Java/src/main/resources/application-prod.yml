@@ -1,7 +1,8 @@
 # 生产环境必须显式提供真实域名：SPRING_PROFILES_ACTIVE=prod
 server:
   address: ${SJA_SERVER_ADDRESS:127.0.0.1}
-  forward-headers-strategy: framework
+  # 202608140858 - 生产环境仅信任配置的内部反向代理转发客户端地址。
+  forward-headers-strategy: native
 
 sja:
   security:

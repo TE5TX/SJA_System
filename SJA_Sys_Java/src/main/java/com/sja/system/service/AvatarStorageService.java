@@ -131,6 +131,20 @@ public class AvatarStorageService {
         return resolveFile(filename);
     }
 
+    public Path resolveReferencedFilename(String filename) {
+        // 202608140858 - 阻止通过猜测文件名读取未绑定到任何用户的头像。
+        Path path = resolveFilename(filename);
+        if (!Files.isRegularFile(path)) {
+            throw ApiException.notFound("照片不存在");
+        }
+        String photoUrl = URL_PREFIX + filename;
+        Long references = sysUserMapper.selectCount(new QueryWrapper<SysUser>().eq("photo", photoUrl));
+        if (references == null || references < 1) {
+            throw ApiException.notFound("照片不存在");
+        }
+        return path;
+    }
+
     public boolean isManagedUrl(String photoUrl) {
         if (photoUrl == null || !photoUrl.startsWith(URL_PREFIX)) return false;
         return FILE_NAME.matcher(photoUrl.substring(URL_PREFIX.length())).matches();

@@ -89,7 +89,8 @@ request.interceptors.response.use(
     } else if (error.response?.status === 403 && message === '首次登录请先修改密码') {
       localStorage.setItem('mustChangePassword', 'true')
       if (window.location.pathname !== '/change-password') window.location.href = '/change-password'
-    } else {
+    // 202608140858 - 允许认证头像后台加载失败时静默使用文字头像。
+    } else if (!error.config?.skipGlobalError) {
       ElMessage.error(message)
     }
     return Promise.reject(error)

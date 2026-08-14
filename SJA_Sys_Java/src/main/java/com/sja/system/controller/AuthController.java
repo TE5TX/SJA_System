@@ -14,6 +14,7 @@ import com.sja.system.security.SecurityUtils;
 import com.sja.system.security.TokenPair;
 import com.sja.system.service.AuthTokenService;
 import com.sja.system.service.LoginCaptchaService;
+import com.sja.system.service.LoginThrottleService;
 import com.sja.system.service.SystemService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.LoginVO;
@@ -61,6 +62,7 @@ public class AuthController {
     private final SystemService systemService;
     private final UserService userService;
     private final LoginCaptchaService loginCaptchaService;
+    private final LoginThrottleService loginThrottleService;
     private final AuthTokenService authTokenService;
     private final SecurityUtils securityUtils;
 
@@ -71,11 +73,17 @@ public class AuthController {
     private boolean refreshCookieSecure;
 
     @PostMapping("/login")
-    public Result<LoginVO> login(@RequestBody @Valid LoginDTO dto, HttpServletResponse response) {
+    public Result<LoginVO> login(@RequestBody @Valid LoginDTO dto, HttpServletRequest request,
+                                 HttpServletResponse response) {
         String loginIdentifier = dto.getUsername().trim();
+        String clientIp = request.getRemoteAddr();
+        // 202608140858 - 在验证码与密码认证之外增加了账号/IP 登录节流和短期锁定。
+        loginThrottleService.assertAllowed(loginIdentifier, clientIp);
+        loginThrottleService.recordIpAttempt(clientIp);
         if (!loginCaptchaService.consume(dto.getCaptchaToken().trim())) {
             throw ApiException.badRequest("滑块验证已失效，请重新验证");
         }
+        loginThrottleService.recordAccountAttempt(loginIdentifier, clientIp);
 
         try {
             Authentication authentication = authenticationManager.authenticate(
@@ -85,8 +93,11 @@ public class AuthController {
                     .eq("username", authentication.getName())
                     .eq("is_valid", 1));
             if (user == null) {
-                throw ApiException.unauthorized("用户不存在或已被禁用");
+                loginThrottleService.recordFailure(loginIdentifier, clientIp);
+                throw ApiException.unauthorized("用户名或密码错误");
             }
+
+            loginThrottleService.recordSuccess(loginIdentifier, clientIp);
 
             List<Integer> roleCodes = loadRoleCodes(user.getId());
             TokenPair tokenPair = authTokenService.issue(user);
@@ -106,11 +117,13 @@ public class AuthController {
             log.info("User logged in: {}", user.getUsername());
             return Result.success(loginVO);
         } catch (BadCredentialsException e) {
-            log.warn("Login failed - bad credentials for user: {}", loginIdentifier);
+            log.warn("Login failed - bad credentials from client: {}", clientIp);
+            loginThrottleService.recordFailure(loginIdentifier, clientIp);
             throw ApiException.unauthorized("用户名或密码错误");
         } catch (AuthenticationException e) {
-            log.warn("Authentication failed for {}: {}", loginIdentifier, e.getMessage());
-            throw ApiException.unauthorized("认证失败");
+            log.warn("Authentication failed from client {}: {}", clientIp, e.getClass().getSimpleName());
+            loginThrottleService.recordFailure(loginIdentifier, clientIp);
+            throw ApiException.unauthorized("用户名或密码错误");
         } catch (ApiException e) {
             throw e;
         } catch (Exception e) {

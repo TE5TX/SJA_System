@@ -4,14 +4,24 @@ package com.sja.system.common;
 public class ApiException extends RuntimeException {
 
     private final int status;
+    private final Long retryAfterSeconds;
 
     public ApiException(int status, String message) {
+        this(status, message, null);
+    }
+
+    public ApiException(int status, String message, Long retryAfterSeconds) {
         super(message);
         this.status = status;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 
     public int getStatus() {
         return status;
+    }
+
+    public Long getRetryAfterSeconds() {
+        return retryAfterSeconds;
     }
 
     public static ApiException badRequest(String message) {
@@ -32,5 +42,14 @@ public class ApiException extends RuntimeException {
 
     public static ApiException conflict(String message) {
         return new ApiException(Constants.CONFLICT, message);
+    }
+
+    public static ApiException tooManyRequests(String message, long retryAfterSeconds) {
+        // 202608140858 - 增加了登录限流所需的 429 状态与 Retry-After 秒数。
+        return new ApiException(Constants.TOO_MANY_REQUESTS, message, Math.max(1L, retryAfterSeconds));
+    }
+
+    public static ApiException serviceUnavailable(String message) {
+        return new ApiException(Constants.SERVICE_UNAVAILABLE, message);
     }
 }

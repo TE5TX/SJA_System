@@ -14,3 +14,13 @@ $env:SJA_CORS_ALLOWED_ORIGINS = "http://localhost:5175"
 $env:SJA_API_DOCS_ENABLED = "false"
 $env:SJA_REFRESH_COOKIE_SECURE = "false" # Set to true when production uses HTTPS.
 $env:SJA_AVATAR_DIR = "C:\ProgramData\SJA-System\uploads\avatars"
+
+# 202608140858 - 增加了登录限流、失败锁定和受信任反向代理的可选配置。
+$env:SJA_LOGIN_ACCOUNT_ATTEMPT_LIMIT = "10"
+$env:SJA_LOGIN_IP_ATTEMPT_LIMIT = "30"
+$env:SJA_LOGIN_ATTEMPT_WINDOW_SECONDS = "300"
+$env:SJA_LOGIN_ACCOUNT_FAILURE_LIMIT = "5"
+$env:SJA_LOGIN_IP_FAILURE_LIMIT = "20"
+$env:SJA_LOGIN_FAILURE_WINDOW_SECONDS = "900"
+$env:SJA_LOGIN_LOCK_SECONDS = "900"
+$env:SJA_TRUSTED_PROXY_REGEX = "127\.\d+\.\d+\.\d+|0:0:0:0:0:0:0:1|::1"

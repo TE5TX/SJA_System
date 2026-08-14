@@ -1,14 +1,17 @@
 package com.sja.system.security;
 
+import com.sja.system.mapper.SysUserMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -26,6 +29,10 @@ class SecurityBoundaryIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    // 202608140858 - 隔离数据库以验证头像认证边界本身。
+    @MockitoBean
+    private SysUserMapper sysUserMapper;
 
     @Test
     void allowsConfiguredFrontendPreflight() throws Exception {
@@ -53,5 +60,17 @@ class SecurityBoundaryIntegrationTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/swagger-ui.html"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void protectsAvatarFilesFromAnonymousAccess() throws Exception {
+        String path = "/api/v1/upload/avatar/11111111-1111-1111-1111-111111111111.png";
+
+        mockMvc.perform(get(path))
+                .andExpect(status().isUnauthorized());
+
+        // Authentication reaches the controller; the test file itself is intentionally absent.
+        mockMvc.perform(get(path).with(user("security-test")))
+                .andExpect(status().isNotFound());
     }
 }

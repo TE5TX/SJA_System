@@ -77,4 +77,20 @@ class AvatarStorageServiceTest {
 
         assertEquals(409, error.getStatus());
     }
+
+    @Test
+    void refusesToReadAnAvatarThatIsNotBoundToAUser() throws Exception {
+        // 202608140858 - 验证了孤立头像文件不能通过认证读取接口泄露。
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        AvatarStorageService service = new AvatarStorageService(
+                userMapper, tempDirectory.toString(), 1_000_000L, 1_000, 64);
+        String filename = "11111111-1111-1111-1111-111111111111.png";
+        Files.write(tempDirectory.resolve(filename), new byte[]{1});
+        when(userMapper.selectCount(any())).thenReturn(0L);
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.resolveReferencedFilename(filename));
+
+        assertEquals(404, error.getStatus());
+    }
 }

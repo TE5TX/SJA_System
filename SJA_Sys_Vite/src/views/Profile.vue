@@ -9,9 +9,9 @@
       <el-col :xl="4" :lg="5" :md="6" :sm="24" :xs="24">
         <el-card class="profile-card">
           <div class="profile-card-body">
-            <el-avatar :size="120" class="profile-avatar">
+            <AuthenticatedAvatar :src="userInfo.photo" :size="120" class="profile-avatar">
               {{ userInfo.realName?.charAt(0) || 'U' }}
-            </el-avatar>
+            </AuthenticatedAvatar>
             <h2 class="profile-name">{{ userInfo.realName || '未设置' }}</h2>
             <div class="profile-badges">
               <el-tag type="primary" size="large">{{ deptDisplay }}</el-tag>
@@ -139,7 +139,7 @@
                       :before-upload="beforeAvatarUpload"
                       :http-request="handleAvatarUpload"
                     >
-                      <el-avatar v-if="editForm.photo" :src="editForm.photo" :size="56" />
+                      <AuthenticatedAvatar v-if="editForm.photo" :src="editForm.photo" :size="56" />
                       <el-button v-else type="primary">上传照片</el-button>
                       <el-button v-if="editForm.photo" class="edit-btn" type="primary" link>重新上传</el-button>
                     </el-upload>
@@ -236,6 +236,7 @@ import { deleteProfilePhoto, getUserProfile, updateProfilePhoto, updateUserProfi
 import { changePassword } from '@/api/auth'
 import { uploadAvatar } from '@/api/upload'
 import { useUserStore } from '@/store/user'
+import AuthenticatedAvatar from '@/components/AuthenticatedAvatar.vue'
 
 const userStore = useUserStore()
 const activeTab = ref('overview')
