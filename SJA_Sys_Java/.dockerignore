@@ -1,0 +1,8 @@
+target
+.idea
+.vscode
+uploads
+tianai-captcha-1.5.5
+*.zip
+*.log
+set-env*.ps1

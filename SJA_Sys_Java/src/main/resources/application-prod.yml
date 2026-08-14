@@ -7,7 +7,8 @@ server:
 sja:
   security:
     cors-allowed-origins: ${SJA_CORS_ALLOWED_ORIGINS}
-    refresh-cookie-secure: true
+    # 局域网 IP + HTTP 部署时可显式设为 false；启用 HTTPS 后必须设为 true。
+    refresh-cookie-secure: ${SJA_REFRESH_COOKIE_SECURE:true}
   upload:
     avatar-dir: ${SJA_AVATAR_DIR:C:/ProgramData/SJA-System/uploads/avatars}
 
