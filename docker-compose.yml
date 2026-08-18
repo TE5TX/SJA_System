@@ -23,7 +23,6 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./sql/sja_system_db_202608131609.sql:/docker-entrypoint-initdb.d/01-schema-data.sql:ro
-      - ./sql/202608131628_全员密码重置.sql:/docker-entrypoint-initdb.d/02-password-reset.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot --password=\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
       interval: 10s
@@ -70,7 +69,7 @@ services:
       SJA_REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 .env 中设置 REDIS_PASSWORD}
       SJA_REDIS_DATABASE: 1
       SJA_JWT_SECRET: ${SJA_JWT_SECRET:?请在 .env 中设置 SJA_JWT_SECRET}
-      SJA_CORS_ALLOWED_ORIGINS: http://${SJA_HOST:-192.168.255.128}${WEB_ORIGIN_PORT:-}
+      SJA_CORS_ALLOWED_ORIGINS: ${SJA_CORS_ALLOWED_ORIGINS:-http://${SJA_HOST:-192.168.255.128}${WEB_ORIGIN_PORT:-}}
       SJA_REFRESH_COOKIE_SECURE: ${SJA_REFRESH_COOKIE_SECURE:-false}
       SJA_AVATAR_DIR: /app/uploads/avatars
       SJA_TRUSTED_PROXY_REGEX: '10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+'

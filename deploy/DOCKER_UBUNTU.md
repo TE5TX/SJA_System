@@ -140,9 +140,78 @@ sudo ufw status
 
 在宿主机浏览器访问：`http://192.168.255.128/`。
 
-数据库初始化脚本会执行全员密码重置：普通用户初始密码为 `asdf123456`，管理员初始密码为 `asdf2934HYJ`。普通用户首次登录后会被要求修改密码；部署成功后应立即修改管理员密码。
+数据库仅执行 `01-schema-data.sql`。初始账号和密码以该脚本中的数据为准；部署成功后应立即修改管理员密码。
 
-## 6. 常用维护命令
+## 6. 使用 Cloudflare Tunnel 发布到公网
+
+推荐使用 Cloudflare Tunnel 发布本系统。虚拟机只建立到 Cloudflare 的出站连接，不要求公网 IP或路由器端口转发，也不要将 MySQL `3306`、Redis `6379` 或后端 `8080` 暴露到公网。
+
+前置条件：准备一个已托管到 Cloudflare 的域名。在 Cloudflare 控制台进入 `Networking -> Tunnels`，创建 remotely-managed tunnel，然后添加 Published application：
+
+```text
+Hostname: sja.example.com（替换为实际域名）
+Service type: HTTP
+Service URL: http://web:80
+```
+
+从 Tunnel 的安装命令中取得以 `eyJ` 开头的 token。不要把 token 提交到 Git、粘贴到聊天或写入本文。编辑 Ubuntu 项目中的 `.env`：
+
+```bash
+cd ~/SJA_System
+nano .env
+```
+
+添加或修改：
+
+```dotenv
+SJA_PUBLIC_ORIGIN=https://sja.example.com
+CLOUDFLARE_TUNNEL_TOKEN=替换为真实TunnelToken
+```
+
+确认 `.env` 只有当前用户可读，然后检查合并后的 Compose 配置：
+
+```bash
+chmod 600 .env
+docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml config --quiet
+```
+
+首次启动或更新公网部署：
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml pull cloudflared
+docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml up -d --force-recreate backend web cloudflared
+docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml ps
+docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml logs --tail=100 cloudflared
+```
+
+日志中出现已建立连接后，通过 `https://sja.example.com` 访问。Cloudflare 负责浏览器侧 HTTPS，覆盖文件同时将刷新令牌 Cookie 设置为 Secure，并把后端 CORS 限制为该公网来源。
+
+使用 Tunnel 时无需为公网执行 `ufw allow 80/tcp`。若仍需局域网直接访问，可以仅允许局域网网段访问 80 端口；例如：
+
+```bash
+sudo ufw delete allow 80/tcp
+sudo ufw allow from 192.168.1.0/24 to any port 80 proto tcp
+sudo ufw allow OpenSSH
+sudo ufw enable
+sudo ufw status
+```
+
+不要开放以下端口：
+
+```text
+3306 MySQL
+6379 Redis
+8080 Spring Boot
+```
+
+如果 Tunnel 无法连接，检查虚拟机是否能主动访问 Cloudflare，以及网络是否限制 Tunnel 使用的出站 `7844` 端口：
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.public.yml logs --tail=200 cloudflared
+curl -I https://www.cloudflare.com
+```
+
+## 7. 常用维护命令
 
 ```bash
 # 查看状态
@@ -167,7 +236,7 @@ docker compose down
 
 首次初始化 SQL 只会在 MySQL 数据卷为空时执行。若修改了 SQL，已有数据库不会自动重导；应先备份数据库，再决定是否重建数据卷。
 
-## 7. 构建故障排查
+## 8. 构建故障排查
 
 ### npm 出现 ECONNRESET
 

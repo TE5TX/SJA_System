@@ -1,0 +1,22 @@
+services:
+  backend:
+    environment:
+      SJA_CORS_ALLOWED_ORIGINS: ${SJA_PUBLIC_ORIGIN:?请在 .env 中设置 SJA_PUBLIC_ORIGIN}
+      SJA_REFRESH_COOKIE_SECURE: "true"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    mem_limit: 128m
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?请在 .env 中设置 CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - web
+    networks:
+      - internal
+    logging:
+      driver: local
+      options:
+        max-size: 20m
+        max-file: "5"
