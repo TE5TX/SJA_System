@@ -22,7 +22,7 @@
           <el-button :icon="Refresh" @click="reset">重置</el-button>
         </div>
       </template>
-      <el-table :data="logs" v-loading="loading" border>
+      <el-table class="desktop-only" :data="logs" v-loading="loading" border>
         <el-table-column prop="realName" label="操作人" width="120" />
         <el-table-column prop="operationType" label="类型" width="120" />
         <el-table-column prop="targetModule" label="模块" width="120" />
@@ -47,12 +47,32 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-loading="loading" class="mobile-only">
+        <div v-if="!loading && logs.length === 0" class="mobile-empty">暂无操作日志</div>
+        <article v-for="log in logs" :key="log.id" class="mobile-record-card">
+          <div class="mobile-record-card__header">
+            <strong>{{ log.realName || '未知操作人' }} · {{ log.operationType || '-' }}</strong>
+            <el-tag :type="log.resultStatus === 'FAILURE' ? 'danger' : 'success'">
+              {{ log.resultStatus === 'FAILURE' ? '失败' : '成功' }}
+            </el-tag>
+          </div>
+          <dl class="mobile-record-card__grid">
+            <div><dt>模块</dt><dd>{{ log.targetModule || '-' }}</dd></div>
+            <div><dt>时间</dt><dd>{{ time(log.createTime) }}</dd></div>
+            <div><dt>请求</dt><dd>{{ log.requestMethod || '-' }} {{ log.requestUri || '-' }}</dd></div>
+            <div><dt>IP</dt><dd>{{ log.ipAddress || '-' }}</dd></div>
+          </dl>
+          <p class="mobile-log-detail">{{ log.detail || '无详情' }}</p>
+          <div class="mobile-record-card__actions">
+            <el-button type="primary" plain @click="openDetail(log)">查看详情</el-button>
+          </div>
+        </article>
+      </div>
       <div class="pagination">
-        <el-pagination
+        <ResponsivePagination
           v-model:current-page="query.pageNum"
           v-model:page-size="query.pageSize"
           :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
           :total="total"
           @size-change="loadLogs"
           @current-change="loadLogs"
@@ -60,7 +80,7 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="detailVisible" title="日志详情" size="520px">
+    <el-drawer v-model="detailVisible" title="日志详情" :size="isMobile ? '100%' : '520px'">
       <el-descriptions v-if="selectedLog" :column="1" border>
         <el-descriptions-item label="请求 ID">{{ selectedLog.requestId || '-' }}</el-descriptions-item>
         <el-descriptions-item label="请求">{{ selectedLog.requestMethod || '-' }} {{ selectedLog.requestUri || '-' }}</el-descriptions-item>
@@ -99,6 +119,10 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { getOperationLogs } from '@/api/system'
+import ResponsivePagination from '@/components/responsive/ResponsivePagination.vue'
+import { useResponsive } from '@/composables/useResponsive'
+
+const { isMobile } = useResponsive()
 
 const query = reactive({
   realName: '', operationType: '', targetModule: '', resultStatus: '', requestId: '',
@@ -283,6 +307,36 @@ pre {
 @media (max-width: 1100px) {
   .filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .filters {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .filters .el-button,
+  .pagination {
+    width: 100%;
+  }
+
+  /* 查询与重置纵向排列后不能保留 el-button + el-button 的桌面左边距。 */
+  .filters > .el-button,
+  .filters > .el-button + .el-button {
+    margin: 0;
+  }
+
+  .mobile-log-detail {
+    margin: 12px 0 0;
+    color: #606266;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-record-card__actions .el-button {
+    width: 100%;
   }
 }
 </style>

@@ -33,7 +33,7 @@
 
       <el-table
         ref="userTableRef"
-        class="centered-data-table"
+        class="centered-data-table desktop-only"
         :data="users"
         v-loading="loading"
         border
@@ -77,12 +77,50 @@
         </el-table-column>
       </el-table>
 
+      <!-- 手机端不横向压缩十列数据，改用可直接操作的成员卡片。 -->
+      <div v-loading="loading" class="mobile-only mobile-user-list">
+        <div v-if="!loading && users.length === 0" class="mobile-empty">暂无人员数据</div>
+        <article v-for="(user, index) in users" :key="user.id" class="mobile-record-card">
+          <div class="mobile-record-card__header">
+            <div class="mobile-user-title">
+              <el-checkbox
+                :model-value="isUserSelected(user.id)"
+                :aria-label="`选择${user.realName}`"
+                @change="toggleMobileSelection(user)"
+              />
+              <strong>{{ rowNumber(index) }}. {{ user.realName }}</strong>
+            </div>
+            <el-tag :type="user.isValid === 1 ? 'success' : 'danger'">
+              {{ user.isValid === 1 ? '启用' : '禁用' }}
+            </el-tag>
+          </div>
+          <dl class="mobile-record-card__grid">
+            <div><dt>学号</dt><dd>{{ user.studentNo || '-' }}</dd></div>
+            <div><dt>手机号</dt><dd>{{ user.phone || '-' }}</dd></div>
+            <div><dt>学院</dt><dd>{{ user.college || '-' }}</dd></div>
+            <div><dt>班级</dt><dd>{{ user.className || '-' }}</dd></div>
+            <div><dt>部门</dt><dd>{{ join(user.deptNames) }}</dd></div>
+            <div><dt>角色</dt><dd>{{ join(user.roleNames) }}</dd></div>
+          </dl>
+          <div class="mobile-record-card__actions">
+            <el-button type="primary" plain :icon="Edit" @click="openEdit(user)">编辑</el-button>
+            <el-button
+              :type="user.isValid === 1 ? 'danger' : 'success'"
+              plain
+              :icon="SwitchButton"
+              @click="toggleStatus(user)"
+            >
+              {{ user.isValid === 1 ? '禁用' : '启用' }}
+            </el-button>
+          </div>
+        </article>
+      </div>
+
       <div class="pagination">
-        <el-pagination
+        <ResponsivePagination
           v-model:current-page="query.pageNum"
           v-model:page-size="query.pageSize"
           :page-sizes="[10, 20, 50, 100, 200]"
-          layout="total, sizes, prev, pager, next"
           :total="total"
           @size-change="loadUsers"
           @current-change="loadUsers"
@@ -90,15 +128,15 @@
       </div>
     </el-card>
 
-    <el-dialog v-model="editVisible" :title="isCreating ? '新增人员' : '编辑人员信息'" width="720px" :close-on-click-modal="false" @closed="clearAvatarPreview">
-      <el-form ref="userFormRef" :model="editForm" :rules="userFormRules" label-width="96px">
+    <ResponsiveDialog v-model="editVisible" :title="isCreating ? '新增人员' : '编辑人员信息'" desktop-width="720px" :close-on-click-modal="false" @closed="clearAvatarPreview">
+      <el-form ref="userFormRef" class="mobile-form-top-label" :model="editForm" :rules="userFormRules" label-width="96px">
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="姓名" prop="realName">
               <el-input v-model="editForm.realName" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="性别" prop="gender">
               <el-radio-group v-model="editForm.gender">
                 <el-radio :value="1">男</el-radio>
@@ -109,38 +147,38 @@
           </el-col>
         </el-row>
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="学号" prop="studentNo">
               <el-input v-model="editForm.studentNo" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="手机号" prop="phone">
               <el-input v-model="editForm.phone" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row v-if="isCreating" :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="初始密码" prop="password">
               <el-input v-model="editForm.password" type="password" show-password autocomplete="new-password" />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="确认密码" prop="confirmPassword">
               <el-input v-model="editForm.confirmPassword" type="password" show-password autocomplete="new-password" />
             </el-form-item>
           </el-col>
         </el-row>
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="学院" prop="college">
               <el-select v-model="editForm.college" filterable placeholder="请选择学院">
                 <el-option v-for="college in collegeOptions" :key="college" :label="college" :value="college" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="班级" prop="className">
               <el-input v-model="editForm.className" />
             </el-form-item>
@@ -169,14 +207,14 @@
           <el-input v-model="editForm.bankCard" />
         </el-form-item>
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="所属部门" prop="deptIds">
               <el-select v-model="editForm.deptIds" multiple filterable placeholder="请选择部门">
                 <el-option v-for="dept in depts" :key="dept.id" :label="dept.deptName" :value="dept.id" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="角色" prop="roleIds">
               <el-select v-model="editForm.roleIds" multiple filterable placeholder="请选择角色">
                 <el-option v-for="role in roles" :key="role.id" :label="role.roleName" :value="role.id" />
@@ -198,9 +236,9 @@
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveEdit">{{ isCreating ? '确认新增' : '保存修改' }}</el-button>
       </template>
-    </el-dialog>
+    </ResponsiveDialog>
 
-    <el-dialog v-model="batchVisible" title="批量修改人员" width="520px">
+    <ResponsiveDialog v-model="batchVisible" title="批量修改人员" desktop-width="520px">
       <div class="batch-summary">已选择 {{ selectedUsers.length }} 名人员</div>
       <div class="batch-option">
         <el-checkbox v-model="batchForm.updateRoles">修改身份角色</el-checkbox>
@@ -225,9 +263,9 @@
         <el-button @click="batchVisible = false">取消</el-button>
         <el-button type="primary" :loading="batchSaving" @click="saveBatchEdit">确认修改</el-button>
       </template>
-    </el-dialog>
+    </ResponsiveDialog>
 
-    <el-dialog v-model="exportVisible" title="导出人员信息" width="560px">
+    <ResponsiveDialog v-model="exportVisible" title="导出人员信息" desktop-width="560px">
       <div class="export-actions">
         <el-button text class="export-action-btn" @click="toggleAllExportFields">
           {{ allExportFieldsSelected ? '取消全选' : '全选' }}
@@ -243,7 +281,7 @@
         <el-button @click="exportVisible = false">取消</el-button>
         <el-button type="primary" :loading="exportLoading" @click="handleExport">导出</el-button>
       </template>
-    </el-dialog>
+    </ResponsiveDialog>
   </div>
 </template>
 
@@ -255,6 +293,8 @@ import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDeta
 import { getDeptList, getRoleList } from '@/api/system'
 import { uploadAvatar } from '@/api/upload'
 import AuthenticatedAvatar from '@/components/AuthenticatedAvatar.vue'
+import ResponsiveDialog from '@/components/responsive/ResponsiveDialog.vue'
+import ResponsivePagination from '@/components/responsive/ResponsivePagination.vue'
 
 const query = reactive({ realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', isValid: '', pageNum: 1, pageSize: 10 })
 const users = ref([])
@@ -408,6 +448,15 @@ const reset = () => {
 
 const handleSelectionChange = selection => {
   selectedUsers.value = selection
+}
+
+const isUserSelected = userId => selectedUsers.value.some(user => user.id === userId)
+
+// 移动卡片没有 el-table 的 selection 列，因此在这里复用同一份批量选择状态。
+const toggleMobileSelection = user => {
+  selectedUsers.value = isUserSelected(user.id)
+    ? selectedUsers.value.filter(item => item.id !== user.id)
+    : [...selectedUsers.value, user]
 }
 
 const clearSelection = () => {
@@ -819,11 +868,24 @@ onMounted(() => {
   margin-right: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
+  .filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+  }
+
   .filters :deep(.el-input),
   .filters :deep(.el-select),
   .filters .el-button {
     width: 100%;
+  }
+
+  /* 清除 Element Plus 相邻按钮的默认左边距，保证每个整行按钮左右对齐。 */
+  .filters > .el-button,
+  .filters > .el-button + .el-button {
+    margin: 0;
   }
 
   .export-field-list {
@@ -833,6 +895,26 @@ onMounted(() => {
   .batch-option {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .pagination {
+    justify-content: stretch;
+  }
+
+  .mobile-user-list {
+    min-height: 120px;
+  }
+
+  .mobile-user-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mobile-record-card__actions .el-button {
+    flex: 1;
+    margin: 0;
   }
 }
 

@@ -57,7 +57,7 @@
 
       <el-table
         ref="feeTableRef"
-        class="centered-data-table"
+        class="centered-data-table desktop-only"
         :data="records"
         v-loading="loading"
         border
@@ -106,12 +106,50 @@
         </el-table-column>
       </el-table>
 
+      <!-- 审核信息在手机端按任务分组，避免固定操作列挤占标题和状态。 -->
+      <div v-loading="loading" class="mobile-only mobile-fee-list">
+        <div v-if="!loading && records.length === 0" class="mobile-empty">暂无稿费任务</div>
+        <article v-for="(record, index) in records" :key="feeRowKey(record)" class="mobile-record-card">
+          <div class="mobile-record-card__header">
+            <div class="mobile-fee-title">
+              <el-checkbox
+                v-if="canManageFeeAmount"
+                :model-value="isRecordSelected(record)"
+                :aria-label="`选择${record.title}`"
+                @change="toggleMobileRecord(record)"
+              />
+              <strong>{{ rowNumber(index) }}. {{ record.title || '未命名作品' }}</strong>
+            </div>
+            <el-tag :type="statusType(record.status)">{{ statusName(record.status) }}</el-tag>
+          </div>
+          <dl class="mobile-record-card__grid">
+            <div><dt>类型</dt><dd>{{ workTypeName(record.workType) }}</dd></div>
+            <div><dt>发布时间</dt><dd>{{ record.publishDate || '-' }}</dd></div>
+            <div v-if="canManageFeeAmount"><dt>金额</dt><dd>¥{{ money(record.totalAmount) }}</dd></div>
+            <div><dt>创建时间</dt><dd>{{ time(record.createTime) }}</dd></div>
+          </dl>
+          <div class="mobile-record-card__actions fee-card-actions">
+            <el-button type="primary" plain :icon="View" @click="openDetail(record)">详情</el-button>
+            <el-button
+              v-if="canEditFeeTask && (canManageFeeAmount || isEditableStatus(record.status))"
+              type="primary"
+              plain
+              :icon="Edit"
+              @click="openEdit(record)"
+            >{{ record.status === 'REJECTED' ? '修改重提' : '编辑' }}</el-button>
+            <el-button v-if="canAuditFee && record.status === 'SUBMITTED'" type="success" plain :icon="CircleCheck" @click="openAudit(record, true)">通过</el-button>
+            <el-button v-if="canAuditFee && record.status === 'SUBMITTED'" type="danger" plain :icon="CircleClose" @click="openAudit(record, false)">驳回</el-button>
+            <el-button v-if="canAuditFee && record.status === 'APPROVED'" type="warning" plain :icon="RefreshLeft" @click="handleResetAudit(record)">退回待审</el-button>
+            <el-button v-if="canEditFeeTask && record.status === 'REJECTED'" type="danger" plain :icon="Delete" @click="handleInvalidate(record)">删除</el-button>
+          </div>
+        </article>
+      </div>
+
       <div class="pagination">
-        <el-pagination
+        <ResponsivePagination
           v-model:current-page="query.pageNum"
           v-model:page-size="query.pageSize"
           :page-sizes="[10, 20, 50, 100, 200]"
-          layout="total, sizes, prev, pager, next"
           :total="total"
           @size-change="loadList"
           @current-change="loadList"
@@ -119,7 +157,7 @@
       </div>
     </el-card>
 
-    <el-drawer v-model="detailVisible" title="稿费详情" size="620px">
+    <el-drawer v-model="detailVisible" title="稿费详情" :size="isMobile ? '100%' : '620px'">
       <div v-loading="detailLoading">
         <el-descriptions v-if="detail" :column="1" border>
           <el-descriptions-item label="作品类型">{{ workTypeName(detail.workType) }}</el-descriptions-item>
@@ -148,8 +186,8 @@
       </div>
     </el-drawer>
 
-    <el-dialog v-model="auditVisible" :title="auditDialogTitle" width="480px">
-      <el-form label-width="86px">
+    <ResponsiveDialog v-model="auditVisible" :title="auditDialogTitle" desktop-width="480px">
+      <el-form class="mobile-form-top-label" label-width="86px">
         <el-form-item label="作品">
           <el-input :model-value="batchAuditMode ? `已选择 ${selectedRecords.length} 个任务` : currentRow?.title" disabled />
         </el-form-item>
@@ -161,9 +199,9 @@
         <el-button @click="auditVisible = false">取消</el-button>
         <el-button :type="auditForm.approved ? 'success' : 'danger'" :loading="auditing" @click="handleAudit">确认</el-button>
       </template>
-    </el-dialog>
+    </ResponsiveDialog>
 
-    <el-dialog v-model="editVisible" title="编辑稿费任务" width="760px">
+    <ResponsiveDialog v-model="editVisible" title="编辑稿费任务" desktop-width="760px">
       <el-alert
         v-if="hasAutomaticReadOnlyFields"
         class="automatic-field-notice"
@@ -172,7 +210,7 @@
         show-icon
         title="标记为“自动计算”的内容由稿费标准和参与人员生成，不能手工修改。"
       />
-      <el-form label-width="110px" class="edit-work-form">
+      <el-form label-width="110px" class="edit-work-form mobile-form-top-label">
         <el-form-item v-for="field in editWorkFields" :key="field.key" :label="field.label">
           <div v-if="field.readonly" class="readonly-field" aria-readonly="true">
             <span>{{ formatReadonlyWorkField(field.key, editForm.workInfo[field.key]) }}</span>
@@ -295,9 +333,9 @@
         <el-button @click="editVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="handleSaveEdit">保存</el-button>
       </template>
-    </el-dialog>
+    </ResponsiveDialog>
 
-    <el-dialog v-model="exportVisible" :title="exportSelectedOnly ? '批量导出已选稿费' : '导出稿费明细'" width="760px">
+    <ResponsiveDialog v-model="exportVisible" :title="exportSelectedOnly ? '批量导出已选稿费' : '导出稿费明细'" desktop-width="760px">
       <!-- 202608111715 - 新增了采编各平台、摄影、视觉、视频、补贴和自定义八种导出字段模板。 -->
       <el-radio-group v-model="exportPreset" class="export-preset-list" @change="applyExportPreset">
         <el-radio-button v-for="preset in exportPresetOptions" :key="preset.value" :label="preset.value">
@@ -322,7 +360,7 @@
         <el-button @click="exportVisible = false">取消</el-button>
         <el-button type="primary" :loading="exporting" @click="handleExport">导出</el-button>
       </template>
-    </el-dialog>
+    </ResponsiveDialog>
   </div>
 </template>
 
@@ -332,6 +370,11 @@ import { ArrowDown, CircleCheck, CircleClose, Delete, Download, Edit, Refresh, R
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { auditFee, batchAuditFee, calculateFee, exportFee, getFeeDetail, getFeeList, invalidateRejectedFee, resetFeeAudit, updateFeeDetail } from '@/api/fee'
 import { useUserStore } from '@/store/user'
+import ResponsiveDialog from '@/components/responsive/ResponsiveDialog.vue'
+import ResponsivePagination from '@/components/responsive/ResponsivePagination.vue'
+import { useResponsive } from '@/composables/useResponsive'
+
+const { isMobile } = useResponsive()
 
 const fallbackDepts = [
   { label: '采编部', value: 'EDITORIAL' },
@@ -590,6 +633,15 @@ const feeRowKey = row => `${row.workType}:${row.id}`
 
 const handleSelectionChange = selection => {
   selectedRecords.value = selection
+}
+
+const isRecordSelected = record => selectedRecords.value.some(item => feeRowKey(item) === feeRowKey(record))
+
+// 手机卡片与桌面表格共享批量选择数据，切换视口时操作结果保持一致。
+const toggleMobileRecord = record => {
+  selectedRecords.value = isRecordSelected(record)
+    ? selectedRecords.value.filter(item => feeRowKey(item) !== feeRowKey(record))
+    : [...selectedRecords.value, record]
 }
 
 const clearSelection = () => {
@@ -986,12 +1038,67 @@ onMounted(() => {
   display: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
+  .toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+  }
+
   .toolbar :deep(.el-select),
   .toolbar :deep(.el-date-editor),
   .toolbar .contributor-search,
-  .toolbar .el-button {
+  .toolbar .el-button,
+  .toolbar :deep(.el-dropdown) {
     width: 100%;
+  }
+
+  /* DatePicker 外层默认仍按 32px 参与 Grid 排版，内部 44px 输入框会覆盖下一行间距。 */
+  .toolbar :deep(.el-date-editor.el-input),
+  .toolbar :deep(.el-date-editor.el-input__wrapper) {
+    box-sizing: border-box;
+    height: var(--mobile-touch-size);
+    min-height: var(--mobile-touch-size);
+  }
+
+  /* Element Plus 会给相邻按钮增加左边距，纵向工具栏必须清除，否则按钮会逐个缩进。 */
+  .toolbar > .el-button,
+  .toolbar > .el-button + .el-button,
+  .toolbar :deep(.el-dropdown .el-button) {
+    width: 100%;
+    margin: 0;
+  }
+
+  .pagination {
+    justify-content: stretch;
+  }
+
+  .mobile-fee-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mobile-fee-title strong {
+    overflow-wrap: anywhere;
+  }
+
+  .fee-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(44px, auto);
+    align-items: stretch;
+  }
+
+  .fee-card-actions .el-button {
+    width: 100%;
+    margin: 0;
+  }
+
+  .fee-card-actions > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 

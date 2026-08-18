@@ -13,6 +13,7 @@
   --header-shadow: 0px 2px 20px rgba(1, 41, 112, 0.1);
   --sidebar-width: 260px;
   --header-height: 60px;
+  --content-max-width: 1920px;
 }
 
 /* 全局重置 */
@@ -27,6 +28,7 @@ body {
   background: var(--background-color);
   color: #444444;
   line-height: 1.6;
+  min-width: 0;
 }
 
 a {
@@ -146,7 +148,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* 响应式 */
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .page-title h1 {
     font-size: 20px;
   }

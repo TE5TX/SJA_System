@@ -49,7 +49,7 @@
         border
         stripe
         row-key="id"
-        class="standard-table"
+        class="standard-table desktop-only"
         empty-text="没有符合条件的稿费规则"
       >
         <el-table-column label="业务" width="130">
@@ -88,12 +88,30 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-loading="loading" class="mobile-only">
+        <div v-if="!loading && filteredStandards.length === 0" class="mobile-empty">没有符合条件的稿费规则</div>
+        <article v-for="rule in filteredStandards" :key="rule.id" class="mobile-record-card">
+          <div class="mobile-record-card__header">
+            <strong>{{ rule.category || categoryFallback(rule) }}</strong>
+            <el-tag :type="businessMeta(rule).tagType" effect="light">{{ businessMeta(rule).label }}</el-tag>
+          </div>
+          <dl class="mobile-record-card__grid">
+            <div><dt>平台</dt><dd>{{ rule.platform || '全部平台' }}</dd></div>
+            <div><dt>当前标准</dt><dd class="mobile-rule-value">{{ formattedRuleValue(rule) }}</dd></div>
+          </dl>
+          <p class="mobile-rule-description">{{ rule.description || ruleName(rule.ruleKey) }}</p>
+          <small>{{ ruleHint(rule) }}</small>
+          <div class="mobile-record-card__actions">
+            <el-button type="primary" plain :icon="Edit" @click="openEdit(rule)">修改标准</el-button>
+          </div>
+        </article>
+      </div>
     </el-card>
 
-    <el-dialog
+    <ResponsiveDialog
       v-model="editVisible"
       title="修改稿费标准"
-      width="520px"
+      desktop-width="520px"
       destroy-on-close
       @closed="resetEdit"
     >
@@ -149,7 +167,7 @@
           确认修改
         </el-button>
       </template>
-    </el-dialog>
+    </ResponsiveDialog>
   </div>
 </template>
 
@@ -158,6 +176,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Edit, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getFeeStandards, updateFeeStandard } from '@/api/fee'
+import ResponsiveDialog from '@/components/responsive/ResponsiveDialog.vue'
 
 const standards = ref([])
 const loading = ref(false)
@@ -418,7 +437,7 @@ onMounted(load)
 
 .standard-card {
   border: 0;
-  border-radius: 14px;
+  border-radius: 8px;
 }
 
 .toolbar {
@@ -444,7 +463,7 @@ onMounted(load)
   color: #475569;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 9px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.18s ease;
 }
@@ -513,7 +532,7 @@ onMounted(load)
   padding: 16px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .edit-context > div {
@@ -585,6 +604,38 @@ onMounted(load)
 
   .rule-search {
     flex-basis: auto;
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .business-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .business-filter {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
+
+  .mobile-rule-value {
+    color: #0b5cad;
+    font-weight: 700;
+  }
+
+  .mobile-rule-description {
+    margin: 12px 0 4px;
+    color: #334155;
+    line-height: 1.6;
+  }
+
+  .mobile-record-card > small {
+    color: #8491a3;
+  }
+
+  .mobile-record-card__actions .el-button {
     width: 100%;
   }
 }

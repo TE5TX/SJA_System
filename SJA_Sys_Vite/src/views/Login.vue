@@ -188,6 +188,7 @@ onBeforeUnmount(closeCaptcha)
   justify-content: center;
   align-items: center;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--background-color);
   padding: 20px;
 }
@@ -293,9 +294,24 @@ onBeforeUnmount(closeCaptcha)
 }
 
 #login-captcha {
-  width: 318px;
+  width: min(318px, calc(100vw - 32px));
   min-height: 318px;
   background: #fff;
   border-radius: 5px;
+}
+
+@media (max-width: 767px) {
+  .login-container {
+    align-items: flex-start;
+    padding: max(24px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom));
+  }
+
+  .login-card :deep(.el-card__body) {
+    padding: 22px 16px !important;
+  }
+
+  .captcha-overlay {
+    padding: 16px;
+  }
 }
 </style>

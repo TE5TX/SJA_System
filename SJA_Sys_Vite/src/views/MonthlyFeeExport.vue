@@ -7,7 +7,7 @@
 
     <el-card class="export-panel">
       <!-- 202608111715 - 新增了按月份导出全团成员稿费发放名单的页面。 -->
-      <el-form label-width="92px" class="export-form">
+      <el-form label-width="92px" class="export-form mobile-form-top-label">
         <el-form-item label="稿费月份" required>
           <el-date-picker
             v-model="month"
@@ -97,5 +97,31 @@ const handleExport = async () => {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+@media (max-width: 767px) {
+  .export-panel,
+  .export-form :deep(.el-date-editor),
+  .export-form .el-button {
+    width: 100%;
+  }
+
+  .order-list {
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 3px;
+  }
+
+  .order-list :deep(.el-icon) {
+    flex: 0 0 auto;
+    transform: none;
+  }
+
+  .order-list :deep(.el-tag) {
+    flex: 0 0 auto;
+  }
 }
 </style>
