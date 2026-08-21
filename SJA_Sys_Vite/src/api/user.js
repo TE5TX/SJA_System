@@ -83,6 +83,34 @@ export function updateUser(id, data) {
   })
 }
 
+// 202608210907 - 增加了XLSX批量注册预览和一次性令牌确认请求。
+export function previewUserImport(formData) {
+  return request({
+    url: '/v1/users/import/preview',
+    method: 'post',
+    data: formData,
+    timeout: 60000
+  })
+}
+
+export function downloadUserImportTemplate() {
+  return request({
+    url: '/v1/users/import/template',
+    method: 'get',
+    responseType: 'blob',
+    timeout: 30000
+  })
+}
+
+export function confirmUserImport(importToken, currentPassword) {
+  return request({
+    url: '/v1/users/import/confirm',
+    method: 'post',
+    data: { importToken, currentPassword },
+    timeout: 120000
+  })
+}
+
 export function resetUserPassword(id) {
   return request({
     url: `/v1/users/${id}/password/reset`,

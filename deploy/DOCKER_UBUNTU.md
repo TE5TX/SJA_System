@@ -104,6 +104,9 @@ chmod 600 .env
 
 确认 `.env` 中的 `SJA_HOST=192.168.255.128`。这里不要把 `.env` 内容粘贴到聊天或日志中。
 
+<!-- 202608210907 - 补充了人员批量注册功能的Redis令牌和XLSX限制说明。 -->
+人员管理页的批量注册预览使用Redis保存一次性确认令牌，默认10分钟过期；单个xlsx默认不超过2MB且最多500人。可在`.env`中通过`SJA_USER_IMPORT_TOKEN_TTL_SECONDS`、`SJA_USER_IMPORT_MAX_FILE_BYTES`和`SJA_USER_IMPORT_MAX_ROWS`调整，修改后需要重建或重启后端容器。
+
 也可以通过 `nano .env` 手动填写密码。`MYSQL_ROOT_PASSWORD` 是数据库管理员密码，`MYSQL_PASSWORD` 是 Java 后端使用的 `sja` 数据库用户密码，两者应不同。JWT 密钥可以使用 `openssl rand -base64 48` 生成。
 
 ## 4. 启动

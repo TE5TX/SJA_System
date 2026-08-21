@@ -3,6 +3,7 @@ package com.sja.system.controller;
 import com.sja.system.dto.UserExportDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.OperationLogService;
+import com.sja.system.service.UserImportService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.UserVO;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -24,11 +25,31 @@ import static org.mockito.Mockito.when;
 class UserControllerExportTest {
 
     @Test
+    void downloadsEmptyTwoColumnBatchRegistrationTemplate() throws Exception {
+        UserController controller = new UserController(mock(UserService.class), mock(UserImportService.class),
+                mock(OperationLogService.class), mock(SecurityUtils.class));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        controller.downloadUserImportTemplate(response);
+
+        assertEquals(200, response.getStatus());
+        assertTrue(response.getHeader("Content-Disposition").contains(".xlsx"));
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(response.getContentAsByteArray()))) {
+            assertEquals("批量注册人员", workbook.getSheetAt(0).getSheetName());
+            assertEquals("姓名", workbook.getSheetAt(0).getRow(0).getCell(0).getStringCellValue());
+            assertEquals("学号", workbook.getSheetAt(0).getRow(0).getCell(1).getStringCellValue());
+            assertEquals(0, workbook.getSheetAt(0).getLastRowNum());
+        }
+    }
+
+    @Test
     void exportsSelectedFieldsInOrderAsXlsx() throws Exception {
         UserService userService = mock(UserService.class);
+        // 202608210907 - 为人员控制器新增的批量注册服务补充单元测试依赖。
+        UserImportService userImportService = mock(UserImportService.class);
         OperationLogService operationLogService = mock(OperationLogService.class);
         SecurityUtils securityUtils = mock(SecurityUtils.class);
-        UserController controller = new UserController(userService, operationLogService, securityUtils);
+        UserController controller = new UserController(userService, userImportService, operationLogService, securityUtils);
 
         UserVO user = new UserVO();
         user.setRealName("测试用户");

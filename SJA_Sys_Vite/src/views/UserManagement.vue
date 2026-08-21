@@ -24,6 +24,9 @@
           <el-button type="primary" :icon="Search" @click="search">查询</el-button>
           <el-button :icon="Refresh" @click="reset">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreate">新增人员</el-button>
+          <el-button v-if="canBatchImport" type="warning" :icon="UploadFilled" @click="importVisible = true">
+            批量注册
+          </el-button>
           <el-button :icon="Edit" :disabled="selectedUsers.length === 0" @click="openBatchEdit">
             批量修改{{ selectedUsers.length ? `（${selectedUsers.length}）` : '' }}
           </el-button>
@@ -244,17 +247,30 @@
         <el-button type="primary" :loading="exportLoading" @click="handleExport">导出</el-button>
       </template>
     </el-dialog>
+
+    <UserBatchImportDialog
+      v-if="canBatchImport"
+      v-model="importVisible"
+      :roles="roles"
+      :depts="depts"
+      @success="loadUsers"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { Download, Edit, Plus, Refresh, Search, SwitchButton } from '@element-plus/icons-vue'
+import { Download, Edit, Plus, Refresh, Search, SwitchButton, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDetail, getUserList, resetUserPassword, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
 import { getDeptList, getRoleList } from '@/api/system'
 import { uploadAvatar } from '@/api/upload'
 import AuthenticatedAvatar from '@/components/AuthenticatedAvatar.vue'
+import UserBatchImportDialog from '@/components/UserBatchImportDialog.vue'
+import { useUserStore } from '@/store/user'
+
+// 202608210907 - 在人员管理页增加了仅管理员、主席和秘书长可见的批量注册入口。
+const userStore = useUserStore()
 
 const query = reactive({ realName: '', studentNo: '', college: '', deptCode: '', roleCode: '', isValid: '', pageNum: 1, pageSize: 10 })
 const users = ref([])
@@ -267,6 +283,7 @@ const batchSaving = ref(false)
 const editVisible = ref(false)
 const exportVisible = ref(false)
 const batchVisible = ref(false)
+const importVisible = ref(false)
 const editingId = ref(null)
 const dialogMode = ref('edit')
 const userFormRef = ref(null)
@@ -274,6 +291,9 @@ const userTableRef = ref(null)
 const selectedUsers = ref([])
 const roles = ref([])
 const depts = ref([])
+const canBatchImport = computed(() => (userStore.userInfo?.roleCodes || [])
+  .map(Number)
+  .some(roleCode => [0, 1, 3].includes(roleCode)))
 const collegeOptions = [
   '电子信息学院',
   '机电工程学院',

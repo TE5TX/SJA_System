@@ -6,12 +6,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -72,5 +75,26 @@ class SecurityBoundaryIntegrationTest {
         // Authentication reaches the controller; the test file itself is intentionally absent.
         mockMvc.perform(get(path).with(user("security-test")))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void limitsBatchRegistrationToAdminChairmanAndSecretary() throws Exception {
+        // 202608210907 - 验证批量注册模板接口只允许管理员、主席和秘书长访问。
+        for (int roleCode : new int[]{0, 1, 3}) {
+            mockMvc.perform(get("/api/v1/users/import/template")
+                            .with(authentication(authenticationForRole(roleCode))))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(get("/api/v1/users/import/template")
+                        .with(authentication(authenticationForRole(13))))
+                .andExpect(status().isForbidden());
+    }
+
+    private UsernamePasswordAuthenticationToken authenticationForRole(int roleCode) {
+        SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleCode);
+        SjaUserPrincipal principal = new SjaUserPrincipal(99L, "security-test", "", roleCode, 0,
+                java.util.List.of(authority));
+        return new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
     }
 }

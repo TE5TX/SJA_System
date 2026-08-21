@@ -9,6 +9,7 @@ import com.sja.system.dto.ProfileUpdateDTO;
 import com.sja.system.dto.UserBatchUpdateDTO;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserExportDTO;
+import com.sja.system.dto.UserImportConfirmDTO;
 import com.sja.system.dto.UserQueryDTO;
 import com.sja.system.dto.UserUpdateDTO;
 import com.sja.system.dto.UserStatusUpdateDTO;
@@ -16,6 +17,9 @@ import com.sja.system.dto.UserPhotoUpdateDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.OperationLogService;
 import com.sja.system.service.UserService;
+import com.sja.system.service.UserImportService;
+import com.sja.system.vo.UserImportPreviewVO;
+import com.sja.system.vo.UserImportResultVO;
 import com.sja.system.vo.UserVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +31,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -57,6 +63,7 @@ public class UserController {
     private static final Map<String, ExportField> EXPORT_FIELDS = createExportFields();
 
     private final UserService userService;
+    private final UserImportService userImportService;
     private final OperationLogService operationLogService;
     private final SecurityUtils securityUtils;
 
@@ -155,6 +162,45 @@ public class UserController {
                 securityUtils.getCurrentUsernameFromToken(request),
                 roleCode != null ? String.valueOf(roleCode) : "");
         return Result.success("人员新增成功", userId);
+    }
+
+    // 202608210907 - 增加了管理员、主席和秘书长可用的XLSX批量注册预览与确认接口。
+    @PostMapping("/users/import/preview")
+    @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
+    public Result<UserImportPreviewVO> previewUserImport(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("deptIds") List<Long> deptIds,
+            @RequestParam("roleIds") List<Long> roleIds,
+            HttpServletRequest request) {
+        return Result.success(userImportService.preview(file, deptIds, roleIds,
+                securityUtils.getCurrentUserId(request), securityUtils.getCurrentRoleCode(request)));
+    }
+
+    @GetMapping("/users/import/template")
+    @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
+    public void downloadUserImportTemplate(HttpServletResponse response) throws IOException {
+        String encodedFileName = URLEncoder.encode("人员批量注册模板.xlsx", StandardCharsets.UTF_8.name())
+                .replace("+", "%20");
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodedFileName);
+        EasyExcel.write(response.getOutputStream())
+                .head(List.of(List.of("姓名"), List.of("学号")))
+                .registerWriteHandler(new SimpleColumnWidthStyleStrategy(22))
+                .sheet("批量注册人员")
+                .doWrite(Collections.emptyList());
+    }
+
+    @PostMapping("/users/import/confirm")
+    @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
+    public Result<UserImportResultVO> confirmUserImport(
+            @RequestBody @Valid UserImportConfirmDTO dto,
+            HttpServletRequest request) {
+        return Result.success("人员批量注册成功", userImportService.confirm(
+                dto.getImportToken(), dto.getCurrentPassword(),
+                securityUtils.getCurrentUserId(request),
+                securityUtils.getCurrentUsernameFromToken(request),
+                securityUtils.getCurrentRoleCode(request)));
     }
 
     @PostMapping("/users/export")
