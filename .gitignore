@@ -40,3 +40,10 @@ SJA_Sys_Vite/tac-web (1).zip
 desktop.ini
 /deploy/data/
 /deploy/config/
+/load-test/generated/
+/load-test/results/
+/load-test.rar
+/security-test/results/
+/security-test/captures/
+**/__pycache__/
+*.pyc

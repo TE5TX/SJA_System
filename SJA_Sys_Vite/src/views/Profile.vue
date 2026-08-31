@@ -235,6 +235,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Refresh, Lock } from '@element-plus/icons-vue'
 import { deleteProfilePhoto, getUserProfile, updateProfilePhoto, updateUserProfile } from '@/api/user'
+import { waitForAsyncTask } from '@/api/asyncTask'
 import { useResponsive } from '@/composables/useResponsive'
 
 const { isMobile } = useResponsive()
@@ -434,7 +435,10 @@ const handleSubmit = async () => {
       submitLoading.value = true
       try {
         const { photo: _photo, ...profileFields } = editForm
-        await updateUserProfile(profileFields)
+        const accepted = await updateUserProfile(profileFields)
+        ElMessage.info('修改任务已进入队列，正在保存')
+        // 202608192148 - 修复了请求入队后前端立即误报“保存成功”的问题。
+        await waitForAsyncTask(accepted.data.taskId, accepted.data.statusToken)
         ElMessage.success('保存成功')
 
         // 刷新个人资料（学号修改后账号会同步更新）
@@ -450,6 +454,7 @@ const handleSubmit = async () => {
         }
       } catch (error) {
         console.error(error)
+        if (error.isAsyncTaskFailure) ElMessage.error(error.message)
       } finally {
         submitLoading.value = false
       }

@@ -5,6 +5,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.http.HttpHeaders;
@@ -32,6 +33,16 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining("; "));
         log.warn("参数绑定失败 [{}]: {}", request.getRequestURI(), message);
+        return response(Constants.BAD_REQUEST, message);
+    }
+
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<Result<?>> handleMissingRequestHeaderException(
+            MissingRequestHeaderException e,
+            HttpServletRequest request) {
+        // 202608192148 - 修复了缺少任务状态令牌时被错误返回为HTTP 500的问题。
+        String message = "缺少请求头: " + e.getHeaderName();
+        log.warn("请求头校验失败 [{}]: {}", request.getRequestURI(), message);
         return response(Constants.BAD_REQUEST, message);
     }
 

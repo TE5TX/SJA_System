@@ -5,6 +5,7 @@ import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.OperationLogService;
 import com.sja.system.service.UserImportService;
 import com.sja.system.service.UserService;
+import com.sja.system.service.AsyncTaskQueueService;
 import com.sja.system.vo.UserVO;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,7 @@ class UserControllerExportTest {
     @Test
     void downloadsEmptyTwoColumnBatchRegistrationTemplate() throws Exception {
         UserController controller = new UserController(mock(UserService.class), mock(UserImportService.class),
-                mock(OperationLogService.class), mock(SecurityUtils.class));
+                mock(OperationLogService.class), mock(SecurityUtils.class), mock(AsyncTaskQueueService.class));
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         controller.downloadUserImportTemplate(response);
@@ -49,7 +50,8 @@ class UserControllerExportTest {
         UserImportService userImportService = mock(UserImportService.class);
         OperationLogService operationLogService = mock(OperationLogService.class);
         SecurityUtils securityUtils = mock(SecurityUtils.class);
-        UserController controller = new UserController(userService, userImportService, operationLogService, securityUtils);
+        UserController controller = new UserController(userService, userImportService, operationLogService,
+                securityUtils, mock(AsyncTaskQueueService.class));
 
         UserVO user = new UserVO();
         user.setRealName("测试用户");
