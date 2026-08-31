@@ -5,8 +5,8 @@
       <p>输入姓名后查询姓名和学号，并导出 Excel 名单。</p>
     </div>
 
-    <el-row :gutter="20">
-      <el-col :lg="12" :md="24">
+    <el-row :gutter="20" class="sujia-grid">
+      <el-col :xs="24" :sm="24" :md="24" :lg="12">
         <el-card>
           <template #header>
             <div class="card-header">
@@ -28,7 +28,7 @@
         </el-card>
       </el-col>
 
-      <el-col :lg="12" :md="24">
+      <el-col :xs="24" :sm="24" :md="24" :lg="12">
         <el-card>
           <template #header>
             <div class="card-header">
@@ -36,7 +36,7 @@
               <el-tag type="primary">{{ rows.length }} 人</el-tag>
             </div>
           </template>
-          <el-table :data="rows" border height="390">
+          <el-table class="desktop-only" :data="rows" border height="390">
             <el-table-column prop="index" label="#" width="70" />
             <el-table-column prop="name" label="姓名" min-width="120" />
             <el-table-column prop="studentNo" label="学号" min-width="150" />
@@ -46,6 +46,15 @@
               </template>
             </el-table-column>
           </el-table>
+          <div class="mobile-only sujia-results">
+            <article v-for="row in rows" :key="`${row.index}-${row.name}`" class="mobile-record-card">
+              <div class="mobile-record-card__header">
+                <strong>{{ row.index }}. {{ row.name }}</strong>
+                <el-tag :type="row.matched ? 'success' : 'danger'">{{ row.matched ? '已匹配' : '未找到' }}</el-tag>
+              </div>
+              <div class="sujia-student-no">学号：{{ row.studentNo || '-' }}</div>
+            </article>
+          </div>
           <el-empty v-if="rows.length === 0" description="暂无名单" />
         </el-card>
       </el-col>
@@ -137,9 +146,31 @@ const downloadExcel = async () => {
   margin-top: 16px;
 }
 
-@media (max-width: 768px) {
-  .actions .el-button {
+@media (max-width: 767px) {
+  .sujia-grid {
+    row-gap: 14px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .actions .el-button,
+  .actions .el-button + .el-button {
     width: 100%;
+    margin: 0;
+  }
+
+  .sujia-results {
+    max-height: 390px;
+    overflow-y: auto;
+  }
+
+  .sujia-student-no {
+    margin-top: 10px;
+    color: #606266;
   }
 }
 </style>

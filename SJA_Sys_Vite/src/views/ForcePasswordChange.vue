@@ -71,10 +71,18 @@ const submit = async () => {
 <style scoped>
 .password-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px;
   background: var(--background-color);
+}
+
+@media (max-width: 767px) {
+  .password-page {
+    align-items: start;
+    padding: max(24px, env(safe-area-inset-top)) 12px;
+  }
 }
 
 .password-panel {

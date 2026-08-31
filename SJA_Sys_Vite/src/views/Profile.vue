@@ -34,7 +34,7 @@
 
           <!-- 个人资料（只读） -->
           <div v-show="activeTab === 'overview'" class="tab-content">
-            <el-descriptions :column="2" border class="profile-descriptions">
+            <el-descriptions :column="isMobile ? 1 : 2" border class="profile-descriptions">
               <el-descriptions-item label="姓名">{{ userInfo.realName || '-' }}</el-descriptions-item>
               <el-descriptions-item label="性别">{{ genderText }}</el-descriptions-item>
               <el-descriptions-item label="学号（账号）">{{ userInfo.studentNo || '-' }}</el-descriptions-item>
@@ -66,6 +66,7 @@
               :rules="rules"
               ref="formRef"
               label-width="120px"
+              :label-position="isMobile ? 'top' : 'right'"
               class="edit-form"
             >
               <el-row :gutter="20">
@@ -181,6 +182,7 @@
               :rules="passwordRules"
               ref="passwordFormRef"
               label-width="120px"
+              :label-position="isMobile ? 'top' : 'right'"
               class="password-form"
             >
               <el-form-item label="旧密码" prop="oldPassword">
@@ -233,6 +235,9 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Refresh, Lock } from '@element-plus/icons-vue'
 import { deleteProfilePhoto, getUserProfile, updateProfilePhoto, updateUserProfile } from '@/api/user'
+import { useResponsive } from '@/composables/useResponsive'
+
+const { isMobile } = useResponsive()
 import { changePassword } from '@/api/auth'
 import { uploadAvatar } from '@/api/upload'
 import { useUserStore } from '@/store/user'
@@ -663,7 +668,7 @@ onMounted(() => {
   margin-left: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .profile-card-body {
     padding: 15px 0;
   }
@@ -680,6 +685,39 @@ onMounted(() => {
   .edit-form,
   .password-form {
     max-width: 100%;
+  }
+
+  /* 原页面内部使用固定 12 栅格；手机端统一覆盖为单列，防止长证件号被截断。 */
+  .edit-form :deep(.el-col) {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .tab-content {
+    padding: 12px 0;
+  }
+
+  .edit-form :deep(.el-form-item),
+  .password-form :deep(.el-form-item) {
+    display: block;
+  }
+
+  .edit-form :deep(.el-form-item__content),
+  .password-form :deep(.el-form-item__content) {
+    margin-left: 0 !important;
+  }
+
+  .edit-form > .el-form-item:last-child :deep(.el-form-item__content),
+  .password-form > .el-form-item:last-child :deep(.el-form-item__content) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .edit-form .el-button,
+  .password-form .el-button {
+    width: 100%;
+    margin: 0;
   }
 }
 </style>

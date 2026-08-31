@@ -5,13 +5,13 @@
       <p>按部门和发布平台录入作品信息与作者。</p>
     </div>
 
-    <el-row :gutter="20">
-      <el-col :xl="15" :lg="16" :md="24">
+    <el-row :gutter="20" class="fee-submit-grid">
+      <el-col :xs="24" :sm="24" :md="24" :lg="16" :xl="15">
         <el-card>
           <template #header>
             <div class="card-header">
               <span>作品信息</span>
-              <el-radio-group v-model="form.workType" @change="resetWorkInfo">
+              <el-radio-group v-model="form.workType" class="work-type-selector" @change="resetWorkInfo">
                 <el-radio-button v-for="item in workTypeOptions" :key="item.value" :label="item.value">
                   {{ item.label }}
                 </el-radio-button>
@@ -19,20 +19,20 @@
             </div>
           </template>
 
-          <el-form :model="form" label-width="112px" class="work-form">
+          <el-form :model="form" label-width="112px" class="work-form mobile-form-top-label">
             <template v-if="form.workType === 'EDITORIAL'">
               <el-form-item label="文章标题" required>
                 <el-input v-model="form.workInfo.title" placeholder="请输入文章标题" />
               </el-form-item>
               <el-row :gutter="16">
-                <el-col :span="12">
+                <el-col :xs="24" :sm="12">
                   <el-form-item label="发布平台" required>
                     <el-select v-model="form.workInfo.platform" @change="handlePlatformChange">
                       <el-option v-for="platform in platformOptions" :key="platform" :label="platform" :value="platform" />
                     </el-select>
                   </el-form-item>
                 </el-col>
-                <el-col :span="12">
+                <el-col :xs="24" :sm="12">
                   <el-form-item label="类别" required>
                     <el-select v-model="form.workInfo.category" placeholder="请选择类别">
                       <el-option v-for="option in categoryOptions" :key="option" :label="option" :value="option" />
@@ -115,12 +115,12 @@
                 />
               </el-form-item>
               <el-row :gutter="16">
-                <el-col :span="12">
+                <el-col :xs="24" :sm="12">
                   <el-form-item label="官方转载">
                     <el-switch v-model="form.workInfo.isReposted" :active-value="1" :inactive-value="0" />
                   </el-form-item>
                 </el-col>
-                <el-col v-if="form.workInfo.category === '原创类短视频'" :span="12">
+                <el-col v-if="form.workInfo.category === '原创类短视频'" :xs="24" :sm="12">
                   <el-form-item label="复杂剪辑">
                     <el-switch v-model="form.workInfo.isComplexEdit" :active-value="1" :inactive-value="0" />
                   </el-form-item>
@@ -167,9 +167,14 @@
             </template>
 
             <el-row v-if="form.workType !== 'SUBSIDY'" :gutter="16">
-              <el-col v-if="form.workInfo.isPublished === 1" :span="12">
+              <el-col v-if="form.workInfo.isPublished === 1" :xs="24" :sm="12">
                 <el-form-item label="发布时间" required>
-                  <div class="wheel-date-picker" @wheel.capture.prevent.stop="adjustPublishDateByWheel">
+                  <div
+                    class="wheel-date-picker"
+                    @wheel.capture.prevent.stop="adjustPublishDateByWheel"
+                    @touchstart.passive="recordPublishDateTouchStart"
+                    @touchend.passive="adjustPublishDateBySwipe"
+                  >
                     <el-date-picker
                       v-model="form.workInfo.publishDate"
                       type="date"
@@ -179,23 +184,24 @@
                       :clearable="false"
                       :teleported="false"
                       popper-class="single-year-date-picker"
+                      @visible-change="handlePublishDatePickerVisible"
                     />
                   </div>
                 </el-form-item>
               </el-col>
-              <el-col :span="12">
+              <el-col :xs="24" :sm="12">
                 <el-form-item label="是否已发布">
                   <el-switch v-model="form.workInfo.isPublished" :active-value="1" :inactive-value="0" />
                 </el-form-item>
               </el-col>
             </el-row>
             <el-row v-if="form.workType !== 'SUBSIDY' && canManageFeeAmount" :gutter="16">
-              <el-col :span="12">
+              <el-col :xs="24" :sm="12">
                 <el-form-item label="特殊节点">
                   <el-switch v-model="form.workInfo.isSpecialNode" :active-value="1" :inactive-value="0" />
                 </el-form-item>
               </el-col>
-              <el-col v-if="form.workInfo.isSpecialNode === 1" :span="12">
+              <el-col v-if="form.workInfo.isSpecialNode === 1" :xs="24" :sm="12">
                 <el-form-item label="发放倍数" required>
                   <el-segmented v-model="form.workInfo.specialMultiplier" :options="[2, 3]" />
                 </el-form-item>
@@ -208,7 +214,7 @@
         </el-card>
       </el-col>
 
-      <el-col :xl="9" :lg="8" :md="24">
+      <el-col :xs="24" :sm="24" :md="24" :lg="8" :xl="9" class="contributor-column">
         <el-card>
           <template #header>
             <div class="card-header">
@@ -304,14 +310,16 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AuthorInput from '@/components/AuthorInput.vue'
 import { getFeeContributors, submitFee } from '@/api/fee'
 import { useUserStore } from '@/store/user'
+import { useResponsive } from '@/composables/useResponsive'
 
 const userStore = useUserStore()
+const { isMobile } = useResponsive()
 const platformOptions = ['微信', '院网', '校报']
 const editorialCategoryOptions = {
   微信: ['原创类', '半原创类'],
@@ -511,19 +519,65 @@ const formatDateValue = date => {
   return `${year}-${month}-${day}`
 }
 
-const adjustPublishDateByWheel = event => {
-  event.preventDefault()
+const shiftPublishDateMonth = offset => {
   const parts = String(form.workInfo.publishDate || '').split('-').map(Number)
   const current = parts.length === 3 && parts.every(Number.isFinite)
     ? new Date(parts[0], parts[1] - 1, parts[2])
     : new Date()
   const originalDay = current.getDate()
   current.setDate(1)
-  current.setMonth(current.getMonth() + (event.deltaY > 0 ? 1 : -1))
+  current.setMonth(current.getMonth() + offset)
   const lastDay = new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate()
   current.setDate(Math.min(originalDay, lastDay))
   // 202608121041 - 优化了稿费提交日期选择并将鼠标滚轮调整单位由日期改为月份。
   form.workInfo.publishDate = formatDateValue(current)
+}
+
+const adjustPublishDateByWheel = event => {
+  event.preventDefault()
+  shiftPublishDateMonth(event.deltaY > 0 ? 1 : -1)
+}
+
+const publishDateTouchStart = ref(null)
+
+const recordPublishDateTouchStart = event => {
+  if (!isMobile.value) return
+  const touch = event.changedTouches?.[0]
+  publishDateTouchStart.value = touch ? { x: touch.clientX, y: touch.clientY } : null
+}
+
+const adjustPublishDateBySwipe = event => {
+  if (!isMobile.value || !publishDateTouchStart.value) return
+  const touch = event.changedTouches?.[0]
+  if (!touch) return
+
+  const deltaX = touch.clientX - publishDateTouchStart.value.x
+  const deltaY = touch.clientY - publishDateTouchStart.value.y
+  publishDateTouchStart.value = null
+
+  // 只处理明显的横向手势，保证页面正常上下滚动；左滑下个月，右滑上个月。
+  if (Math.abs(deltaX) < 45 || Math.abs(deltaX) <= Math.abs(deltaY)) return
+  shiftPublishDateMonth(deltaX < 0 ? 1 : -1)
+}
+
+let publishDatePanel = null
+
+const detachPublishDatePanelTouch = () => {
+  if (!publishDatePanel) return
+  publishDatePanel.removeEventListener('touchstart', recordPublishDateTouchStart)
+  publishDatePanel.removeEventListener('touchend', adjustPublishDateBySwipe)
+  publishDatePanel = null
+}
+
+const handlePublishDatePickerVisible = visible => {
+  detachPublishDatePanelTouch()
+  if (!visible || !isMobile.value) return
+
+  nextTick(() => {
+    publishDatePanel = document.querySelector('.single-year-date-picker')
+    publishDatePanel?.addEventListener('touchstart', recordPublishDateTouchStart, { passive: true })
+    publishDatePanel?.addEventListener('touchend', adjustPublishDateBySwipe, { passive: true })
+  })
 }
 
 const selectNumberInputText = event => {
@@ -671,6 +725,8 @@ onMounted(async () => {
   draftReady.value = true
   if (restored) ElMessage.success('已恢复未提交的稿费草稿')
 })
+
+onBeforeUnmount(detachPublishDatePanelTouch)
 
 watch(workTypeOptions, options => {
   if (!options.some(item => item.value === form.workType) && options.length) {
@@ -855,7 +911,11 @@ watch(
   font-size: 24px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
+  .fee-submit-grid {
+    row-gap: 14px;
+  }
+
   .card-header,
   .submit-panel {
     align-items: stretch;
@@ -865,6 +925,53 @@ watch(
   .author-row {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  /* 类型按钮允许横向滚动，避免五种业务类型在窄屏上被压成不可读文字。 */
+  .card-header :deep(.el-radio-group) {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    max-width: 100%;
+    width: 100%;
+    overflow-x: auto;
+    padding: 0 0 4px;
+    scrollbar-width: thin;
+  }
+
+  .card-header :deep(.el-radio-button) {
+    flex: 0 0 auto;
+  }
+
+  .card-header :deep(.el-radio-button__inner) {
+    min-width: 72px;
+    min-height: 40px;
+    padding: 10px 14px;
+    white-space: nowrap;
+  }
+
+  .wheel-date-picker {
+    touch-action: pan-y;
+  }
+
+  :global(.single-year-date-picker) {
+    touch-action: pan-y;
+  }
+
+  .work-count-control {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .submit-panel {
+    position: sticky;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    z-index: 10;
+    box-shadow: 0 -4px 18px rgba(1, 41, 112, 0.12);
+  }
+
+  .submit-panel .el-button {
+    width: 100%;
   }
 }
 </style>

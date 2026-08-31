@@ -6,9 +6,15 @@
         <div class="logo">
           <span class="logo-text">校记者团管理系统</span>
         </div>
-        <i class="toggle-sidebar-btn" @click="toggleSidebar">
+        <button
+          class="toggle-sidebar-btn"
+          type="button"
+          :aria-label="isCompact ? '打开导航菜单' : '折叠导航菜单'"
+          :aria-expanded="isCompact ? isMobileMenuOpen : !isDesktopCollapsed"
+          @click="toggleSidebar"
+        >
           <el-icon :size="28"><Menu /></el-icon>
-        </i>
+        </button>
       </div>
 
       <div class="header-right">
@@ -46,11 +52,20 @@
 
     <el-container>
       <!-- 侧边栏 -->
-      <el-aside :width="sidebarWidth" class="sidebar" :class="{ 'sidebar-collapsed': isCollapse }">
+      <!-- 小屏侧栏作为抽屉覆盖内容，桌面端仍保留原来的折叠行为。 -->
+      <el-aside
+        :width="sidebarWidth"
+        class="sidebar"
+        :class="{
+          'sidebar-collapsed': !isCompact && isDesktopCollapsed,
+          'sidebar-mobile-open': isCompact && isMobileMenuOpen
+        }"
+      >
         <el-menu
           :default-active="activeMenu"
           router
-          :collapse="isCollapse"
+          :collapse="!isCompact && isDesktopCollapsed"
+          @select="handleMenuSelect"
           background-color="#fff"
           text-color="#012970"
           active-text-color="#4154f1"
@@ -105,8 +120,18 @@
         </el-menu>
       </el-aside>
 
+      <Transition name="sidebar-mask">
+        <button
+          v-if="isCompact && isMobileMenuOpen"
+          class="sidebar-overlay"
+          type="button"
+          aria-label="关闭导航菜单"
+          @click="closeMobileMenu"
+        />
+      </Transition>
+
       <!-- 主内容区 -->
-      <el-main class="main-content" :class="{ 'content-expanded': isCollapse }">
+      <el-main class="main-content" :class="{ 'content-expanded': !isCompact && isDesktopCollapsed }">
         <router-view />
       </el-main>
     </el-container>
@@ -114,19 +139,22 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/store/user'
 import { logout } from '@/api/auth'
+import { useResponsive } from '@/composables/useResponsive'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 
-const isCollapse = ref(false)
+const { isCompact } = useResponsive()
+const isDesktopCollapsed = ref(false)
+const isMobileMenuOpen = ref(false)
 const dropdownVisible = ref(false)
-const sidebarWidth = computed(() => isCollapse.value ? '64px' : '260px')
+const sidebarWidth = computed(() => (!isCompact.value && isDesktopCollapsed.value) ? '64px' : '260px')
 const activeMenu = computed(() => route.path)
 const roleCodes = computed(() => userStore.userInfo?.roleCodes || [])
 const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...roleCodes.value) : 13)
@@ -152,8 +180,40 @@ const roleDisplay = computed(() => {
 })
 
 const toggleSidebar = () => {
-  isCollapse.value = !isCollapse.value
+  if (isCompact.value) {
+    isMobileMenuOpen.value = !isMobileMenuOpen.value
+    return
+  }
+  isDesktopCollapsed.value = !isDesktopCollapsed.value
 }
+
+const closeMobileMenu = () => {
+  isMobileMenuOpen.value = false
+}
+
+const handleMenuSelect = () => {
+  if (isCompact.value) closeMobileMenu()
+}
+
+const handleEscape = (event) => {
+  if (event.key === 'Escape') closeMobileMenu()
+}
+
+// 抽屉展开时锁定页面滚动，避免用户滑动到遮罩后的业务内容。
+watch(isMobileMenuOpen, (open) => {
+  document.body.style.overflow = open && isCompact.value ? 'hidden' : ''
+})
+
+watch(() => route.fullPath, closeMobileMenu)
+watch(isCompact, (compact) => {
+  if (!compact) closeMobileMenu()
+})
+
+onMounted(() => window.addEventListener('keydown', handleEscape))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleEscape)
+  document.body.style.overflow = ''
+})
 
 const handleDropdownVisible = (visible) => {
   dropdownVisible.value = visible
@@ -182,7 +242,8 @@ const handleCommand = (command) => {
 
 <style scoped>
 .layout-container {
-  height: 100vh;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* 头部 */
@@ -220,10 +281,15 @@ const handleCommand = (command) => {
 }
 
 .toggle-sidebar-btn {
+  border: 0;
+  background: transparent;
   cursor: pointer;
   color: var(--secondary-color);
   font-size: 32px;
+  width: 44px;
+  height: 44px;
   padding: 5px;
+  justify-content: center;
   transition: 0.3s;
   display: flex;
   align-items: center;
@@ -390,6 +456,8 @@ const handleCommand = (command) => {
   padding: 20px 30px;
   background-color: var(--background-color);
   min-height: calc(100vh - 60px);
+  min-width: 0;
+  overflow-x: hidden;
   transition: all 0.3s;
 }
 
@@ -400,7 +468,19 @@ const handleCommand = (command) => {
 /* 响应式 */
 @media (max-width: 1199px) {
   .sidebar {
-    left: -260px;
+    left: 0;
+    transform: translateX(-105%);
+    width: min(82vw, 300px) !important;
+    z-index: 1001;
+    box-shadow: 8px 0 28px rgba(1, 41, 112, 0.18);
+  }
+
+  .sidebar.sidebar-mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar :deep(.el-menu) {
+    padding: 15px;
   }
 
   .main-content {
@@ -409,7 +489,59 @@ const handleCommand = (command) => {
   }
 
   .logo-text {
+    font-size: 18px;
+  }
+
+  .sidebar-overlay {
+    position: fixed;
+    inset: 60px 0 0;
+    z-index: 1000;
+    border: 0;
+    background: rgba(16, 24, 40, 0.42);
+  }
+
+  .sidebar-mask-enter-active,
+  .sidebar-mask-leave-active {
+    transition: opacity 0.2s ease;
+  }
+
+  .sidebar-mask-enter-from,
+  .sidebar-mask-leave-to {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  .header {
+    padding: 0 10px;
+  }
+
+  .header-left {
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .logo-text {
+    display: block;
+    max-width: 55vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 17px;
+  }
+
+  .nav-profile {
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .nav-profile .username {
     display: none;
+  }
+
+  .main-content {
+    padding: 14px 12px calc(18px + env(safe-area-inset-bottom));
+    min-height: calc(100dvh - 60px);
   }
 }
 </style>
