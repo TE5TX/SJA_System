@@ -5,8 +5,6 @@ SJA_Sys_Vite/tac-web (1).zip
 /SJA_Sys_React/*
 /.codex-tmp/
 /docs/
-/sql/
-
 # Local database snapshots and credential reset scripts contain sensitive data.
 /sql/sja_system_db_*.sql
 /sql/SJA_System_db_*.sql

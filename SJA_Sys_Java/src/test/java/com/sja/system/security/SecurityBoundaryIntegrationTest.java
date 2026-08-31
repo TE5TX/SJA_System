@@ -1,6 +1,9 @@
 package com.sja.system.security;
 
 import com.sja.system.mapper.SysUserMapper;
+import com.sja.system.service.LoginCaptchaService;
+import com.sja.system.service.RecruitmentService;
+import com.sja.system.vo.RecruitmentStatusVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -10,13 +13,17 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "sja.async-task.enabled=false",
@@ -37,6 +44,12 @@ class SecurityBoundaryIntegrationTest {
     // 202608140858 - 隔离数据库以验证头像认证边界本身。
     @MockitoBean
     private SysUserMapper sysUserMapper;
+
+    @MockitoBean
+    private RecruitmentService recruitmentService;
+
+    @MockitoBean
+    private LoginCaptchaService loginCaptchaService;
 
     @Test
     void allowsConfiguredFrontendPreflight() throws Exception {
@@ -97,6 +110,47 @@ class SecurityBoundaryIntegrationTest {
         // 缺少 X-Task-Token 应由参数校验返回 400；若安全规则错误则会提前返回 401。
         mockMvc.perform(get("/api/v1/async-tasks/11111111-1111-1111-1111-111111111111"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void exposesRecruitmentStatusButProtectsPublicationControl() throws Exception {
+        // 202609010036 - 公开报名页可读取状态，发布控制仅限管理员、主席和秘书长。
+        when(recruitmentService.getStatus()).thenReturn(new RecruitmentStatusVO());
+        mockMvc.perform(get("/api/v1/recruitment/status"))
+                .andExpect(status().isOk());
+
+        for (int roleCode : new int[]{0, 1, 3}) {
+            mockMvc.perform(put("/api/v1/recruitment/manage/status")
+                            .contentType("application/json")
+                            .content("{\"published\":true}")
+                            .with(authentication(authenticationForRole(roleCode))))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(put("/api/v1/recruitment/manage/status")
+                        .contentType("application/json")
+                        .content("{\"published\":true}")
+                        .with(authentication(authenticationForRole(4))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void allowsAnonymousRecruitmentSubmissionThroughSecurityBoundary() throws Exception {
+        String json = """
+                {"realName":"测试新生","studentNo":"202600000001","gender":1,
+                 "phone":"13800000000","idCard":"440000200001010001",
+                 "college":"计算机学院","className":"26计科A班","dormAddress":"1栋101",
+                 "bankCard":"6222000000000000","deptCode":"EDITORIAL",
+                 "captchaToken":"captcha-token"}
+                """;
+        MockMultipartFile data = new MockMultipartFile(
+                "data", "data.json", "application/json", json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        MockMultipartFile photo = new MockMultipartFile(
+                "photo", "avatar.png", "image/png", new byte[]{1});
+        when(loginCaptchaService.consume("captcha-token")).thenReturn(true);
+
+        mockMvc.perform(multipart("/api/v1/recruitment/register").file(data).file(photo))
+                .andExpect(status().isOk());
     }
 
     private UsernamePasswordAuthenticationToken authenticationForRole(int roleCode) {

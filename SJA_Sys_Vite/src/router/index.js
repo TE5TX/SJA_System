@@ -9,6 +9,12 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/recruit',
+    name: 'RecruitmentRegister',
+    component: () => import('@/views/RecruitmentRegister.vue'),
+    meta: { requiresAuth: false, title: '招新注册' }
+  },
+  {
     path: '/',
     redirect: '/login',
     meta: { requiresAuth: false }
@@ -68,6 +74,12 @@ const routes = [
         meta: { title: '操作日志' }
       },
       {
+        path: 'recruitment',
+        name: 'RecruitmentManagement',
+        component: () => import('@/views/RecruitmentManagement.vue'),
+        meta: { title: '招新管理', allowedRoleCodes: [0, 1, 3] }
+      },
+      {
         path: 'sujia',
         name: 'SujiaTool',
         component: () => import('@/views/SujiaTool.vue'),
@@ -84,12 +96,17 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore()
+  const allowedRoleCodes = to.meta.allowedRoleCodes
   if (to.meta.requiresAuth && !userStore.token) {
     next('/login')
   } else if (userStore.token && userStore.mustChangePassword && to.path !== '/change-password') {
     next('/change-password')
   } else if (userStore.token && !userStore.mustChangePassword && to.path === '/change-password') {
     next('/app')
+  } else if (Array.isArray(allowedRoleCodes)
+    && !allowedRoleCodes.some(code => userStore.userInfo?.roleCodes?.includes(code))) {
+    // 202608312329 - 防止无招新管理权限的已登录用户直接输入管理页地址。
+    next('/app/profile')
   } else {
     next()
   }

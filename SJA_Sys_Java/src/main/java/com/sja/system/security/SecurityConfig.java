@@ -60,6 +60,9 @@ public class SecurityConfig {
                         "/api/v1/auth/login",
                         "/api/v1/auth/refresh",
                         "/api/v1/auth/captcha/**",
+                        // 202608312329 - 招新状态和注册提交允许未登录用户访问，发布控制仍需认证。
+                        "/api/v1/recruitment/status",
+                        "/api/v1/recruitment/register",
                         // 任务状态由单任务令牌保护，不使用可能已被资料修改撤销的 JWT。
                         "/api/v1/async-tasks/*",
                         "/favicon.ico"

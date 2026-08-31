@@ -3,18 +3,25 @@
     <!-- 头部 -->
     <el-header class="header" height="60px">
       <div class="header-left">
-        <div class="logo">
-          <span class="logo-text">校记者团管理系统</span>
-        </div>
         <button
           class="toggle-sidebar-btn"
+          :class="{ 'is-open': isCompact && isMobileMenuOpen }"
           type="button"
-          :aria-label="isCompact ? '打开导航菜单' : '折叠导航菜单'"
+          :aria-label="isCompact
+            ? (isMobileMenuOpen ? '关闭导航菜单' : '打开导航菜单')
+            : (isDesktopCollapsed ? '展开导航菜单' : '折叠导航菜单')"
           :aria-expanded="isCompact ? isMobileMenuOpen : !isDesktopCollapsed"
           @click="toggleSidebar"
         >
-          <el-icon :size="28"><Menu /></el-icon>
+          <!-- 移动端用图标切换明确表达菜单当前的开关状态。 -->
+          <el-icon :size="24">
+            <Close v-if="isCompact && isMobileMenuOpen" />
+            <Menu v-else />
+          </el-icon>
         </button>
+        <div class="logo">
+          <span class="logo-text">校记者团管理系统</span>
+        </div>
       </div>
 
       <div class="header-right">
@@ -111,6 +118,10 @@
               <el-icon><Tickets /></el-icon>
               <template #title>操作日志</template>
             </el-menu-item>
+            <el-menu-item v-if="canManageRecruitment" index="/app/recruitment">
+              <el-icon><Promotion /></el-icon>
+              <template #title>招新管理</template>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-menu-item v-if="canUseSujia" index="/app/sujia">
@@ -161,6 +172,7 @@ const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...role
 const isInfoManager = computed(() => [0, 1, 2, 3].includes(highestRoleCode.value))
 const isMinister = computed(() => roleCodes.value.includes(4))
 const canManageUsers = computed(() => isInfoManager.value)
+const canManageRecruitment = computed(() => [0, 1, 3].includes(highestRoleCode.value))
 const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
 const canSubmitFee = computed(() => canManageFeeAmount.value || isMinister.value)
 const canViewFeeTasks = computed(() => canManageFeeAmount.value || isMinister.value)
@@ -281,22 +293,37 @@ const handleCommand = (command) => {
 }
 
 .toggle-sidebar-btn {
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
   cursor: pointer;
   color: var(--secondary-color);
-  font-size: 32px;
   width: 44px;
   height: 44px;
-  padding: 5px;
+  flex: 0 0 44px;
+  padding: 0;
   justify-content: center;
-  transition: 0.3s;
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    border-color 0.2s,
+    transform 0.1s;
   display: flex;
   align-items: center;
 }
 
 .toggle-sidebar-btn:hover {
   color: var(--primary-color);
+  background: rgba(65, 84, 241, 0.08);
+}
+
+.toggle-sidebar-btn:focus-visible {
+  outline: 3px solid rgba(64, 158, 255, 0.35);
+  outline-offset: 2px;
+}
+
+.toggle-sidebar-btn:active {
+  transform: scale(0.96);
 }
 
 .header-right {
@@ -518,7 +545,27 @@ const handleCommand = (command) => {
 
   .header-left {
     min-width: 0;
-    gap: 4px;
+    gap: 8px;
+  }
+
+  /* 202608312256 - 强化移动端导航入口，保证触控尺寸和视觉对比度。 */
+  .toggle-sidebar-btn {
+    color: #fff;
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 6px rgba(0, 41, 112, 0.2);
+  }
+
+  .toggle-sidebar-btn:hover {
+    color: #fff;
+    background: var(--primary-color);
+  }
+
+  .toggle-sidebar-btn.is-open {
+    color: var(--primary-color);
+    background: #eef4ff;
+    border-color: #b8d3ff;
+    box-shadow: none;
   }
 
   .logo-text {
