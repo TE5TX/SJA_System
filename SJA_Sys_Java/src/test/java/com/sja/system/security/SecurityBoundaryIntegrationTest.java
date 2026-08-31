@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
+        "sja.async-task.enabled=false",
         "spring.datasource.username=test",
         "spring.datasource.password=test",
         "jwt.secret=01234567890123456789012345678901",
@@ -72,5 +73,12 @@ class SecurityBoundaryIntegrationTest {
         // Authentication reaches the controller; the test file itself is intentionally absent.
         mockMvc.perform(get(path).with(user("security-test")))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void allowsTaskStatusRouteToUseItsDedicatedToken() throws Exception {
+        // 缺少 X-Task-Token 应由参数校验返回 400；若安全规则错误则会提前返回 401。
+        mockMvc.perform(get("/api/v1/async-tasks/11111111-1111-1111-1111-111111111111"))
+                .andExpect(status().isBadRequest());
     }
 }

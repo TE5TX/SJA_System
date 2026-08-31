@@ -15,7 +15,9 @@ import com.sja.system.dto.UserStatusUpdateDTO;
 import com.sja.system.dto.UserPhotoUpdateDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.OperationLogService;
+import com.sja.system.service.AsyncTaskQueueService;
 import com.sja.system.service.UserService;
+import com.sja.system.vo.AsyncTaskAcceptedVO;
 import com.sja.system.vo.UserVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +29,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -59,6 +64,7 @@ public class UserController {
     private final UserService userService;
     private final OperationLogService operationLogService;
     private final SecurityUtils securityUtils;
+    private final AsyncTaskQueueService asyncTaskQueueService;
 
     /**
      * Get the current authenticated user's profile.
@@ -77,13 +83,20 @@ public class UserController {
      * Update the current authenticated user's profile fields.
      */
     @PutMapping("/user/profile")
-    public Result<Void> updateProfile(@RequestBody @Valid ProfileUpdateDTO dto, HttpServletRequest request) {
+    public ResponseEntity<Result<AsyncTaskAcceptedVO>> updateProfile(
+            @RequestBody @Valid ProfileUpdateDTO dto,
+            @RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey,
+            HttpServletRequest request) {
         Long userId = securityUtils.getCurrentUserId(request);
         if (userId == null) {
-            return Result.error(401, "未授权");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Result.error(401, "未授权"));
         }
-        userService.updateProfile(userId, dto);
-        return Result.success();
+        // 202608192148 - 修复了大量用户同时修改个人资料时数据库连接被瞬间占满的问题。
+        AsyncTaskAcceptedVO task = asyncTaskQueueService.enqueueProfile(
+                userId, dto, idempotencyKey);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(Result.success("个人资料修改任务已进入队列", task));
     }
 
     @PutMapping("/user/profile/photo")

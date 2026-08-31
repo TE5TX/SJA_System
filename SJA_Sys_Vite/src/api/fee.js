@@ -1,10 +1,13 @@
 import request from '@/utils/request'
+import { createIdempotencyKey } from '@/api/asyncTask'
 
 export function submitFee(data) {
   return request({
     url: '/v1/fee/submit',
     method: 'post',
-    data
+    data,
+    // 202608192148 - 修复了网络重试可能重复生成稿费任务的问题。
+    headers: { 'X-Idempotency-Key': createIdempotencyKey('fee') }
   })
 }
 

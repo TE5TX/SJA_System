@@ -94,17 +94,19 @@ MYSQL_ROOT_PASSWORD=$(openssl rand -base64 36 | tr -d '\n')
 MYSQL_PASSWORD=$(openssl rand -base64 36 | tr -d '\n')
 REDIS_PASSWORD=$(openssl rand -base64 36 | tr -d '\n')
 SJA_JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')
+SJA_ASYNC_TASK_ENCRYPTION_KEY=$(openssl rand -base64 48 | tr -d '\n')
 
 sed -i "s|^MYSQL_ROOT_PASSWORD=.*|MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD|" .env
 sed -i "s|^MYSQL_PASSWORD=.*|MYSQL_PASSWORD=$MYSQL_PASSWORD|" .env
 sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|" .env
 sed -i "s|^SJA_JWT_SECRET=.*|SJA_JWT_SECRET=$SJA_JWT_SECRET|" .env
+sed -i "s|^SJA_ASYNC_TASK_ENCRYPTION_KEY=.*|SJA_ASYNC_TASK_ENCRYPTION_KEY=$SJA_ASYNC_TASK_ENCRYPTION_KEY|" .env
 chmod 600 .env
 ```
 
 确认 `.env` 中的 `SJA_HOST=192.168.255.128`。这里不要把 `.env` 内容粘贴到聊天或日志中。
 
-也可以通过 `nano .env` 手动填写密码。`MYSQL_ROOT_PASSWORD` 是数据库管理员密码，`MYSQL_PASSWORD` 是 Java 后端使用的 `sja` 数据库用户密码，两者应不同。JWT 密钥可以使用 `openssl rand -base64 48` 生成。
+也可以通过 `nano .env` 手动填写密码。`MYSQL_ROOT_PASSWORD` 是数据库管理员密码，`MYSQL_PASSWORD` 是 Java 后端使用的 `sja` 数据库用户密码，两者应不同。JWT 密钥和异步任务加密密钥都可以使用 `openssl rand -base64 48` 生成，但两者不能相同。
 
 ## 4. 启动
 
@@ -126,6 +128,30 @@ docker compose logs -f --tail=100
 ```
 
 看到后端启动完成后按 `Ctrl+C` 退出日志（不会停止容器）。
+
+### 已有数据库升级
+
+`sys_async_task_execution` 用于防止后台消费者重试时重复写入。全新数据卷会自动执行升级脚本；已有 MySQL 数据卷不会重新执行 `/docker-entrypoint-initdb.d`，更新代码后必须手动执行一次：
+
+```bash
+cd ~/SJA_System
+set -a
+. ./.env
+set +a
+docker compose exec -T mysql mysql \
+  -uroot -p"${MYSQL_ROOT_PASSWORD}" sja_system_db \
+  < sql/20260819_异步任务队列升级.sql
+```
+
+确认表已创建：
+
+```bash
+docker compose exec mysql mysql \
+  -uroot -p"${MYSQL_ROOT_PASSWORD}" sja_system_db \
+  -e "SHOW TABLES LIKE 'sys_async_task_execution';"
+```
+
+2 核、2GB 环境保持 `.env` 中 `SJA_ASYNC_TASK_WORKER_COUNT=4`；如果 MySQL 仍持续高负载，可降为 `2` 后重建后端容器。
 
 ## 5. 开放防火墙并访问
 

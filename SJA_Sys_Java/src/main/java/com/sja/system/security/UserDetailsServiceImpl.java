@@ -61,6 +61,24 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             throw new UsernameNotFoundException("用户不存在或已被禁用: " + identifier);
         }
 
+        return buildPrincipal(user);
+    }
+
+    /**
+     * 后台任务执行前按主键重新读取用户，防止沿用入队时已经过期的角色或账号状态。
+     */
+    public SjaUserPrincipal loadUserById(Long userId) throws UsernameNotFoundException {
+        QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
+        userQuery.eq("id", userId).eq("is_valid", 1);
+        SysUser user = sysUserMapper.selectOne(userQuery);
+        if (user == null) {
+            throw new UsernameNotFoundException("用户不存在或已被禁用");
+        }
+        return buildPrincipal(user);
+    }
+
+    private SjaUserPrincipal buildPrincipal(SysUser user) {
+
         // 2. Find user-role associations
         QueryWrapper<SysUserRole> roleQuery = new QueryWrapper<>();
         roleQuery.eq("user_id", user.getId());

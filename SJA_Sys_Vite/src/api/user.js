@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { createIdempotencyKey } from '@/api/asyncTask'
 
 // 获取当前用户个人资料
 export function getUserProfile() {
@@ -13,7 +14,9 @@ export function updateUserProfile(data) {
   return request({
     url: '/v1/user/profile',
     method: 'put',
-    data
+    data,
+    // 202608192148 - 修复了网络重试可能重复创建写入任务的问题。
+    headers: { 'X-Idempotency-Key': createIdempotencyKey('profile') }
   })
 }
 

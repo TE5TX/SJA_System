@@ -4,6 +4,7 @@ import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeSubmitDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.FeeService;
+import com.sja.system.service.AsyncTaskQueueService;
 import com.sja.system.service.MonthlyFeeExportService;
 import com.sja.system.service.UserService;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ class FeeControllerSecurityTest {
         FeeService feeService = mock(FeeService.class);
         SecurityUtils securityUtils = mock(SecurityUtils.class);
         FeeController controller = new FeeController(feeService, mock(MonthlyFeeExportService.class),
-                mock(UserService.class), securityUtils);
+                mock(UserService.class), securityUtils, mock(AsyncTaskQueueService.class));
         MockHttpServletRequest request = new MockHttpServletRequest();
         when(securityUtils.getCurrentRoleCode(request)).thenReturn(4);
 

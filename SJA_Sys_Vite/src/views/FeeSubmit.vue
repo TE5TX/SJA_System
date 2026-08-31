@@ -315,6 +315,7 @@ import { Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AuthorInput from '@/components/AuthorInput.vue'
 import { getFeeContributors, submitFee } from '@/api/fee'
+import { waitForAsyncTask } from '@/api/asyncTask'
 import { useUserStore } from '@/store/user'
 import { useResponsive } from '@/composables/useResponsive'
 
@@ -682,7 +683,7 @@ const handleSubmit = async () => {
     if (form.workType !== 'SUBSIDY' && submittedWorkInfo.isPublished !== 1) {
       delete submittedWorkInfo.publishDate
     }
-    await submitFee({
+    const accepted = await submitFee({
       workType: form.workType,
       workInfo: submittedWorkInfo,
       contributors: form.contributors.map(item => ({
@@ -693,12 +694,17 @@ const handleSubmit = async () => {
         remark: item.remark || ''
       }))
     })
+    ElMessage.info('稿费任务已进入队列，正在处理')
+    // 202608192148 - 修复了后台尚未写入完成时前端提前清空稿费表单的问题。
+    await waitForAsyncTask(accepted.data.taskId, accepted.data.statusToken)
     ElMessage.success('稿费任务已提交')
     draftReady.value = false
     clearFeeDraft()
     resetWorkInfo()
     await nextTick()
     draftReady.value = true
+  } catch (error) {
+    if (error.isAsyncTaskFailure) ElMessage.error(error.message)
   } finally {
     submitting.value = false
   }

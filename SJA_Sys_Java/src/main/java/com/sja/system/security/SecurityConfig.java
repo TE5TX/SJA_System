@@ -60,6 +60,8 @@ public class SecurityConfig {
                         "/api/v1/auth/login",
                         "/api/v1/auth/refresh",
                         "/api/v1/auth/captcha/**",
+                        // 任务状态由单任务令牌保护，不使用可能已被资料修改撤销的 JWT。
+                        "/api/v1/async-tasks/*",
                         "/favicon.ico"
                 ).permitAll()
                 .anyRequest().authenticated())
@@ -106,7 +108,8 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList(
-                "Authorization", "Content-Type", "X-SJA-Refresh", "X-Request-ID"));
+                "Authorization", "Content-Type", "X-SJA-Refresh", "X-Request-ID",
+                "X-Idempotency-Key", "X-Task-Token"));
         configuration.setExposedHeaders(List.of("X-Request-ID"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);

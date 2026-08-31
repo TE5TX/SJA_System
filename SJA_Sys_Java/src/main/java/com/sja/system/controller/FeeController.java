@@ -10,11 +10,13 @@ import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.dto.MonthlyFeeExportDTO;
 import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.FeeService;
+import com.sja.system.service.AsyncTaskQueueService;
 import com.sja.system.service.MonthlyFeeExportService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.FeeContributorVO;
 import com.sja.system.vo.FeeDetailVO;
 import com.sja.system.vo.FeeListVO;
+import com.sja.system.vo.AsyncTaskAcceptedVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,8 +27,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -48,6 +53,7 @@ public class FeeController {
     private final MonthlyFeeExportService monthlyFeeExportService;
     private final UserService userService;
     private final SecurityUtils securityUtils;
+    private final AsyncTaskQueueService asyncTaskQueueService;
 
     /**
      * Return active users that can be selected as contributors. This deliberately
@@ -64,19 +70,21 @@ public class FeeController {
      */
     @PostMapping("/submit")
     @PreAuthorize("hasAuthority('fee:submit')")
-    public Result<Void> submitFee(@RequestBody @Valid FeeSubmitDTO dto, HttpServletRequest request) {
+    public ResponseEntity<Result<AsyncTaskAcceptedVO>> submitFee(
+            @RequestBody @Valid FeeSubmitDTO dto,
+            @RequestHeader(value = "X-Idempotency-Key", required = false) String idempotencyKey,
+            HttpServletRequest request) {
         Long userId = securityUtils.getCurrentUserId(request);
-        String username = securityUtils.getCurrentUsernameFromToken(request);
-
         if (userId == null) {
-            return Result.error(401, "未授权");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Result.error(401, "未授权"));
         }
 
-        String realName = username;
-        Integer roleCode = securityUtils.getCurrentRoleCode(request);
-
-        feeService.submitFee(userId, username, realName, roleCode, dto);
-        return Result.success();
+        // 202608192148 - 修复了稿费集中提交时同步计算和写库阻塞 Web 请求线程的问题。
+        AsyncTaskAcceptedVO task = asyncTaskQueueService.enqueueFee(
+                userId, dto, idempotencyKey);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(Result.success("稿费任务已进入队列", task));
     }
 
     /**
