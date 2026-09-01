@@ -122,6 +122,31 @@ class UserServiceImplCreateTest {
         verify(passwordEncoder).encode("asdf123456");
     }
 
+    @Test
+    void usesNewUserIdForSelfRegistrationAuditWhenOperatorIsAnonymous() {
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        OperationLogService operationLogService = mock(OperationLogService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserServiceImpl service = new UserServiceImpl(userMapper, mock(SysRoleMapper.class),
+                mock(SysDeptMapper.class), mock(SysUserRoleMapper.class), mock(SysUserDeptMapper.class),
+                operationLogService, passwordEncoder, mock(AvatarStorageService.class));
+        when(passwordEncoder.encode("Test123456")).thenReturn("encoded-password");
+        when(userMapper.insert(any(SysUser.class))).thenAnswer(invocation -> {
+            invocation.<SysUser>getArgument(0).setId(101L);
+            return 1;
+        });
+
+        UserCreateDTO dto = new UserCreateDTO();
+        dto.setRealName("公开注册用户");
+        dto.setStudentNo("2026000000003");
+        dto.setPassword("Test123456");
+
+        service.createUser(dto, null, "公开注册用户", "13");
+
+        verify(operationLogService).log(eq(101L), eq("公开注册用户"), eq("13"), eq("CREATE"),
+                eq("USER"), eq(101L), any(String.class), eq(""));
+    }
+
     private UserCreateDTO createDto() {
         UserCreateDTO dto = new UserCreateDTO();
         dto.setRealName("测试人员");

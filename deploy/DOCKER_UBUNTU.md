@@ -154,6 +154,25 @@ docker compose exec mysql mysql \
   -e "SHOW TABLES LIKE 'sys_async_task_execution';"
 ```
 
+<!-- 202609011534 - 补充公开注册的时间段与自设密码数据库升级步骤。 -->
+如已部署过公开注册功能，还需要执行以下两份脚本，先创建注册表单配置，再增加可调整的开放、结束时间字段：
+
+```bash
+docker compose exec -T mysql mysql \
+  -uroot -p"${MYSQL_ROOT_PASSWORD}" sja_system_db \
+  < sql/20260831_招新注册功能升级.sql
+
+docker compose exec -T mysql mysql \
+  -uroot -p"${MYSQL_ROOT_PASSWORD}" sja_system_db \
+  < sql/20260901_注册时间与自设密码升级.sql
+```
+
+升级后重建后端和前端容器：
+
+```bash
+docker compose up -d --build backend web
+```
+
 2 核、2GB 环境保持 `.env` 中 `SJA_ASYNC_TASK_WORKER_COUNT=4`；如果 MySQL 仍持续高负载，可降为 `2` 后重建后端容器。
 
 ## 5. 开放防火墙并访问

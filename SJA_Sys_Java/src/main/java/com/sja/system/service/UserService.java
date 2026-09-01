@@ -88,6 +88,11 @@ public interface UserService {
     void resetUserPassword(Long userId, Long operatorId, String operatorName, String operatorRole);
 
     /**
+     * Permanently delete a managed user while retaining historical audit records.
+     */
+    void deleteUser(Long userId, Long operatorId, String operatorName, String operatorRole);
+
+    /**
      * Replace roles and/or update account status for multiple users.
      */
     void batchUpdateUsers(UserBatchUpdateDTO dto, Long operatorId, String operatorName, String operatorRole);

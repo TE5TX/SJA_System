@@ -33,6 +33,11 @@ public interface OperationLogService {
                     String targetModule, String detail);
 
     /**
+     * Remove the foreign-key reference to a user without deleting historical audit records.
+     */
+    void detachUserReferences(Long userId);
+
+    /**
      * Retrieve paginated operation logs, newest first.
      *
      * @param pageNum  page number (1-based)

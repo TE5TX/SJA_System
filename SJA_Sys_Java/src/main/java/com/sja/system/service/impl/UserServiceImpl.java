@@ -30,6 +30,7 @@ import com.sja.system.vo.FeeContributorVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -235,7 +236,7 @@ public class UserServiceImpl implements UserService {
         }
         if (!StringUtils.hasText(currentPassword)
                 || !passwordEncoder.matches(currentPassword, user.getPassword())) {
-            throw ApiException.forbidden("当前用户密码错误，批量操作未执行");
+            throw ApiException.forbidden("当前用户密码错误，操作未执行");
         }
     }
 
@@ -463,7 +464,8 @@ public class UserServiceImpl implements UserService {
         SysUser user = new SysUser();
         user.setUsername(studentNo);
         user.setPassword(passwordEncoder.encode(password));
-        user.setMustChangePassword(1);
+        // 202609011534 - 公开注册由用户自行设定密码，无需再强制首次登录修改。
+        user.setMustChangePassword(Boolean.FALSE.equals(dto.getRequirePasswordChange()) ? 0 : 1);
         user.setRealName(StringUtils.hasText(dto.getRealName()) ? dto.getRealName().trim() : studentNo);
         user.setGender(dto.getGender() == null ? 0 : dto.getGender());
         String photo = StringUtils.hasText(dto.getPhoto()) ? dto.getPhoto().trim() : null;
@@ -485,7 +487,10 @@ public class UserServiceImpl implements UserService {
 
         updateUserDepts(user.getId(), deptIds);
         updateUserRoles(user.getId(), roleIds);
-        operationLogService.log(operatorId, operatorName, operatorRole, "CREATE",
+        // 202609011558 - 公开自助注册没有登录操作人时，使用新用户ID关联成功审计日志。
+        Long auditUserId = operatorId == null ? user.getId() : operatorId;
+        String auditOperatorName = StringUtils.hasText(operatorName) ? operatorName : user.getRealName();
+        operationLogService.log(auditUserId, auditOperatorName, operatorRole, "CREATE",
                 "USER", user.getId(),
                 "新增人员: " + user.getRealName() + "（" + studentNo + "）", "");
         log.info("User {} created by operator {}", user.getId(), operatorId);
@@ -684,6 +689,38 @@ public class UserServiceImpl implements UserService {
                 "USER", userId, statusDesc + "用户: " + user.getRealName(), "");
 
         log.info("User {} status updated to {} by operator {}", userId, status, operatorId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteUser(Long userId, Long operatorId, String operatorName, String operatorRole) {
+        if (Objects.equals(userId, operatorId)) {
+            throw ApiException.badRequest("不能删除当前登录账号");
+        }
+
+        SysUser user = sysUserMapper.selectById(userId);
+        if (user == null) {
+            throw ApiException.notFound("用户不存在");
+        }
+
+        try {
+            // 202609011700 - 完成了人员永久删除，并保留与操作者相关的历史审计信息。
+            operationLogService.detachUserReferences(userId);
+            sysUserDeptMapper.delete(new QueryWrapper<SysUserDept>().eq("user_id", userId));
+            sysUserRoleMapper.delete(new QueryWrapper<SysUserRole>().eq("user_id", userId));
+            int deleted = sysUserMapper.deleteById(userId);
+            if (deleted != 1) {
+                throw ApiException.notFound("用户不存在");
+            }
+        } catch (DataIntegrityViolationException exception) {
+            throw ApiException.conflict("该人员已有稿费、作品或其他业务关联记录，不能永久删除，请改为禁用账号");
+        }
+
+        operationLogService.log(operatorId, operatorName, operatorRole, "DELETE",
+                "USER", userId,
+                "永久删除人员: " + user.getRealName() + "（账号: " + user.getUsername() + "）", "");
+        avatarStorageService.deleteAfterCommit(user.getPhoto());
+        log.info("User {} permanently deleted by operator {}", userId, operatorId);
     }
 
     // ======================== Private helpers ========================

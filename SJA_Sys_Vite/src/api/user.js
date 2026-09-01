@@ -86,6 +86,15 @@ export function updateUser(id, data) {
   })
 }
 
+// 202609011700 - 完成了人员管理密码确认后的永久删除请求。
+export function deleteUser(id, currentPassword) {
+  return request({
+    url: `/v1/users/${id}`,
+    method: 'delete',
+    data: { currentPassword }
+  })
+}
+
 // 202608210907 - 增加了XLSX批量注册预览和一次性令牌确认请求。
 export function previewUserImport(formData) {
   return request({

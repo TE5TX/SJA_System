@@ -7,23 +7,22 @@
 
     <main class="public-content">
       <div class="public-title">
-        <h1>校学生记者团招新注册</h1>
-        <p>请如实填写个人信息，提交成功后使用学号和初始密码登录系统。</p>
+        <h1>校记者团成员注册</h1>
+        <p>请如实填写个人信息并设置登录密码，提交成功后即可使用学号和密码登录系统。</p>
       </div>
 
       <el-card v-if="loading" class="registration-panel">
         <el-skeleton :rows="8" animated />
       </el-card>
 
-      <el-card v-else-if="!status?.published" class="registration-panel paused-panel">
-        <el-result icon="warning" title="招新注册已暂停" sub-title="当前暂不接收新的注册信息，请等待管理员重新发布。" />
+      <el-card v-else-if="!status?.acceptingRegistration" class="registration-panel paused-panel">
+        <el-result icon="warning" :title="registrationStatusTitle" :sub-title="registrationStatusMessage" />
       </el-card>
 
       <el-card v-else-if="completed" class="registration-panel completed-panel">
         <el-result icon="success" title="注册成功">
           <template #sub-title>
-            <p>登录账号为你填写的学号，初始密码为 <strong>asdf123456</strong>。</p>
-            <p>首次登录后请按照系统提示修改密码。</p>
+            <p>登录账号为你填写的学号，登录密码为你注册时设置的密码。</p>
           </template>
           <template #extra>
             <el-button type="primary" @click="$router.push('/login')">前往登录</el-button>
@@ -35,12 +34,11 @@
         <template #header>
           <div class="form-header">
             <span>个人信息</span>
-            <el-tag type="success">报名中</el-tag>
           </div>
         </template>
 
         <el-alert
-          title="注册身份统一为游客，初始密码为 asdf123456，首次登录必须修改密码。"
+          title="请妥善保管你设置的登录密码。银行卡号和照片可后续补充。"
           type="info"
           :closable="false"
           show-icon
@@ -66,6 +64,30 @@
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="12">
+              <el-form-item label="登录密码" prop="password">
+                <el-input
+                  v-model="form.password"
+                  type="password"
+                  maxlength="50"
+                  autocomplete="new-password"
+                  show-password
+                  placeholder="8至50位，须同时包含字母和数字"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="确认登录密码" prop="confirmPassword">
+                <el-input
+                  v-model="form.confirmPassword"
+                  type="password"
+                  maxlength="50"
+                  autocomplete="new-password"
+                  show-password
+                  placeholder="请再次输入登录密码"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
               <el-form-item label="性别" prop="gender">
                 <el-select v-model="form.gender" placeholder="请选择性别">
                   <el-option label="男" :value="1" />
@@ -85,7 +107,9 @@
             </el-col>
             <el-col :xs="24" :sm="12">
               <el-form-item label="二级学院" prop="college">
-                <el-input v-model="form.college" maxlength="100" placeholder="请输入二级学院" />
+                <el-select v-model="form.college" filterable placeholder="请选择二级学院">
+                  <el-option v-for="college in collegeOptions" :key="college" :label="college" :value="college" />
+                </el-select>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="12">
@@ -95,23 +119,23 @@
             </el-col>
             <el-col :xs="24" :sm="12">
               <el-form-item label="宿舍地址" prop="dormAddress">
-                <el-input v-model="form.dormAddress" maxlength="100" placeholder="例如：凤翔3栋608" />
+                <el-input v-model="form.dormAddress" maxlength="100" placeholder="例如：凤翔3栋301" />
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="12">
-              <el-form-item label="银行卡号" prop="bankCard">
-                <el-input v-model="form.bankCard" maxlength="30" inputmode="numeric" placeholder="请输入本人银行卡号" />
+              <el-form-item label="银行卡号（可选）" prop="bankCard">
+                <el-input v-model="form.bankCard" maxlength="30" inputmode="numeric" placeholder="可后续在个人管理中补充" />
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="12">
               <el-form-item label="所属部门" prop="deptCode">
-                <el-select v-model="form.deptCode" placeholder="请选择报名部门">
+                <el-select v-model="form.deptCode" placeholder="请选择所属部门">
                   <el-option v-for="dept in departmentOptions" :key="dept.value" :label="dept.label" :value="dept.value" />
                 </el-select>
               </el-form-item>
             </el-col>
             <el-col :span="24">
-              <el-form-item label="照片" required>
+              <el-form-item label="照片（可选）">
                 <el-upload
                   ref="uploadRef"
                   class="photo-upload"
@@ -125,7 +149,7 @@
                 >
                   <el-button :icon="Upload">选择照片</el-button>
                   <template #tip>
-                    <div class="el-upload__tip">支持 JPG、PNG、GIF，文件不超过 5MB。</div>
+                    <div class="el-upload__tip">支持 JPG、PNG、GIF，文件不超过 5MB；可后续在个人管理中补充。</div>
                   </template>
                 </el-upload>
               </el-form-item>
@@ -148,10 +172,11 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getRecruitmentStatus, submitRecruitmentRegistration } from '@/api/recruitment'
+import { collegeOptions } from '@/constants/colleges'
 
 const formRef = ref(null)
 const uploadRef = ref(null)
@@ -173,6 +198,8 @@ const departmentOptions = [
 const form = reactive({
   realName: '',
   studentNo: '',
+  password: '',
+  confirmPassword: '',
   gender: null,
   phone: '',
   idCard: '',
@@ -186,6 +213,21 @@ const form = reactive({
 const rules = {
   realName: [{ required: true, message: '请输入真实姓名', trigger: 'blur' }],
   studentNo: [{ required: true, message: '请输入学号', trigger: 'blur' }],
+  // 202609011534 - 公开注册改为由注册人自行设置并确认登录密码。
+  password: [
+    { required: true, message: '请设置登录密码', trigger: 'blur' },
+    { pattern: /^(?=.*[A-Za-z])(?=.*\d)\S{8,50}$/, message: '密码须为8至50位且同时包含字母和数字', trigger: 'blur' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入登录密码', trigger: 'blur' },
+    {
+      validator: (_rule, value, callback) => {
+        if (value === form.password) callback()
+        else callback(new Error('两次输入的密码不一致'))
+      },
+      trigger: 'blur'
+    }
+  ],
   gender: [{ required: true, message: '请选择性别', trigger: 'change' }],
   phone: [
     { required: true, message: '请输入手机号', trigger: 'blur' },
@@ -195,13 +237,10 @@ const rules = {
     { required: true, message: '请输入身份证号', trigger: 'blur' },
     { pattern: /^\d{17}[\dXx]$/, message: '请输入正确的18位身份证号', trigger: 'blur' }
   ],
-  college: [{ required: true, message: '请输入二级学院', trigger: 'blur' }],
+  college: [{ required: true, message: '请选择二级学院', trigger: 'change' }],
   className: [{ required: true, message: '请输入班级', trigger: 'blur' }],
   dormAddress: [{ required: true, message: '请输入宿舍地址', trigger: 'blur' }],
-  bankCard: [
-    { required: true, message: '请输入银行卡号', trigger: 'blur' },
-    { pattern: /^\d{10,30}$/, message: '银行卡号应为10到30位数字', trigger: 'blur' }
-  ],
+  bankCard: [{ pattern: /^$|^\d{10,30}$/, message: '银行卡号应为10到30位数字', trigger: 'blur' }],
   deptCode: [{ required: true, message: '请选择所属部门', trigger: 'change' }]
 }
 
@@ -214,6 +253,22 @@ const loadStatus = async () => {
     loading.value = false
   }
 }
+
+const registrationStatusTitle = computed(() => {
+  if (!status.value?.published) return '注册已暂停'
+  if (status.value?.publishStartAt && new Date() < new Date(status.value.publishStartAt)) return '注册尚未开始'
+  return '注册已结束'
+})
+
+const registrationStatusMessage = computed(() => {
+  if (!status.value?.published) return '当前暂不接收新的注册信息，请等待管理员重新发布。'
+  if (status.value?.publishStartAt && new Date() < new Date(status.value.publishStartAt)) {
+    return `注册将于 ${formatTime(status.value.publishStartAt)} 开放。`
+  }
+  return status.value?.publishEndAt
+    ? `本次注册已于 ${formatTime(status.value.publishEndAt)} 结束。`
+    : '当前暂不接收新的注册信息。'
+})
 
 const normalizeIdCard = () => {
   form.idCard = form.idCard.trim().toUpperCase()
@@ -248,15 +303,10 @@ const handleSubmit = async () => {
   } catch {
     return
   }
-  if (!photoFile.value) {
-    ElMessage.warning('请选择照片')
-    return
-  }
-
   const latest = await getRecruitmentStatus()
   status.value = latest.data
-  if (!status.value?.published) {
-    ElMessage.warning('招新注册当前已暂停')
+  if (!status.value?.acceptingRegistration) {
+    ElMessage.warning(registrationStatusTitle.value)
     return
   }
   await openCaptcha()
@@ -410,6 +460,21 @@ onBeforeUnmount(closeCaptcha)
 .paused-panel,
 .completed-panel {
   min-height: 360px;
+}
+
+/* 202609011625 - 修复了注册暂停与注册完成内容没有在状态卡片正中央显示的问题。 */
+.paused-panel :deep(.el-card__body),
+.completed-panel :deep(.el-card__body) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 360px;
+  box-sizing: border-box;
+}
+
+.paused-panel :deep(.el-result),
+.completed-panel :deep(.el-result) {
+  width: 100%;
 }
 
 .completed-panel p + p {

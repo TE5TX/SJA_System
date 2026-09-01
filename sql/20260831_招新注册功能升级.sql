@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS `sys_recruitment_form` (
   `is_published` TINYINT NOT NULL DEFAULT 0 COMMENT '是否发布：0暂停，1发布',
   `published_by` BIGINT UNSIGNED NULL COMMENT '最近一次发布人员ID',
   `published_at` DATETIME NULL COMMENT '最近一次发布时间',
+  `publish_start_at` DATETIME NULL COMMENT '公开注册开放时间，NULL表示立即开放',
+  `publish_end_at` DATETIME NULL COMMENT '公开注册结束时间，NULL表示不自动结束',
   `updated_by` BIGINT UNSIGNED NULL COMMENT '最近一次状态修改人员ID',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

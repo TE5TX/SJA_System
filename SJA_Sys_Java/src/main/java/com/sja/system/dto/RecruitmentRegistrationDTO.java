@@ -19,6 +19,16 @@ public class RecruitmentRegistrationDTO {
     @Size(max = 20, message = "学号不能超过 20 个字符")
     private String studentNo;
 
+    // 202609011534 - 注册人员自行设置密码，并在服务层二次确认两次输入一致。
+    @NotBlank(message = "请设置登录密码")
+    @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)\\S{8,50}$",
+            message = "密码应为 8 到 50 位，且同时包含字母和数字")
+    private String password;
+
+    @NotBlank(message = "请再次输入登录密码")
+    @Size(max = 50, message = "确认密码不能超过 50 个字符")
+    private String confirmPassword;
+
     @NotNull(message = "请选择性别")
     @Min(value = 1, message = "性别参数不正确")
     @Max(value = 2, message = "性别参数不正确")
@@ -44,8 +54,7 @@ public class RecruitmentRegistrationDTO {
     @Size(max = 100, message = "宿舍地址不能超过 100 个字符")
     private String dormAddress;
 
-    @NotBlank(message = "银行卡号不能为空")
-    @Pattern(regexp = "^\\d{10,30}$", message = "银行卡号格式不正确")
+    @Pattern(regexp = "^$|^\\d{10,30}$", message = "银行卡号格式不正确")
     private String bankCard;
 
     @NotBlank(message = "请选择所属部门")

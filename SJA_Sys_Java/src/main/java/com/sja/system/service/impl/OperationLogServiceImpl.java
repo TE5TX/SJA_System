@@ -1,6 +1,7 @@
 package com.sja.system.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sja.system.common.PageResult;
 import com.sja.system.common.MaskingUtils;
@@ -57,6 +58,15 @@ public class OperationLogServiceImpl implements OperationLogService {
                            String targetModule, String detail) {
         insertLog(userId, realName, roleName, operationType, targetModule, null,
                 detail, null, null, null, "FAILURE");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void detachUserReferences(Long userId) {
+        // 202609011700 - 完成了删除人员时保留历史审计日志并解除用户外键引用的处理。
+        sysOperationLogMapper.update(null, new UpdateWrapper<SysOperationLog>()
+                .eq("user_id", userId)
+                .set("user_id", null));
     }
 
     private void insertLog(Long userId, String realName, String roleName, String operationType,

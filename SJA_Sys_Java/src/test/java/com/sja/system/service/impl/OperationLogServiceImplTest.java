@@ -4,10 +4,12 @@ import com.sja.system.entity.SysOperationLog;
 import com.sja.system.mapper.SysOperationLogMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,5 +37,15 @@ class OperationLogServiceImplTest {
         ArgumentCaptor<SysOperationLog> captor = ArgumentCaptor.forClass(SysOperationLog.class);
         verify(mapper).insert(captor.capture());
         assertEquals("FAILURE", captor.getValue().getResultStatus());
+    }
+
+    @Test
+    void detachesUserReferenceWithoutDeletingAuditRows() {
+        SysOperationLogMapper mapper = mock(SysOperationLogMapper.class);
+        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper);
+
+        service.detachUserReferences(8L);
+
+        verify(mapper).update(eq(null), any(UpdateWrapper.class));
     }
 }

@@ -20,6 +20,11 @@ public class SysRecruitmentForm {
 
     private LocalDateTime publishedAt;
 
+    // 202609011534 - 公开注册的可调整开放时间段。
+    private LocalDateTime publishStartAt;
+
+    private LocalDateTime publishEndAt;
+
     private Long updatedBy;
 
     private LocalDateTime createTime;

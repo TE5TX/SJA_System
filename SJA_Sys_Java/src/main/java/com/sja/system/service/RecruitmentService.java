@@ -28,7 +28,6 @@ public class RecruitmentService {
 
     private static final long FORM_ID = 1L;
     private static final int VISITOR_ROLE_CODE = 13;
-    private static final String INITIAL_PASSWORD = "asdf123456";
     private static final Set<Integer> MANAGER_ROLE_CODES = Set.of(0, 1, 3);
     private static final Set<String> ALLOWED_DEPT_CODES =
             Set.of("EDITORIAL", "PHOTOGRAPHY", "VISUAL", "VIDEO");
@@ -45,14 +44,21 @@ public class RecruitmentService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public RecruitmentStatusVO updateStatus(boolean published, Long operatorId,
+    public RecruitmentStatusVO updateStatus(boolean published, LocalDateTime publishStartAt,
+                                            LocalDateTime publishEndAt, Long operatorId,
                                             String operatorName, Integer roleCode) {
         assertManager(roleCode);
         SysRecruitmentForm state = requireState(recruitmentFormMapper.selectRegistrationStateForUpdate());
         LocalDateTime now = LocalDateTime.now();
         boolean changed = !Objects.equals(state.getIsPublished(), published ? 1 : 0);
 
+        // 202609011534 - 发布状态与开放时间段一起保存，防止仅靠前端限制注册时间。
+        LocalDateTime effectiveStartAt = published && publishStartAt == null ? now : publishStartAt;
+        validateSchedule(effectiveStartAt, publishEndAt);
+
         state.setIsPublished(published ? 1 : 0);
+        state.setPublishStartAt(effectiveStartAt);
+        state.setPublishEndAt(publishEndAt);
         state.setUpdatedBy(operatorId);
         state.setUpdateTime(now);
         if (published && changed) {
@@ -63,8 +69,9 @@ public class RecruitmentService {
             throw new IllegalStateException("招新表单状态更新失败");
         }
 
+        String detail = published ? "发布招新注册表单" : "暂停招新注册表单";
         operationLogService.log(operatorId, operatorName, String.valueOf(roleCode), "UPDATE",
-                "RECRUITMENT", FORM_ID, published ? "发布招新注册表单" : "暂停招新注册表单", "");
+                "RECRUITMENT", FORM_ID, detail, "开放时间=" + effectiveStartAt + "；结束时间=" + publishEndAt);
         return toStatus(state);
     }
 
@@ -72,8 +79,10 @@ public class RecruitmentService {
     public void register(RecruitmentRegistrationDTO dto, MultipartFile photo) {
         // 202608312329 - 共享锁允许并发报名，并确保暂停操作与报名提交互斥。
         SysRecruitmentForm state = requireState(recruitmentFormMapper.selectRegistrationStateForShare());
-        if (!Objects.equals(state.getIsPublished(), 1)) {
-            throw ApiException.conflict("招新注册当前已暂停");
+        assertRegistrationOpen(state, LocalDateTime.now());
+
+        if (!dto.getPassword().equals(dto.getConfirmPassword())) {
+            throw ApiException.badRequest("两次输入的密码不一致");
         }
 
         String deptCode = dto.getDeptCode().trim().toUpperCase();
@@ -93,13 +102,17 @@ public class RecruitmentService {
             throw ApiException.serviceUnavailable("游客角色未正确配置");
         }
 
-        String photoUrl = avatarStorageService.store(photo);
-        avatarStorageService.deleteAfterRollback(photoUrl);
+        String photoUrl = null;
+        if (photo != null && !photo.isEmpty()) {
+            photoUrl = avatarStorageService.store(photo);
+            avatarStorageService.deleteAfterRollback(photoUrl);
+        }
 
         UserCreateDTO user = new UserCreateDTO();
         user.setRealName(dto.getRealName());
         user.setStudentNo(dto.getStudentNo());
-        user.setPassword(INITIAL_PASSWORD);
+        user.setPassword(dto.getPassword());
+        user.setRequirePasswordChange(false);
         user.setGender(dto.getGender());
         user.setPhoto(photoUrl);
         user.setIdCard(dto.getIdCard());
@@ -113,7 +126,7 @@ public class RecruitmentService {
         user.setIsValid(1);
         user.setRemark("通过招新注册表单创建");
         try {
-            userService.createUser(user, null, "招新注册表单", String.valueOf(VISITOR_ROLE_CODE));
+            userService.createUser(user, null, dto.getRealName().trim(), String.valueOf(VISITOR_ROLE_CODE));
         } catch (DuplicateKeyException exception) {
             // 202609010054 - 并发重复报名最终以数据库唯一约束为准，并返回明确的业务错误。
             throw ApiException.conflict("学号、手机号或身份证号已被注册");
@@ -137,7 +150,34 @@ public class RecruitmentService {
         RecruitmentStatusVO status = new RecruitmentStatusVO();
         status.setPublished(Objects.equals(state.getIsPublished(), 1));
         status.setPublishedAt(state.getPublishedAt());
+        status.setPublishStartAt(state.getPublishStartAt());
+        status.setPublishEndAt(state.getPublishEndAt());
+        status.setAcceptingRegistration(isRegistrationOpen(state, LocalDateTime.now()));
         status.setUpdatedAt(state.getUpdateTime());
         return status;
+    }
+
+    private void validateSchedule(LocalDateTime publishStartAt, LocalDateTime publishEndAt) {
+        if (publishStartAt != null && publishEndAt != null && !publishEndAt.isAfter(publishStartAt)) {
+            throw ApiException.badRequest("结束时间必须晚于开放时间");
+        }
+    }
+
+    private void assertRegistrationOpen(SysRecruitmentForm state, LocalDateTime now) {
+        if (!Objects.equals(state.getIsPublished(), 1)) {
+            throw ApiException.conflict("注册当前已暂停");
+        }
+        if (state.getPublishStartAt() != null && now.isBefore(state.getPublishStartAt())) {
+            throw ApiException.conflict("注册尚未开始");
+        }
+        if (state.getPublishEndAt() != null && !now.isBefore(state.getPublishEndAt())) {
+            throw ApiException.conflict("注册已结束");
+        }
+    }
+
+    private boolean isRegistrationOpen(SysRecruitmentForm state, LocalDateTime now) {
+        return Objects.equals(state.getIsPublished(), 1)
+                && (state.getPublishStartAt() == null || !now.isBefore(state.getPublishStartAt()))
+                && (state.getPublishEndAt() == null || now.isBefore(state.getPublishEndAt()));
     }
 }

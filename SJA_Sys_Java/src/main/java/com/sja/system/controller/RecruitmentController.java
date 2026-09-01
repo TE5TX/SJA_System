@@ -39,7 +39,7 @@ public class RecruitmentController {
     @PostMapping(value = "/register", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<Void> register(
             @RequestPart("data") @Valid RecruitmentRegistrationDTO dto,
-            @RequestPart("photo") MultipartFile photo) {
+            @RequestPart(value = "photo", required = false) MultipartFile photo) {
         if (!loginCaptchaService.consume(dto.getCaptchaToken().trim())) {
             throw ApiException.badRequest("验证码无效或已过期，请重新验证");
         }
@@ -58,7 +58,7 @@ public class RecruitmentController {
             throw ApiException.unauthorized("未授权");
         }
         return Result.success(recruitmentService.updateStatus(
-                dto.getPublished(), operatorId,
+                dto.getPublished(), dto.getPublishStartAt(), dto.getPublishEndAt(), operatorId,
                 securityUtils.getCurrentUsernameFromToken(request), roleCode));
     }
 }

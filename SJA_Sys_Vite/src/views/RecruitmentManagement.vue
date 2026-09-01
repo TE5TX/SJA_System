@@ -1,7 +1,7 @@
 <template>
   <div class="recruitment-management">
     <div class="page-title">
-      <h1>招新管理</h1>
+      <h1>注册管理</h1>
       <p>控制公开注册表单的发布状态，报名人员将以游客身份加入所选部门。</p>
     </div>
 
@@ -9,8 +9,8 @@
       <template #header>
         <div class="panel-header">
           <span>注册表单</span>
-          <el-tag :type="status?.published ? 'success' : 'info'" effect="light">
-            {{ status?.published ? '已发布' : '已暂停' }}
+          <el-tag :type="statusTagType" effect="light">
+            {{ statusLabel }}
           </el-tag>
         </div>
       </template>
@@ -18,8 +18,8 @@
       <el-skeleton v-if="loading" :rows="4" animated />
       <template v-else>
         <el-alert
-          :title="status?.published ? '公开报名入口当前可以填写并提交。' : '公开报名入口当前不可填写。'"
-          :type="status?.published ? 'success' : 'warning'"
+          :title="statusMessage"
+          :type="status?.acceptingRegistration ? 'success' : 'warning'"
           :closable="false"
           show-icon
         />
@@ -30,14 +30,40 @@
             <strong>游客</strong>
           </div>
           <div>
-            <span class="summary-label">初始密码</span>
-            <strong>asdf123456</strong>
-          </div>
-          <div>
             <span class="summary-label">最近发布时间</span>
             <strong>{{ formatTime(status?.publishedAt) }}</strong>
           </div>
         </div>
+
+        <el-form class="schedule-form" label-position="top" :disabled="saving">
+          <el-row :gutter="20">
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="开放时间">
+                <el-date-picker
+                  v-model="schedule.publishStartAt"
+                  type="datetime"
+                  value-format="YYYY-MM-DDTHH:mm:ss"
+                  format="YYYY-MM-DD HH:mm:ss"
+                  placeholder="留空则发布后立即开放"
+                  clearable
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="结束时间">
+                <el-date-picker
+                  v-model="schedule.publishEndAt"
+                  type="datetime"
+                  value-format="YYYY-MM-DDTHH:mm:ss"
+                  format="YYYY-MM-DD HH:mm:ss"
+                  placeholder="留空则不自动结束"
+                  clearable
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <div class="schedule-tip">结束时间必须晚于开放时间。已发布的表单也可以在此调整开放和结束时间。</div>
+        </el-form>
 
         <div class="public-link-row">
           <div class="public-link-field">
@@ -49,6 +75,9 @@
         </div>
 
         <div class="action-bar">
+          <el-button :loading="saving" @click="saveSchedule">
+            保存时间设置
+          </el-button>
           <el-button
             v-if="!status?.published"
             type="primary"
@@ -74,7 +103,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { CopyDocument, Promotion, VideoPause, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getRecruitmentStatus, updateRecruitmentStatus } from '@/api/recruitment'
@@ -82,15 +111,61 @@ import { getRecruitmentStatus, updateRecruitmentStatus } from '@/api/recruitment
 const loading = ref(false)
 const saving = ref(false)
 const status = ref(null)
+const schedule = reactive({ publishStartAt: null, publishEndAt: null })
 const publicUrl = computed(() => `${window.location.origin}/recruit`)
+
+const statusLabel = computed(() => {
+  if (!status.value?.published) return '已暂停'
+  if (status.value?.acceptingRegistration) return '开放中'
+  if (status.value?.publishStartAt && new Date() < new Date(status.value.publishStartAt)) return '待开放'
+  return '已结束'
+})
+
+const statusTagType = computed(() => status.value?.acceptingRegistration ? 'success' : 'info')
+
+const statusMessage = computed(() => {
+  if (!status.value?.published) return '公开注册入口当前不可填写。'
+  if (status.value?.acceptingRegistration) return '公开注册入口当前可以填写并提交。'
+  if (status.value?.publishStartAt && new Date() < new Date(status.value.publishStartAt)) {
+    return `公开注册将于 ${formatTime(status.value.publishStartAt)} 开放。`
+  }
+  return '公开注册时间已结束，请调整结束时间或重新发布。'
+})
+
+const syncSchedule = value => {
+  schedule.publishStartAt = value?.publishStartAt || null
+  schedule.publishEndAt = value?.publishEndAt || null
+}
 
 const loadStatus = async () => {
   loading.value = true
   try {
     const response = await getRecruitmentStatus()
     status.value = response.data
+    syncSchedule(response.data)
   } finally {
     loading.value = false
+  }
+}
+
+const saveStatus = async (published, successMessage) => {
+  if (schedule.publishStartAt && schedule.publishEndAt
+    && new Date(schedule.publishEndAt) <= new Date(schedule.publishStartAt)) {
+    ElMessage.warning('结束时间必须晚于开放时间')
+    return
+  }
+  saving.value = true
+  try {
+    const response = await updateRecruitmentStatus({
+      published,
+      publishStartAt: schedule.publishStartAt,
+      publishEndAt: schedule.publishEndAt
+    })
+    status.value = response.data
+    syncSchedule(response.data)
+    ElMessage.success(successMessage)
+  } finally {
+    saving.value = false
   }
 }
 
@@ -104,15 +179,11 @@ const changeStatus = async (published) => {
     { type: published ? 'info' : 'warning', confirmButtonText: action, cancelButtonText: '取消' }
   )
 
-  saving.value = true
-  try {
-    const response = await updateRecruitmentStatus(published)
-    status.value = response.data
-    ElMessage.success(`注册表单已${action}`)
-  } finally {
-    saving.value = false
-  }
+  await saveStatus(published, `注册表单已${action}`)
 }
+
+// 202609011534 - 管理员可独立保存公开注册的开放和结束时间。
+const saveSchedule = async () => saveStatus(Boolean(status.value?.published), '注册时间设置已保存')
 
 const copyPublicUrl = async () => {
   try {
@@ -183,6 +254,20 @@ onMounted(loadStatus)
   overflow-wrap: anywhere;
 }
 
+.schedule-form {
+  margin: 24px 0;
+}
+
+.schedule-form :deep(.el-date-editor) {
+  width: 100%;
+}
+
+.schedule-tip {
+  margin-top: -6px;
+  color: #909399;
+  font-size: 13px;
+}
+
 .public-link-row {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) auto auto;
@@ -217,6 +302,7 @@ onMounted(loadStatus)
   }
 
   .public-link-row .el-button,
+  .schedule-form :deep(.el-date-editor),
   .action-bar .el-button {
     width: 100%;
     margin: 0;

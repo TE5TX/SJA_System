@@ -120,7 +120,7 @@
             </el-menu-item>
             <el-menu-item v-if="canManageRecruitment" index="/app/recruitment">
               <el-icon><Promotion /></el-icon>
-              <template #title>招新管理</template>
+              <template #title>注册管理</template>
             </el-menu-item>
           </el-sub-menu>
 

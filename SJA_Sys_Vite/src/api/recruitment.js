@@ -8,18 +8,21 @@ export function getRecruitmentStatus() {
   })
 }
 
-export function updateRecruitmentStatus(published) {
+export function updateRecruitmentStatus(data) {
   return request({
     url: '/v1/recruitment/manage/status',
     method: 'put',
-    data: { published }
+    data
   })
 }
 
 export function submitRecruitmentRegistration(data, photo) {
   const formData = new FormData()
   formData.append('data', new Blob([JSON.stringify(data)], { type: 'application/json' }))
-  formData.append('photo', photo)
+  // 202609011534 - 照片改为非必填时，只在用户选择文件后提交该分段。
+  if (photo) {
+    formData.append('photo', photo)
+  }
   return request({
     url: '/v1/recruitment/register',
     method: 'post',

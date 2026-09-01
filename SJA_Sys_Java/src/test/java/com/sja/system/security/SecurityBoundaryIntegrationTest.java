@@ -138,18 +138,17 @@ class SecurityBoundaryIntegrationTest {
     void allowsAnonymousRecruitmentSubmissionThroughSecurityBoundary() throws Exception {
         String json = """
                 {"realName":"测试新生","studentNo":"202600000001","gender":1,
+                 "password":"Test123456","confirmPassword":"Test123456",
                  "phone":"13800000000","idCard":"440000200001010001",
                  "college":"计算机学院","className":"26计科A班","dormAddress":"1栋101",
-                 "bankCard":"6222000000000000","deptCode":"EDITORIAL",
+                 "deptCode":"EDITORIAL",
                  "captchaToken":"captcha-token"}
                 """;
         MockMultipartFile data = new MockMultipartFile(
                 "data", "data.json", "application/json", json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        MockMultipartFile photo = new MockMultipartFile(
-                "photo", "avatar.png", "image/png", new byte[]{1});
         when(loginCaptchaService.consume("captcha-token")).thenReturn(true);
 
-        mockMvc.perform(multipart("/api/v1/recruitment/register").file(data).file(photo))
+        mockMvc.perform(multipart("/api/v1/recruitment/register").file(data))
                 .andExpect(status().isOk());
     }
 

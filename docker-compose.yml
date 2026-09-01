@@ -27,6 +27,9 @@ services:
       - mysql_data:/var/lib/mysql
       - ./sql/sja_system_db_202608131609.sql:/docker-entrypoint-initdb.d/01-schema-data.sql:ro
       - ./sql/20260819_异步任务队列升级.sql:/docker-entrypoint-initdb.d/02-async-task-queue.sql:ro
+      # 202609011534 - 新数据卷自动初始化公开注册表单及其可调整时间段。
+      - ./sql/20260831_招新注册功能升级.sql:/docker-entrypoint-initdb.d/03-recruitment-form.sql:ro
+      - ./sql/20260901_注册时间与自设密码升级.sql:/docker-entrypoint-initdb.d/04-recruitment-schedule.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot --password=\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
       interval: 10s

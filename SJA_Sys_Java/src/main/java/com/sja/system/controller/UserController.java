@@ -8,6 +8,7 @@ import com.sja.system.dto.PasswordUpdateDTO;
 import com.sja.system.dto.ProfileUpdateDTO;
 import com.sja.system.dto.UserBatchUpdateDTO;
 import com.sja.system.dto.UserCreateDTO;
+import com.sja.system.dto.UserDeleteDTO;
 import com.sja.system.dto.UserExportDTO;
 import com.sja.system.dto.UserImportConfirmDTO;
 import com.sja.system.dto.UserQueryDTO;
@@ -310,6 +311,25 @@ public class UserController {
         }
         userService.updateUser(id, updates, operatorId, operatorName, operatorRole);
         return Result.success();
+    }
+
+    // 202609011700 - 完成了人员管理密码二次确认后的人员永久删除功能。
+    @DeleteMapping("/users/{id}")
+    @PreAuthorize("hasAuthority('sys:users:edit')")
+    public Result<Void> deleteUser(@PathVariable Long id,
+                                   @RequestBody @Valid UserDeleteDTO body,
+                                   HttpServletRequest request) {
+        Long operatorId = securityUtils.getCurrentUserId(request);
+        Integer roleCode = securityUtils.getCurrentRoleCode(request);
+        if (operatorId == null) {
+            return Result.error(401, "未授权");
+        }
+
+        userService.verifyCurrentPassword(operatorId, body.getCurrentPassword());
+        userService.deleteUser(id, operatorId,
+                securityUtils.getCurrentUsernameFromToken(request),
+                roleCode != null ? String.valueOf(roleCode) : "");
+        return Result.success("人员删除成功", null);
     }
 
     @PutMapping("/users/{id}/password/reset")

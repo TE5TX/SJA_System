@@ -243,6 +243,7 @@ import { changePassword } from '@/api/auth'
 import { uploadAvatar } from '@/api/upload'
 import { useUserStore } from '@/store/user'
 import AuthenticatedAvatar from '@/components/AuthenticatedAvatar.vue'
+import { collegeOptions } from '@/constants/colleges'
 
 const userStore = useUserStore()
 const activeTab = ref('overview')
@@ -250,18 +251,6 @@ const submitLoading = ref(false)
 const passwordLoading = ref(false)
 const formRef = ref(null)
 const passwordFormRef = ref(null)
-const collegeOptions = [
-  '电子信息学院',
-  '机电工程学院',
-  '计算机学院',
-  '经贸学院',
-  '人文社会科学学院',
-  '材料与食品学院',
-  '外国语学院',
-  '艺术设计学院',
-  '管理学院'
-]
-
 // 用户信息（优先用 store 中的，后续可从接口刷新）
 const userInfo = computed(() => userStore.userInfo || {})
 

@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.time.LocalDateTime;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,7 +43,9 @@ class RecruitmentServiceTest {
     @Test
     void createsPublishedRegistrationAsVisitorInSelectedDepartment() {
         Fixture fixture = fixture();
-        when(fixture.formMapper.selectRegistrationStateForShare()).thenReturn(state(true));
+        SysRecruitmentForm state = state(true);
+        state.setPublishStartAt(LocalDateTime.now().minusMinutes(1));
+        when(fixture.formMapper.selectRegistrationStateForShare()).thenReturn(state);
 
         SysDept department = new SysDept();
         department.setId(2L);
@@ -53,20 +57,48 @@ class RecruitmentServiceTest {
         visitor.setIsValid(1);
         when(fixture.deptMapper.selectOne(any())).thenReturn(department);
         when(fixture.roleMapper.selectOne(any())).thenReturn(visitor);
-        when(fixture.avatarStorageService.store(any())).thenReturn("/api/v1/upload/avatar/test.jpg");
         when(fixture.userService.createUser(any(), any(), any(), any())).thenReturn(88L);
 
-        fixture.service.register(registration(), photo());
+        fixture.service.register(registration(), null);
 
         ArgumentCaptor<UserCreateDTO> captor = ArgumentCaptor.forClass(UserCreateDTO.class);
         verify(fixture.userService).createUser(captor.capture(), eq(null),
-                eq("招新注册表单"), eq("13"));
+                eq("测试新生"), eq("13"));
         UserCreateDTO created = captor.getValue();
-        assertEquals("asdf123456", created.getPassword());
+        assertEquals("Test123456", created.getPassword());
+        assertEquals(false, created.getRequirePasswordChange());
+        assertEquals(null, created.getPhoto());
         assertEquals(java.util.List.of(2L), created.getDeptIds());
         assertEquals(java.util.List.of(13L), created.getRoleIds());
         assertEquals(1, created.getIsValid());
-        verify(fixture.avatarStorageService).deleteAfterRollback("/api/v1/upload/avatar/test.jpg");
+        verify(fixture.avatarStorageService, never()).store(any());
+    }
+
+    @Test
+    void rejectsRegistrationOutsideTheConfiguredTimeWindow() {
+        Fixture fixture = fixture();
+        SysRecruitmentForm state = state(true);
+        state.setPublishStartAt(LocalDateTime.now().plusMinutes(1));
+        when(fixture.formMapper.selectRegistrationStateForShare()).thenReturn(state);
+
+        ApiException exception = assertThrows(ApiException.class,
+                () -> fixture.service.register(registration(), null));
+
+        assertEquals(409, exception.getStatus());
+        assertEquals("注册尚未开始", exception.getMessage());
+        verify(fixture.userService, never()).createUser(any(), any(), any(), any());
+    }
+
+    @Test
+    void rejectsStatusTimeRangeWhoseEndIsNotAfterItsStart() {
+        Fixture fixture = fixture();
+        when(fixture.formMapper.selectRegistrationStateForUpdate()).thenReturn(state(false));
+        LocalDateTime start = LocalDateTime.now().plusHours(1);
+
+        ApiException exception = assertThrows(ApiException.class,
+                () -> fixture.service.updateStatus(true, start, start, 1L, "管理员", 0));
+
+        assertEquals(400, exception.getStatus());
     }
 
     @Test
@@ -74,7 +106,7 @@ class RecruitmentServiceTest {
         Fixture fixture = fixture();
 
         ApiException exception = assertThrows(ApiException.class,
-                () -> fixture.service.updateStatus(true, 9L, "部长", 4));
+                () -> fixture.service.updateStatus(true, null, null, 9L, "部长", 4));
 
         assertEquals(403, exception.getStatus());
         verify(fixture.formMapper, never()).selectRegistrationStateForUpdate();
@@ -104,6 +136,8 @@ class RecruitmentServiceTest {
         RecruitmentRegistrationDTO dto = new RecruitmentRegistrationDTO();
         dto.setRealName("测试新生");
         dto.setStudentNo("202600000001");
+        dto.setPassword("Test123456");
+        dto.setConfirmPassword("Test123456");
         dto.setGender(1);
         dto.setPhone("13800000000");
         dto.setIdCard("440000200001010001");

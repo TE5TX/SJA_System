@@ -65,7 +65,7 @@
             <el-tag :type="row.isValid === 1 ? 'success' : 'danger'">{{ row.isValid === 1 ? '启用' : '禁用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" :icon="Edit" @click="openEdit(row)" class="edit-btn">编辑</el-button>
             <el-button
@@ -75,6 +75,16 @@
               @click="toggleStatus(row)"
             >
               {{ row.isValid === 1 ? '禁用' : '启用' }}
+            </el-button>
+            <el-button
+              link
+              type="danger"
+              :icon="Delete"
+              :loading="deletingId === row.id"
+              :disabled="isCurrentUser(row.id)"
+              @click="handleDeleteUser(row)"
+            >
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -115,6 +125,14 @@
             >
               {{ user.isValid === 1 ? '禁用' : '启用' }}
             </el-button>
+            <el-button
+              type="danger"
+              plain
+              :icon="Delete"
+              :loading="deletingId === user.id"
+              :disabled="isCurrentUser(user.id)"
+              @click="handleDeleteUser(user)"
+            >删除</el-button>
           </div>
         </article>
       </div>
@@ -298,9 +316,9 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { Download, Edit, Plus, Refresh, Search, SwitchButton, UploadFilled } from '@element-plus/icons-vue'
+import { Delete, Download, Edit, Plus, Refresh, Search, SwitchButton, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { batchUpdateUsers, createUser, deleteUserPhoto, exportUsers, getUserDetail, getUserList, resetUserPassword, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
+import { batchUpdateUsers, createUser, deleteUser, deleteUserPhoto, exportUsers, getUserDetail, getUserList, resetUserPassword, updateUser, updateUserPhoto, updateUserStatus } from '@/api/user'
 import { getDeptList, getRoleList } from '@/api/system'
 import { uploadAvatar } from '@/api/upload'
 import AuthenticatedAvatar from '@/components/AuthenticatedAvatar.vue'
@@ -308,6 +326,7 @@ import UserBatchImportDialog from '@/components/UserBatchImportDialog.vue'
 import ResponsiveDialog from '@/components/responsive/ResponsiveDialog.vue'
 import ResponsivePagination from '@/components/responsive/ResponsivePagination.vue'
 import { useUserStore } from '@/store/user'
+import { collegeOptions } from '@/constants/colleges'
 
 // 202608210907 - 在人员管理页增加了仅管理员、主席和秘书长可见的批量注册入口。
 const userStore = useUserStore()
@@ -320,6 +339,7 @@ const saving = ref(false)
 const resetPasswordSaving = ref(false)
 const exportLoading = ref(false)
 const batchSaving = ref(false)
+const deletingId = ref(null)
 const editVisible = ref(false)
 const exportVisible = ref(false)
 const batchVisible = ref(false)
@@ -334,17 +354,6 @@ const depts = ref([])
 const canBatchImport = computed(() => (userStore.userInfo?.roleCodes || [])
   .map(Number)
   .some(roleCode => [0, 1, 3].includes(roleCode)))
-const collegeOptions = [
-  '电子信息学院',
-  '机电工程学院',
-  '计算机学院',
-  '经贸学院',
-  '人文社会科学学院',
-  '材料与食品学院',
-  '外国语学院',
-  '艺术设计学院',
-  '管理学院'
-]
 const editForm = reactive({
   realName: '',
   gender: 0,
@@ -778,6 +787,49 @@ const toggleStatus = row => {
     ElMessage.success(`${action}成功`)
     await loadUsers()
   }).catch(() => {})
+}
+
+const isCurrentUser = userId => Number(userStore.userInfo?.id) === Number(userId)
+
+// 202609011700 - 完成了人员删除前的当前登录账号密码二次确认交互。
+const handleDeleteUser = async row => {
+  if (isCurrentUser(row.id)) {
+    ElMessage.warning('不能删除当前登录账号')
+    return
+  }
+
+  let currentPassword = ''
+  try {
+    const result = await ElMessageBox.prompt(
+      `将永久删除“${row.realName || row.studentNo}”，删除后无法恢复。有稿费或作品关联时系统会阻止删除。请输入当前登录账号密码确认。`,
+      '永久删除人员',
+      {
+        type: 'error',
+        confirmButtonText: '确认永久删除',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputPlaceholder: '当前登录账号密码',
+        inputValidator: value => String(value || '').trim() ? true : '请输入当前登录账号密码',
+        closeOnClickModal: false,
+        showClose: false,
+        distinguishCancelAndClose: true
+      }
+    )
+    currentPassword = result.value
+  } catch {
+    return
+  }
+
+  deletingId.value = row.id
+  try {
+    await deleteUser(row.id, currentPassword)
+    ElMessage.success('人员已永久删除')
+    selectedUsers.value = selectedUsers.value.filter(user => user.id !== row.id)
+    if (users.value.length === 1 && query.pageNum > 1) query.pageNum -= 1
+    await loadUsers()
+  } finally {
+    deletingId.value = null
+  }
 }
 
 const loadOptions = async () => {

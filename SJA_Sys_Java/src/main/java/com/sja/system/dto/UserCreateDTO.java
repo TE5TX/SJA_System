@@ -1,5 +1,6 @@
 package com.sja.system.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import jakarta.validation.constraints.Max;
@@ -25,6 +26,12 @@ public class UserCreateDTO {
 
     @Size(max = 50, message = "初始密码不能超过 50 个字符")
     private String password;
+
+    /**
+     * 仅供受控的服务端流程使用，避免公开注册的自设密码被误标记为首次密码。
+     */
+    @JsonIgnore
+    private Boolean requirePasswordChange;
 
     @Size(max = 255, message = "照片地址不能超过 255 个字符")
     private String photo;

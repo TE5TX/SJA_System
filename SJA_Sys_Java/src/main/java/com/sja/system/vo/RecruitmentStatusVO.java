@@ -11,5 +11,12 @@ public class RecruitmentStatusVO {
 
     private LocalDateTime publishedAt;
 
+    private LocalDateTime publishStartAt;
+
+    private LocalDateTime publishEndAt;
+
+    /** 当前时刻是否实际允许提交注册。 */
+    private boolean acceptingRegistration;
+
     private LocalDateTime updatedAt;
 }
