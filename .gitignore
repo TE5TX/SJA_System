@@ -45,3 +45,8 @@ desktop.ini
 /security-test/captures/
 **/__pycache__/
 *.pyc
+docker-compose.images.yml
+deploy/docker-compose.images.https.yml
+deploy/nginx.https.conf.template
+deploy/security-test/POST_TEST_REMEDIATION_BACKLOG.md
+deploy/security-test/POST_TEST_REMEDIATION_BACKLOG.md
