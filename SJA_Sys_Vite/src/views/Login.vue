@@ -47,7 +47,7 @@
         </el-form-item>
       </el-form>
 
-      <div class="credits">Designed by 校记者团技术部</div>
+      <div class="credits">如需帮助请联系秘书长</div>
     </el-card>
 
     <div v-show="captchaVisible" class="captcha-overlay" @click.self="closeCaptcha">
