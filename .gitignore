@@ -50,3 +50,4 @@ deploy/docker-compose.images.https.yml
 deploy/nginx.https.conf.template
 deploy/security-test/POST_TEST_REMEDIATION_BACKLOG.md
 deploy/security-test/POST_TEST_REMEDIATION_BACKLOG.md
+SJA_System_images_20260901.tar
