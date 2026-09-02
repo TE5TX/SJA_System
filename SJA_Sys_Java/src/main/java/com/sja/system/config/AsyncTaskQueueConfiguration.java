@@ -76,6 +76,12 @@ public class AsyncTaskQueueConfiguration {
                 Consumer.from(properties.getConsumerGroup(), properties.getConsumerName()),
                 StreamOffset.create(properties.getStreamKey(), ReadOffset.lastConsumed()),
                 worker::accept);
+        // 20260901 - 修复了 Redis Stream 监听容器未启动，异步任务始终停留在队列中的问题。
+        container.start();
+        log.info("Redis Stream async task listener started: stream={}, group={}, consumer={}",
+                properties.getStreamKey(),
+                properties.getConsumerGroup(),
+                properties.getConsumerName());
         return container;
     }
 }
