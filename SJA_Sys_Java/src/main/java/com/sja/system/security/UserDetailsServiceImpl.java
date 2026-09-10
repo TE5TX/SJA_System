@@ -1,6 +1,8 @@
 package com.sja.system.security;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.sja.system.application.port.ActiveUserAccessPort;
+import com.sja.system.application.port.ActiveUserAccessPort.ActiveUserAccess;
 import com.sja.system.entity.SysMenu;
 import com.sja.system.entity.SysRole;
 import com.sja.system.entity.SysRoleMenu;
@@ -22,6 +24,8 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -31,7 +35,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class UserDetailsServiceImpl implements UserDetailsService {
+public class UserDetailsServiceImpl implements UserDetailsService, ActiveUserAccessPort {
 
     private static final String PHONE_PATTERN = "^1[3-9]\\d{9}$";
 
@@ -64,17 +68,21 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         return buildPrincipal(user);
     }
 
-    /**
-     * 后台任务执行前按主键重新读取用户，防止沿用入队时已经过期的角色或账号状态。
-     */
-    public SjaUserPrincipal loadUserById(Long userId) throws UsernameNotFoundException {
+    @Override
+    public Optional<ActiveUserAccess> findActiveUserById(Long userId) {
         QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
         userQuery.eq("id", userId).eq("is_valid", 1);
         SysUser user = sysUserMapper.selectOne(userQuery);
         if (user == null) {
-            throw new UsernameNotFoundException("用户不存在或已被禁用");
+            return Optional.empty();
         }
-        return buildPrincipal(user);
+        // 202609101503 - 完成了Security层通过应用端口提供有效用户权限快照的任务。
+        SjaUserPrincipal principal = buildPrincipal(user);
+        Set<String> authorities = principal.getAuthorities().stream()
+                .map(authority -> authority.getAuthority())
+                .collect(Collectors.toSet());
+        return Optional.of(new ActiveUserAccess(user.getId(), user.getUsername(), user.getRealName(),
+                principal.getHighestRoleCode(), authorities));
     }
 
     private SjaUserPrincipal buildPrincipal(SysUser user) {

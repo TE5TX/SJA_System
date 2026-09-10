@@ -1,13 +1,13 @@
 package com.sja.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.sja.system.application.model.TokenPair;
 import com.sja.system.common.ApiException;
 import com.sja.system.entity.SysRefreshToken;
 import com.sja.system.entity.SysUser;
 import com.sja.system.mapper.SysRefreshTokenMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.security.JwtUtils;
-import com.sja.system.security.TokenPair;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;

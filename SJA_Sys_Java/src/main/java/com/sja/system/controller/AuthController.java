@@ -1,6 +1,7 @@
 package com.sja.system.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.sja.system.application.model.TokenPair;
 import com.sja.system.common.ApiException;
 import com.sja.system.common.Result;
 import com.sja.system.dto.LoginDTO;
@@ -11,7 +12,6 @@ import com.sja.system.mapper.SysRoleMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserRoleMapper;
 import com.sja.system.security.SecurityUtils;
-import com.sja.system.security.TokenPair;
 import com.sja.system.service.AuthTokenService;
 import com.sja.system.service.LoginCaptchaService;
 import com.sja.system.service.LoginThrottleService;

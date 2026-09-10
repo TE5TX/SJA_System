@@ -1,16 +1,13 @@
 package com.sja.system.service;
 
 import com.sja.system.async.AsyncTaskEnvelope;
+import com.sja.system.application.port.ActiveUserAccessPort;
+import com.sja.system.application.port.ActiveUserAccessPort.ActiveUserAccess;
+import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeSubmitDTO;
 import com.sja.system.dto.ProfileUpdateDTO;
 import com.sja.system.entity.SysAsyncTaskExecution;
-import com.sja.system.entity.SysUser;
 import com.sja.system.mapper.SysAsyncTaskExecutionMapper;
-import com.sja.system.mapper.SysUserMapper;
-import com.sja.system.security.SjaUserPrincipal;
-import com.sja.system.security.UserDetailsServiceImpl;
-import com.sja.system.common.ApiException;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,8 +25,7 @@ public class AsyncTaskExecutionService {
     private final AsyncTaskQueueService queueService;
     private final UserService userService;
     private final FeeService feeService;
-    private final SysUserMapper sysUserMapper;
-    private final UserDetailsServiceImpl userDetailsService;
+    private final ActiveUserAccessPort activeUserAccessPort;
 
     @Transactional(rollbackFor = Exception.class)
     public void execute(AsyncTaskEnvelope envelope) {
@@ -38,13 +34,9 @@ public class AsyncTaskExecutionService {
             return;
         }
 
-        // 202608192148 - 修复了排队期间账号被禁用或角色被撤销后仍按旧权限执行的问题。
-        SjaUserPrincipal principal;
-        try {
-            principal = userDetailsService.loadUserById(envelope.getOwnerId());
-        } catch (UsernameNotFoundException e) {
-            throw ApiException.forbidden("账号已被禁用或不存在，任务无法继续执行");
-        }
+        // 202609101503 - 修复了异步任务服务直接依赖Security具体实现的问题。
+        ActiveUserAccess activeUser = activeUserAccessPort.findActiveUserById(envelope.getOwnerId())
+                .orElseThrow(() -> ApiException.forbidden("账号已被禁用或不存在，任务无法继续执行"));
 
         switch (envelope.getType()) {
             case PROFILE_UPDATE:
@@ -52,18 +44,12 @@ public class AsyncTaskExecutionService {
                 userService.updateProfile(envelope.getOwnerId(), profile);
                 break;
             case FEE_SUBMIT:
-                boolean canSubmit = principal.getAuthorities().stream()
-                        .anyMatch(authority -> "fee:submit".equals(authority.getAuthority()));
-                if (!canSubmit) {
+                if (!activeUser.hasAuthority("fee:submit")) {
                     throw ApiException.forbidden("稿费提交权限已被撤销");
                 }
-                SysUser user = sysUserMapper.selectById(envelope.getOwnerId());
-                if (user == null) {
-                    throw ApiException.forbidden("用户不存在，任务无法继续执行");
-                }
                 FeeSubmitDTO fee = queueService.decryptPayload(envelope, FeeSubmitDTO.class);
-                feeService.submitFee(envelope.getOwnerId(), user.getUsername(), user.getRealName(),
-                        principal.getHighestRoleCode(), fee);
+                feeService.submitFee(activeUser.userId(), activeUser.username(), activeUser.realName(),
+                        activeUser.highestRoleCode(), fee);
                 break;
             default:
                 throw new IllegalArgumentException("不支持的异步任务类型: " + envelope.getType());

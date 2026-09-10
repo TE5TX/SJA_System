@@ -1,5 +1,6 @@
 package com.sja.system.security;
 
+import com.sja.system.application.port.JwtTokenPort;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 import jakarta.annotation.PostConstruct;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,7 +22,7 @@ import java.util.UUID;
  */
 @Slf4j
 @Component
-public class JwtUtils {
+public class JwtUtils implements JwtTokenPort {
 
     @Value("${jwt.secret}")
     private String secret;
@@ -46,10 +48,12 @@ public class JwtUtils {
      * @param tokenVersion current server-side token version
      * @return signed JWT string
      */
+    @Override
     public String generateAccessToken(Long userId, String username, Integer tokenVersion) {
         return generateToken(userId, username, tokenVersion, "ACCESS", accessExpiration);
     }
 
+    @Override
     public String generateRefreshToken(Long userId, String username, Integer tokenVersion) {
         return generateToken(userId, username, tokenVersion, "REFRESH", refreshExpiration);
     }
@@ -89,6 +93,7 @@ public class JwtUtils {
     /**
      * Extract userId claim.
      */
+    @Override
     public Long getUserId(String token) {
         Claims claims = parseToken(token);
         return claims.get("userId", Long.class);
@@ -97,6 +102,7 @@ public class JwtUtils {
     /**
      * Extract username claim (also available via getSubject).
      */
+    @Override
     public String getUsername(String token) {
         Claims claims = parseToken(token);
         return claims.get("username", String.class);
@@ -105,6 +111,7 @@ public class JwtUtils {
     /**
      * Extract the server-side revocation version claim.
      */
+    @Override
     public Integer getTokenVersion(String token) {
         Number version = parseToken(token).get("tokenVersion", Number.class);
         return version == null ? 0 : version.intValue();
@@ -114,12 +121,18 @@ public class JwtUtils {
         return parseToken(token).get("tokenType", String.class);
     }
 
+    @Override
     public String getTokenId(String token) {
         return parseToken(token).getId();
     }
 
     public Date getExpiration(String token) {
         return parseToken(token).getExpiration();
+    }
+
+    @Override
+    public Instant getExpirationInstant(String token) {
+        return getExpiration(token).toInstant();
     }
 
     /**
@@ -139,6 +152,7 @@ public class JwtUtils {
         return validateToken(token) && "ACCESS".equals(getTokenType(token));
     }
 
+    @Override
     public boolean validateRefreshToken(String token) {
         return validateToken(token) && "REFRESH".equals(getTokenType(token));
     }

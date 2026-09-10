@@ -1,6 +1,7 @@
 package com.sja.system.security;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.sja.system.application.port.ActiveUserAccessPort.ActiveUserAccess;
 import com.sja.system.entity.SysUser;
 import com.sja.system.mapper.SysMenuMapper;
 import com.sja.system.mapper.SysRoleMapper;
@@ -13,6 +14,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -40,5 +42,27 @@ class UserDetailsServiceImplLoginTest {
 
         assertEquals("2026000000001", details.getUsername());
         assertEquals("encoded-password", details.getPassword());
+    }
+
+    @Test
+    void exposesActiveUserThroughTheApplicationPort() {
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        SysUserRoleMapper userRoleMapper = mock(SysUserRoleMapper.class);
+        UserDetailsServiceImpl service = new UserDetailsServiceImpl(userMapper, userRoleMapper,
+                mock(SysRoleMapper.class), mock(SysRoleMenuMapper.class), mock(SysMenuMapper.class));
+        SysUser user = new SysUser();
+        user.setId(9L);
+        user.setUsername("2026000000001");
+        user.setRealName("测试用户");
+        user.setPassword("encoded-password");
+        when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
+        when(userRoleMapper.selectList(any(Wrapper.class))).thenReturn(Collections.emptyList());
+
+        // 202609101503 - 完成了有效用户权限端口适配结果的测试。
+        ActiveUserAccess access = service.findActiveUserById(9L).orElseThrow();
+
+        assertEquals("2026000000001", access.username());
+        assertEquals("测试用户", access.realName());
+        assertTrue(access.hasAuthority("ROLE_13"));
     }
 }

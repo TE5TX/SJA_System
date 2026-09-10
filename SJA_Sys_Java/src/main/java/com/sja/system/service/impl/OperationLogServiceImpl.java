@@ -3,6 +3,8 @@ package com.sja.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sja.system.application.port.AuditRequestContextProvider;
+import com.sja.system.application.port.AuditRequestContextProvider.AuditRequestContext;
 import com.sja.system.common.PageResult;
 import com.sja.system.common.MaskingUtils;
 import com.sja.system.dto.OperationLogQueryDTO;
@@ -13,13 +15,8 @@ import com.sja.system.vo.OperationLogVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
-import com.sja.system.security.RequestTraceFilter;
-
-import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -34,6 +31,7 @@ import java.util.stream.Collectors;
 public class OperationLogServiceImpl implements OperationLogService {
 
     private final SysOperationLogMapper sysOperationLogMapper;
+    private final AuditRequestContextProvider auditRequestContextProvider;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -85,19 +83,15 @@ public class OperationLogServiceImpl implements OperationLogService {
         logEntity.setAfterData(MaskingUtils.sanitizeLogDetail(afterData));
         logEntity.setResultStatus(resultStatus);
 
-        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attributes != null) {
-            HttpServletRequest request = attributes.getRequest();
-            Object requestId = request.getAttribute(RequestTraceFilter.REQUEST_ID_ATTRIBUTE);
-            Object start = request.getAttribute(RequestTraceFilter.REQUEST_START_ATTRIBUTE);
-            logEntity.setRequestId(requestId == null ? null : requestId.toString());
-            logEntity.setRequestMethod(request.getMethod());
-            logEntity.setRequestUri(truncate(request.getRequestURI(), 255));
-            logEntity.setUserAgent(truncate(request.getHeader("User-Agent"), 500));
-            logEntity.setIpAddress(request.getRemoteAddr());
-            if (start instanceof Long) {
-                logEntity.setDurationMs(Math.max(0, System.currentTimeMillis() - (Long) start));
-            }
+        // 202609101503 - 修复了操作日志服务反向依赖Servlet和Security层的问题。
+        AuditRequestContext requestContext = auditRequestContextProvider.currentContext().orElse(null);
+        if (requestContext != null) {
+            logEntity.setRequestId(requestContext.requestId());
+            logEntity.setRequestMethod(requestContext.requestMethod());
+            logEntity.setRequestUri(truncate(requestContext.requestUri(), 255));
+            logEntity.setUserAgent(truncate(requestContext.userAgent(), 500));
+            logEntity.setIpAddress(requestContext.ipAddress());
+            logEntity.setDurationMs(requestContext.durationMs());
         } else {
             logEntity.setIpAddress(ipAddress);
         }

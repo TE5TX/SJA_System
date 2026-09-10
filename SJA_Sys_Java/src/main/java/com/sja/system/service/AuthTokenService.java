@@ -2,13 +2,13 @@ package com.sja.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.sja.system.application.model.TokenPair;
+import com.sja.system.application.port.JwtTokenPort;
 import com.sja.system.common.ApiException;
 import com.sja.system.entity.SysRefreshToken;
 import com.sja.system.entity.SysUser;
 import com.sja.system.mapper.SysRefreshTokenMapper;
 import com.sja.system.mapper.SysUserMapper;
-import com.sja.system.security.JwtUtils;
-import com.sja.system.security.TokenPair;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,26 +25,27 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthTokenService {
 
-    private final JwtUtils jwtUtils;
+    private final JwtTokenPort jwtTokenPort;
     private final SysUserMapper sysUserMapper;
     private final SysRefreshTokenMapper refreshTokenMapper;
 
     @Transactional(rollbackFor = Exception.class)
     public TokenPair issue(SysUser user) {
         int version = user.getTokenVersion() == null ? 0 : user.getTokenVersion();
-        String accessToken = jwtUtils.generateAccessToken(user.getId(), user.getUsername(), version);
-        String refreshToken = jwtUtils.generateRefreshToken(user.getId(), user.getUsername(), version);
+        // 202609101503 - 修复了令牌业务服务直接依赖Security具体实现的问题。
+        String accessToken = jwtTokenPort.generateAccessToken(user.getId(), user.getUsername(), version);
+        String refreshToken = jwtTokenPort.generateRefreshToken(user.getId(), user.getUsername(), version);
         saveRefreshToken(user.getId(), refreshToken, UUID.randomUUID().toString());
         return new TokenPair(accessToken, refreshToken);
     }
 
     @Transactional(rollbackFor = Exception.class, noRollbackFor = ApiException.class)
     public TokenPair rotate(String refreshToken) {
-        if (!jwtUtils.validateRefreshToken(refreshToken)) {
+        if (!jwtTokenPort.validateRefreshToken(refreshToken)) {
             throw ApiException.unauthorized("刷新令牌已过期或无效");
         }
 
-        String tokenId = jwtUtils.getTokenId(refreshToken);
+        String tokenId = jwtTokenPort.getTokenId(refreshToken);
         SysRefreshToken stored = refreshTokenMapper.selectOne(new QueryWrapper<SysRefreshToken>()
                 .eq("token_id", tokenId));
         if (stored == null || stored.getExpiresAt() == null
@@ -62,16 +63,16 @@ public class AuthTokenService {
 
         SysUser user = sysUserMapper.selectById(stored.getUserId());
         if (user == null || !Integer.valueOf(1).equals(user.getIsValid())
-                || !user.getId().equals(jwtUtils.getUserId(refreshToken))
-                || !user.getUsername().equals(jwtUtils.getUsername(refreshToken))
-                || !currentVersion(user).equals(jwtUtils.getTokenVersion(refreshToken))) {
+                || !user.getId().equals(jwtTokenPort.getUserId(refreshToken))
+                || !user.getUsername().equals(jwtTokenPort.getUsername(refreshToken))
+                || !currentVersion(user).equals(jwtTokenPort.getTokenVersion(refreshToken))) {
             revokeStored(stored, null);
             throw ApiException.unauthorized("用户状态或权限已变更，请重新登录");
         }
 
-        String newRefreshToken = jwtUtils.generateRefreshToken(
+        String newRefreshToken = jwtTokenPort.generateRefreshToken(
                 user.getId(), user.getUsername(), currentVersion(user));
-        String newTokenId = jwtUtils.getTokenId(newRefreshToken);
+        String newTokenId = jwtTokenPort.getTokenId(newRefreshToken);
 
         int updated = refreshTokenMapper.update(null, new UpdateWrapper<SysRefreshToken>()
                 .eq("id", stored.getId())
@@ -84,7 +85,7 @@ public class AuthTokenService {
         }
 
         saveRefreshToken(user.getId(), newRefreshToken, stored.getTokenFamily());
-        String newAccessToken = jwtUtils.generateAccessToken(
+        String newAccessToken = jwtTokenPort.generateAccessToken(
                 user.getId(), user.getUsername(), currentVersion(user));
         return new TokenPair(newAccessToken, newRefreshToken);
     }
@@ -106,12 +107,12 @@ public class AuthTokenService {
 
     private void saveRefreshToken(Long userId, String token, String tokenFamily) {
         SysRefreshToken entity = new SysRefreshToken();
-        entity.setTokenId(jwtUtils.getTokenId(token));
+        entity.setTokenId(jwtTokenPort.getTokenId(token));
         entity.setTokenHash(hash(token));
         entity.setTokenFamily(tokenFamily);
         entity.setUserId(userId);
         entity.setExpiresAt(LocalDateTime.ofInstant(
-                jwtUtils.getExpiration(token).toInstant(), ZoneId.systemDefault()));
+                jwtTokenPort.getExpirationInstant(token), ZoneId.systemDefault()));
         refreshTokenMapper.insert(entity);
     }
 

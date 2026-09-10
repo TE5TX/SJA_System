@@ -2,13 +2,15 @@ package com.sja.system.service;
 
 import com.sja.system.async.AsyncTaskEnvelope;
 import com.sja.system.async.AsyncTaskType;
+import com.sja.system.application.port.ActiveUserAccessPort;
+import com.sja.system.application.port.ActiveUserAccessPort.ActiveUserAccess;
 import com.sja.system.dto.ProfileUpdateDTO;
 import com.sja.system.entity.SysAsyncTaskExecution;
 import com.sja.system.mapper.SysAsyncTaskExecutionMapper;
-import com.sja.system.mapper.SysUserMapper;
-import com.sja.system.security.SjaUserPrincipal;
-import com.sja.system.security.UserDetailsServiceImpl;
 import org.junit.jupiter.api.Test;
+
+import java.util.Optional;
+import java.util.Set;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -24,11 +26,10 @@ class AsyncTaskExecutionServiceTest {
         AsyncTaskQueueService queueService = mock(AsyncTaskQueueService.class);
         UserService userService = mock(UserService.class);
         FeeService feeService = mock(FeeService.class);
-        SysUserMapper userMapper = mock(SysUserMapper.class);
-        UserDetailsServiceImpl userDetailsService = mock(UserDetailsServiceImpl.class);
-        when(userDetailsService.loadUserById(56L)).thenReturn(mock(SjaUserPrincipal.class));
+        ActiveUserAccessPort activeUserAccessPort = mock(ActiveUserAccessPort.class);
+        when(activeUserAccessPort.findActiveUserById(56L)).thenReturn(Optional.of(activeUser()));
         AsyncTaskExecutionService service = new AsyncTaskExecutionService(
-                mapper, queueService, userService, feeService, userMapper, userDetailsService);
+                mapper, queueService, userService, feeService, activeUserAccessPort);
 
         AsyncTaskEnvelope envelope = profileEnvelope();
         ProfileUpdateDTO payload = new ProfileUpdateDTO();
@@ -45,10 +46,10 @@ class AsyncTaskExecutionServiceTest {
         SysAsyncTaskExecutionMapper mapper = mock(SysAsyncTaskExecutionMapper.class);
         AsyncTaskQueueService queueService = mock(AsyncTaskQueueService.class);
         UserService userService = mock(UserService.class);
-        UserDetailsServiceImpl userDetailsService = mock(UserDetailsServiceImpl.class);
+        ActiveUserAccessPort activeUserAccessPort = mock(ActiveUserAccessPort.class);
         AsyncTaskExecutionService service = new AsyncTaskExecutionService(
                 mapper, queueService, userService, mock(FeeService.class),
-                mock(SysUserMapper.class), userDetailsService);
+                activeUserAccessPort);
         AsyncTaskEnvelope envelope = profileEnvelope();
         when(mapper.selectById(envelope.getTaskId())).thenReturn(new SysAsyncTaskExecution());
 
@@ -67,5 +68,9 @@ class AsyncTaskExecutionServiceTest {
                 .payload("encrypted")
                 .attempt(0)
                 .build();
+    }
+
+    private ActiveUserAccess activeUser() {
+        return new ActiveUserAccess(56L, "20230001", "测试用户", 13, Set.of("fee:submit"));
     }
 }

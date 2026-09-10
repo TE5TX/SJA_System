@@ -1,10 +1,12 @@
 package com.sja.system.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.sja.system.entity.SysOperationLog;
 import com.sja.system.mapper.SysOperationLogMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -20,7 +22,7 @@ class OperationLogServiceImplTest {
     void throwsWhenAuditInsertFails() {
         SysOperationLogMapper mapper = mock(SysOperationLogMapper.class);
         when(mapper.insert(any(SysOperationLog.class))).thenReturn(0);
-        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper);
+        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper, Optional::empty);
 
         assertThrows(IllegalStateException.class,
                 () -> service.log(1L, "管理员", "0", "UPDATE", "USER", 8L, "修改人员", ""));
@@ -30,7 +32,7 @@ class OperationLogServiceImplTest {
     void marksIndependentFailureAuditAsFailure() {
         SysOperationLogMapper mapper = mock(SysOperationLogMapper.class);
         when(mapper.insert(any(SysOperationLog.class))).thenReturn(1);
-        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper);
+        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper, Optional::empty);
 
         service.logFailure(1L, "管理员", "0", "PUT", "USER", "请求失败，HTTP状态码=400");
 
@@ -42,7 +44,7 @@ class OperationLogServiceImplTest {
     @Test
     void detachesUserReferenceWithoutDeletingAuditRows() {
         SysOperationLogMapper mapper = mock(SysOperationLogMapper.class);
-        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper);
+        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper, Optional::empty);
 
         service.detachUserReferences(8L);
 
