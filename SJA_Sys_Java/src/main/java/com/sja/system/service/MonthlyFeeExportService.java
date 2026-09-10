@@ -74,15 +74,21 @@ public class MonthlyFeeExportService {
             throw ApiException.forbidden("只有管理员或秘书长可以导出月份稿费发放名单");
         }
 
-        YearMonth month;
+        YearMonth startMonth;
+        YearMonth endMonth;
         try {
-            month = YearMonth.parse(dto.getMonth(), DateTimeFormatter.ofPattern("yyyy-MM"));
+            startMonth = YearMonth.parse(dto.getStartMonth(), DateTimeFormatter.ofPattern("yyyy-MM"));
+            endMonth = YearMonth.parse(dto.getEndMonth(), DateTimeFormatter.ofPattern("yyyy-MM"));
         } catch (Exception e) {
             throw ApiException.badRequest("导出月份格式必须为yyyy-MM");
         }
+        // 202609100927 - 完成了月份区间顺序校验及包含首尾月份的汇总。
+        if (startMonth.isAfter(endMonth)) {
+            throw ApiException.badRequest("开始月份不能晚于结束月份");
+        }
 
         List<MonthlyFeeComponentVO> components = monthlyFeeExportMapper.selectMonthlyComponents(
-                month.atDay(1), month.atEndOfMonth(), dto.getMonth());
+                startMonth.atDay(1), endMonth.atEndOfMonth(), dto.getStartMonth(), dto.getEndMonth());
         Map<Long, List<BigDecimal>> amountsByUser = components.stream()
                 .collect(Collectors.groupingBy(MonthlyFeeComponentVO::getUserId, LinkedHashMap::new,
                         Collectors.mapping(MonthlyFeeComponentVO::getFeeAmount, Collectors.toList())));
@@ -96,9 +102,10 @@ public class MonthlyFeeExportService {
                         Collectors.mapping(MonthlyEditorialPlatformVO::getPlatform, Collectors.toSet())));
 
         List<MemberRow> rows = buildMemberRows(amountsByUser, subsidyCategoriesByUser, editorialPlatformsByUser);
-        writeWorkbook(dto.getMonth(), rows, response);
+        String monthRange = dto.getStartMonth() + "至" + dto.getEndMonth();
+        writeWorkbook(monthRange, rows, response);
         operationLogService.log(operatorId, operatorName, String.valueOf(roleCode), "EXPORT",
-                "FEE", null, String.format("导出%s月份稿费发放名单，共%d人", dto.getMonth(), rows.size()), "");
+                "FEE", null, String.format("导出%s稿费发放名单，共%d人", monthRange, rows.size()), "");
     }
 
     private List<MemberRow> buildMemberRows(Map<Long, List<BigDecimal>> amountsByUser,
@@ -216,10 +223,10 @@ public class MonthlyFeeExportService {
         return String.join("+", remarks);
     }
 
-    private void writeWorkbook(String month, List<MemberRow> rows, HttpServletResponse response) {
+    private void writeWorkbook(String monthRange, List<MemberRow> rows, HttpServletResponse response) {
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding("UTF-8");
-        String fileName = URLEncoder.encode("校学生记者团稿费发放名单计算（" + month + "）.xlsx", StandardCharsets.UTF_8)
+        String fileName = URLEncoder.encode("校学生记者团稿费发放名单计算（" + monthRange + "）.xlsx", StandardCharsets.UTF_8)
                 .replace("+", "%20");
         response.setHeader("Content-Disposition", "attachment;filename=" + fileName);
 

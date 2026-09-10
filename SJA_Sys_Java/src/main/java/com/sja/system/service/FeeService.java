@@ -36,12 +36,22 @@ public interface FeeService {
      * @param deptCode filter by department (nullable)
      * @param month    filter by month in "yyyy-MM" format (nullable)
      * @param status   filter by status (nullable)
+     * @param createDate creation date in yyyy-MM-dd format (nullable)
      * @param pageNum  page number (1-based)
      * @param pageSize page size
      * @return paginated fee list
      */
-    PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, String contributorName,
-                                     Integer pageNum, Integer pageSize, Long operatorId, Integer roleCode);
+    // 202609091535 - 完成了创建日期筛选的服务接口定义。
+    default PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, String contributorName, String createDate,
+                                     Integer pageNum, Integer pageSize, Long operatorId, Integer roleCode) {
+        return getFeeList(deptCode, month, status, contributorName, createDate,
+                null, null, null, null, pageNum, pageSize, operatorId, roleCode);
+    }
+
+    /** 202609091610 - 完成了日期范围查询服务接口，旧接口继续兼容。 */
+    PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, String contributorName, String createDate,
+                                    String publishStartDate, String publishEndDate, String createStartDate, String createEndDate,
+                                    Integer pageNum, Integer pageSize, Long operatorId, Integer roleCode);
 
     /**
      * Get detailed information for a specific work's fee record.

@@ -158,9 +158,11 @@ public class FeeServiceImpl implements FeeService {
     }
 
     @Override
-    public PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, String contributorName,
+    public PageResult<FeeListVO> getFeeList(String deptCode, String month, String status, String contributorName, String createDate,
+                                            String publishStartDate, String publishEndDate, String createStartDate, String createEndDate,
                                             Integer pageNum, Integer pageSize,
                                             Long operatorId, Integer roleCode) {
+        DateFilters dates = parseDateFilters(createDate, publishStartDate, publishEndDate, createStartDate, createEndDate);
         int pn = pageNum != null ? Math.max(1, pageNum) : 1;
         // 202608111533 - 修复了稿费审核列表单页最多只能显示50条且服务端未限制分页大小的问题。
         int ps = pageSize != null ? Math.min(200, Math.max(1, pageSize)) : 10;
@@ -168,11 +170,11 @@ public class FeeServiceImpl implements FeeService {
         List<FeeListVO> allItems = new ArrayList<>();
 
         // Query each work type and combine results
-        allItems.addAll(queryEditorialList(month));
-        allItems.addAll(queryPhotographyList(month));
-        allItems.addAll(queryVideoList(month));
-        allItems.addAll(queryVisualList(month));
-        allItems.addAll(queryMonthlySubsidyList(month));
+        allItems.addAll(queryEditorialList(month, dates));
+        allItems.addAll(queryPhotographyList(month, dates));
+        allItems.addAll(queryVideoList(month, dates));
+        allItems.addAll(queryVisualList(month, dates));
+        allItems.addAll(queryMonthlySubsidyList(month, dates));
 
         String selectedDeptCode = feeDeptFilterBase(deptCode);
         String selectedPlatform = feePlatformFilter(deptCode);
@@ -189,7 +191,12 @@ public class FeeServiceImpl implements FeeService {
                 .filter(item -> !StringUtils.hasText(selectedPlatform) || selectedPlatform.equals(item.getPlatform()))
                 .collect(Collectors.toList());
 
-        if (StringUtils.hasText(status)) {
+        // 202609081000 - 完成了稿费审核与导出页按未发布状态筛选的任务。
+        if ("UNPUBLISHED".equals(status)) {
+            allItems = allItems.stream()
+                    .filter(item -> Objects.equals(item.getIsPublished(), 0))
+                    .collect(Collectors.toList());
+        } else if (StringUtils.hasText(status)) {
             allItems = allItems.stream()
                     .filter(item -> status.equals(item.getStatus()))
                     .collect(Collectors.toList());
@@ -582,19 +589,22 @@ public class FeeServiceImpl implements FeeService {
             throw ApiException.badRequest("不支持的稿费导出模板");
         }
         boolean fixedTemplate = FeeTemplateExportWriter.supports(templateType);
+        DateFilters dates = parseDateFilters(dto.getCreateDate(), dto.getPublishStartDate(), dto.getPublishEndDate(),
+                dto.getCreateStartDate(), dto.getCreateEndDate());
         try {
             response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             response.setCharacterEncoding("UTF-8");
-            String exportName = fixedTemplate ? templateExportFileName(templateType) : "稿费清单";
+            // 202609081510 - 统一所有稿费导出文件的下载名称，避免不同模板显示不同命名规则。
+            String exportName = fixedTemplate ? templateExportFileName(templateType) : "校学生记者团稿费统计（自定义）";
             String fileName = URLEncoder_encode(exportName + "_" + (dto.getMonth() != null ? dto.getMonth() : "全部") + ".xlsx");
             response.setHeader("Content-Disposition", "attachment;filename=" + fileName);
 
             List<FeeListVO> allItems = new ArrayList<>();
-            allItems.addAll(queryEditorialList(dto.getMonth()));
-            allItems.addAll(queryPhotographyList(dto.getMonth()));
-            allItems.addAll(queryVideoList(dto.getMonth()));
-            allItems.addAll(queryVisualList(dto.getMonth()));
-            allItems.addAll(queryMonthlySubsidyList(dto.getMonth()));
+            allItems.addAll(queryEditorialList(dto.getMonth(), dates));
+            allItems.addAll(queryPhotographyList(dto.getMonth(), dates));
+            allItems.addAll(queryVideoList(dto.getMonth(), dates));
+            allItems.addAll(queryVisualList(dto.getMonth(), dates));
+            allItems.addAll(queryMonthlySubsidyList(dto.getMonth(), dates));
             String selectedDeptCode = feeDeptFilterBase(dto.getDeptCode());
             String selectedPlatform = feePlatformFilter(dto.getDeptCode());
             Set<String> allowedDeptCodes = allowedFeeDeptCodes(operatorId, roleCode);
@@ -608,7 +618,7 @@ public class FeeServiceImpl implements FeeService {
             allItems = allItems.stream()
                     .filter(item -> finalAllowedDeptCodes.contains(workTypeToDeptCode(item.getWorkType())))
                     .filter(item -> !StringUtils.hasText(selectedPlatform) || selectedPlatform.equals(item.getPlatform()))
-                    .filter(item -> !StringUtils.hasText(dto.getStatus()) || dto.getStatus().equals(item.getStatus()))
+                    .filter(item -> matchesStatusFilter(item, dto.getStatus()))
                     .collect(Collectors.toList());
             if (StringUtils.hasText(dto.getContributorName())) {
                 Set<String> matchedTasks = findTasksByContributorName(dto.getContributorName());
@@ -697,6 +707,7 @@ public class FeeServiceImpl implements FeeService {
         switch (templateType) {
             case "EDITORIAL_WECHAT": return "校学生记者团稿费统计（微信）";
             case "EDITORIAL_WEBSITE": return "校学生记者团稿费统计（院网）";
+            case "EDITORIAL_NEWSPAPER": return "校学生记者团稿费统计（校报）";
             case "PHOTO": return "校学生记者团稿费统计（摄影）";
             case "VISUAL": return "校学生记者团稿费统计（视觉）";
             case "VIDEO": return "校学生记者团稿费统计（视频）";
@@ -1466,9 +1477,62 @@ public class FeeServiceImpl implements FeeService {
         }
     }
 
-    private List<FeeListVO> queryEditorialList(String month) {
+    /**
+     * 202609091535 - 完成了创建日期校验及列表、导出共用的全天筛选。
+     * 空值表示不限日期；非法日期直接拒绝，避免意外扩大查询范围。
+     */
+    private LocalDate parseFilterDate(String value, String label) {
+        if (!StringUtils.hasText(value)) return null;
+        try {
+            if (!value.matches("\\d{4}-\\d{2}-\\d{2}")) {
+                throw new java.time.DateTimeException("Invalid date format");
+            }
+            return LocalDate.parse(value);
+        } catch (java.time.DateTimeException e) {
+            throw ApiException.badRequest(label + "格式不正确，请使用 yyyy-MM-dd");
+        }
+    }
+
+    /** 202609091610 - 完成了两组日期范围校验，允许单边边界并兼容旧创建日期。 */
+    private DateFilters parseDateFilters(String legacyCreateDate, String publishStart, String publishEnd,
+                                         String createStart, String createEnd) {
+        LocalDate ps = parseFilterDate(publishStart, "发布开始日期");
+        LocalDate pe = parseFilterDate(publishEnd, "发布结束日期");
+        LocalDate cs = parseFilterDate(createStart, "创建开始日期");
+        LocalDate ce = parseFilterDate(createEnd, "创建结束日期");
+        if (cs == null && ce == null) {
+            cs = parseFilterDate(legacyCreateDate, "创建日期");
+            ce = cs;
+        }
+        if (ps != null && pe != null && ps.isAfter(pe)) {
+            throw ApiException.badRequest("发布开始日期不能晚于结束日期");
+        }
+        if (cs != null && ce != null && cs.isAfter(ce)) {
+            throw ApiException.badRequest("创建开始日期不能晚于结束日期");
+        }
+        return new DateFilters(ps, pe, cs, ce);
+    }
+
+    /** 数据库按范围过滤；创建时间包含结束日全天，补贴按区间覆盖的月份筛选。 */
+    private <T> void applyDateFilters(QueryWrapper<T> query, DateFilters dates, boolean subsidy) {
+        if (dates.createStart() != null) query.ge("create_time", dates.createStart().atStartOfDay());
+        if (dates.createEnd() != null) query.lt("create_time", dates.createEnd().plusDays(1).atStartOfDay());
+        String column = subsidy ? "subsidy_month" : "publish_date";
+        if (dates.publishStart() != null) {
+            query.ge(column, subsidy ? YearMonth.from(dates.publishStart()).toString() : dates.publishStart());
+        }
+        if (dates.publishEnd() != null) {
+            query.le(column, subsidy ? YearMonth.from(dates.publishEnd()).toString() : dates.publishEnd());
+        }
+    }
+
+    private record DateFilters(LocalDate publishStart, LocalDate publishEnd,
+                               LocalDate createStart, LocalDate createEnd) { }
+
+    private List<FeeListVO> queryEditorialList(String month, DateFilters dates) {
         QueryWrapper<BizEditorialArticle> query = new QueryWrapper<>();
         query.eq("is_valid", 1);
+        applyDateFilters(query, dates, false);
         if (StringUtils.hasText(month)) {
             try {
                 YearMonth ym = YearMonth.parse(month, DateTimeFormatter.ofPattern("yyyy-MM"));
@@ -1492,6 +1556,7 @@ public class FeeServiceImpl implements FeeService {
             vo.setPublishDate(a.getPublishDate());
             vo.setTotalAmount(a.getTotalAmount());
             vo.setStatus(normalizeAuditStatus(a.getAuditStatus()));
+            vo.setIsPublished(a.getIsPublished());
             vo.setCreateTime(a.getCreateTime());
             // Resolve submitter from first contributor
             resolveSubmitter(vo, a.getSubmitterId());
@@ -1499,9 +1564,10 @@ public class FeeServiceImpl implements FeeService {
         }).collect(Collectors.toList());
     }
 
-    private List<FeeListVO> queryPhotographyList(String month) {
+    private List<FeeListVO> queryPhotographyList(String month, DateFilters dates) {
         QueryWrapper<BizPhotographyWork> query = new QueryWrapper<>();
         query.eq("is_valid", 1);
+        applyDateFilters(query, dates, false);
         if (StringUtils.hasText(month)) {
             try {
                 YearMonth ym = YearMonth.parse(month, DateTimeFormatter.ofPattern("yyyy-MM"));
@@ -1523,15 +1589,17 @@ public class FeeServiceImpl implements FeeService {
             vo.setPublishDate(w.getPublishDate());
             vo.setTotalAmount(w.getTotalAmount());
             vo.setStatus(normalizeAuditStatus(w.getAuditStatus()));
+            vo.setIsPublished(w.getIsPublished());
             vo.setCreateTime(w.getCreateTime());
             resolveSubmitter(vo, w.getSubmitterId());
             return vo;
         }).collect(Collectors.toList());
     }
 
-    private List<FeeListVO> queryVideoList(String month) {
+    private List<FeeListVO> queryVideoList(String month, DateFilters dates) {
         QueryWrapper<BizVideoWork> query = new QueryWrapper<>();
         query.eq("is_valid", 1);
+        applyDateFilters(query, dates, false);
         if (StringUtils.hasText(month)) {
             try {
                 YearMonth ym = YearMonth.parse(month, DateTimeFormatter.ofPattern("yyyy-MM"));
@@ -1552,15 +1620,17 @@ public class FeeServiceImpl implements FeeService {
             vo.setPublishDate(w.getPublishDate());
             vo.setTotalAmount(w.getTotalAmount());
             vo.setStatus(normalizeAuditStatus(w.getAuditStatus()));
+            vo.setIsPublished(w.getIsPublished());
             vo.setCreateTime(w.getCreateTime());
             resolveSubmitter(vo, w.getSubmitterId());
             return vo;
         }).collect(Collectors.toList());
     }
 
-    private List<FeeListVO> queryVisualList(String month) {
+    private List<FeeListVO> queryVisualList(String month, DateFilters dates) {
         QueryWrapper<BizVisualWork> query = new QueryWrapper<>();
         query.eq("is_valid", 1);
+        applyDateFilters(query, dates, false);
         if (StringUtils.hasText(month)) {
             try {
                 YearMonth ym = YearMonth.parse(month, DateTimeFormatter.ofPattern("yyyy-MM"));
@@ -1581,15 +1651,17 @@ public class FeeServiceImpl implements FeeService {
             vo.setPublishDate(w.getPublishDate());
             vo.setTotalAmount(w.getTotalAmount());
             vo.setStatus(normalizeAuditStatus(w.getAuditStatus()));
+            vo.setIsPublished(w.getIsPublished());
             vo.setCreateTime(w.getCreateTime());
             resolveSubmitter(vo, w.getSubmitterId());
             return vo;
         }).collect(Collectors.toList());
     }
 
-    private List<FeeListVO> queryMonthlySubsidyList(String month) {
+    private List<FeeListVO> queryMonthlySubsidyList(String month, DateFilters dates) {
         QueryWrapper<BizMonthlySubsidy> query = new QueryWrapper<>();
         query.eq("is_valid", 1);
+        applyDateFilters(query, dates, true);
         if (StringUtils.hasText(month)) {
             query.eq("subsidy_month", month);
         }
@@ -1611,6 +1683,15 @@ public class FeeServiceImpl implements FeeService {
     private void resolveSubmitter(FeeListVO vo, Long submitterId) {
         SysUser user = submitterId != null ? sysUserMapper.selectById(submitterId) : null;
         vo.setSubmitterName(user != null ? user.getRealName() : "未知");
+    }
+
+    /**
+     * 将“未发布”作为列表和导出共用的发布状态筛选，其余值仍按审核状态处理。
+     */
+    private boolean matchesStatusFilter(FeeListVO item, String status) {
+        if (!StringUtils.hasText(status)) return true;
+        if ("UNPUBLISHED".equals(status)) return Objects.equals(item.getIsPublished(), 0);
+        return status.equals(item.getStatus());
     }
 
     private Set<String> findTasksByContributorName(String contributorName) {

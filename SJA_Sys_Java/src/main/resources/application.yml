@@ -95,7 +95,7 @@ sja:
     worker-queue-capacity: ${SJA_ASYNC_TASK_WORKER_QUEUE_CAPACITY:500}
     queue-capacity: ${SJA_ASYNC_TASK_QUEUE_CAPACITY:5000}
     max-retries: ${SJA_ASYNC_TASK_MAX_RETRIES:2}
-    poll-timeout: ${SJA_ASYNC_TASK_POLL_TIMEOUT:2s}
+    poll-timeout: ${SJA_ASYNC_TASK_POLL_TIMEOUT:1s}
     visibility-timeout: ${SJA_ASYNC_TASK_VISIBILITY_TIMEOUT:5m}
     status-ttl: ${SJA_ASYNC_TASK_STATUS_TTL:24h}
     processing-lock-ttl: ${SJA_ASYNC_TASK_PROCESSING_LOCK_TTL:6m}

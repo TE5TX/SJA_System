@@ -97,6 +97,13 @@ public class FeeController {
             @RequestParam(required = false) String month,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String contributorName,
+            // 202609091535 - 完成了稿费列表创建日期查询参数的接入。
+            @RequestParam(required = false) String createDate,
+            // 202609091610 - 完成了日期区间查询参数的接入，保留旧客户端单日/月参数。
+            @RequestParam(required = false) String publishStartDate,
+            @RequestParam(required = false) String publishEndDate,
+            @RequestParam(required = false) String createStartDate,
+            @RequestParam(required = false) String createEndDate,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "10") Integer pageSize,
             HttpServletRequest request) {
@@ -107,7 +114,8 @@ public class FeeController {
             return Result.error(401, "未授权");
         }
         PageResult<FeeListVO> result = feeService.getFeeList(
-                deptCode, month, status, contributorName, pageNum, pageSize, operatorId, roleCode);
+                deptCode, month, status, contributorName, createDate, publishStartDate, publishEndDate,
+                createStartDate, createEndDate, pageNum, pageSize, operatorId, roleCode);
         return Result.success(result);
     }
 

@@ -23,10 +23,13 @@ export async function waitForAsyncTask(taskId, statusToken, options = {}) {
   let pollCount = 0
 
   while (Date.now() - startedAt < timeout) {
-    // 202608192148 - 修复了大量客户端高频轮询反过来压垮后端的问题。
-    const baseDelay = Math.min(6000, 2500 + pollCount * 500)
-    const jitter = Math.floor(Math.random() * 500)
-    await sleep(baseDelay + jitter)
+    // 202609081000 - 修复了稿费提交完成后前端固定等待2.5秒才查询任务状态的问题。
+    // 首次立即确认，后续渐进退避并保留少量随机抖动，兼顾提交反馈速度和服务端压力。
+    if (pollCount > 0) {
+      const baseDelay = Math.min(3000, 500 + (pollCount - 1) * 350)
+      const jitter = Math.floor(Math.random() * 200)
+      await sleep(baseDelay + jitter)
+    }
 
     const response = await getAsyncTaskStatus(taskId, statusToken)
     const task = response.data || {}

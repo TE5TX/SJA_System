@@ -25,6 +25,11 @@ public class FeeListVO {
 
     private String status;
 
+    /**
+     * 作品发布状态；月度补贴不适用，值为 null。
+     */
+    private Integer isPublished;
+
     private String submitterName;
 
     private LocalDateTime createTime;

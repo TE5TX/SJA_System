@@ -35,7 +35,7 @@ public interface MonthlyFeeExportMapper {
             "  UNION ALL",
             "  SELECT c.user_id, c.fee_amount, s.category, STR_TO_DATE(CONCAT(s.subsidy_month, '-01'), '%Y-%m-%d'), 5, c.id",
             "  FROM biz_work_contributor c JOIN biz_monthly_subsidy s ON c.work_type='SUBSIDY' AND c.work_id=s.id",
-            "  WHERE s.is_valid=1 AND s.audit_status='APPROVED' AND s.subsidy_month=#{month}",
+            "  WHERE s.is_valid=1 AND s.audit_status='APPROVED' AND s.subsidy_month BETWEEN #{startMonth} AND #{endMonth}",
             ") fee",
             "WHERE fee.fee_amount IS NOT NULL AND fee.fee_amount &gt; 0",
             "ORDER BY fee.fee_date, fee.work_order, fee.contributor_id",
@@ -43,7 +43,8 @@ public interface MonthlyFeeExportMapper {
     })
     List<MonthlyFeeComponentVO> selectMonthlyComponents(@Param("startDate") LocalDate startDate,
                                                          @Param("endDate") LocalDate endDate,
-                                                         @Param("month") String month);
+                                                         @Param("startMonth") String startMonth,
+                                                         @Param("endMonth") String endMonth);
 
     // 202608121123 - 新增了主席团采编负责人按微信、院网、校报职责排序所需的平台信息查询。
     @Select({

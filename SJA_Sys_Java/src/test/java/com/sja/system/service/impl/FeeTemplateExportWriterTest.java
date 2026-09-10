@@ -38,7 +38,7 @@ class FeeTemplateExportWriterTest {
         assertEquals(50d, sheet.getRow(3).getCell(8).getNumericCellValue());
         assertEquals(2d, sheet.getRow(3).getCell(9).getNumericCellValue());
         assertEquals(2, sheet.getNumMergedRegions());
-        assertEquals(new CellRangeAddress(0, 0, 0, 9).formatAsString(), sheet.getMergedRegion(0).formatAsString());
+        assertEquals(new CellRangeAddress(0, 0, 0, 11).formatAsString(), sheet.getMergedRegion(0).formatAsString());
         assertEquals(HorizontalAlignment.CENTER, sheet.getRow(3).getCell(2).getCellStyle().getAlignment());
         assertEquals(BorderStyle.THIN, sheet.getRow(3).getCell(2).getCellStyle().getBorderBottom());
         workbook.close();
@@ -109,11 +109,40 @@ class FeeTemplateExportWriterTest {
     }
 
     @Test
+    void writesNewspaperWorkbookUsingReferenceColumnOrder() throws Exception {
+        // 202609081435 - 验证采编校报固定模板的文章字数和备注列顺序与参考工作簿一致。
+        FeeListVO newspaperItem = item("EDITORIAL", "校报", "校报稿");
+        FeeDetailVO newspaperDetail = detail(new LinkedHashMap<String, Object>() {{
+            put("category", "原创一般稿件");
+            put("publishDate", LocalDate.of(2026, 6, 28));
+            put("wordCount", 2800);
+            put("articleLink", "https://example.com/newspaper");
+            put("isSpecialNode", 1);
+            put("specialMultiplier", 3);
+        }}, contributor("甲", "AUTHOR", "80.0", null));
+        newspaperDetail.setRemark("需人工复核");
+
+        Workbook workbook = writeAndRead(FeeTemplateExportWriter.EDITORIAL_NEWSPAPER, newspaperItem, newspaperDetail);
+        Sheet sheet = workbook.getSheetAt(0);
+        Row row = sheet.getRow(3);
+        assertEquals("校学生记者团稿费统计（校报）", sheet.getRow(0).getCell(0).getStringCellValue());
+        assertEquals("文章字数", sheet.getRow(2).getCell(5).getStringCellValue());
+        assertEquals(2800d, row.getCell(5).getNumericCellValue());
+        assertEquals("是", row.getCell(10).getStringCellValue());
+        assertEquals("3倍", row.getCell(11).getStringCellValue());
+        assertEquals("需人工复核", row.getCell(12).getStringCellValue());
+        assertEquals(new CellRangeAddress(0, 0, 0, 11).formatAsString(), sheet.getMergedRegion(0).formatAsString());
+        workbook.close();
+    }
+
+    @Test
     void templateMatchingLimitsEachWorkbookToItsOwnDepartment() {
         assertTrue(FeeTemplateExportWriter.matches(FeeTemplateExportWriter.EDITORIAL_WECHAT,
                 item("EDITORIAL", "微信", "微信稿")));
         assertFalse(FeeTemplateExportWriter.matches(FeeTemplateExportWriter.EDITORIAL_WECHAT,
                 item("EDITORIAL", "院网", "院网稿")));
+        assertTrue(FeeTemplateExportWriter.matches(FeeTemplateExportWriter.EDITORIAL_NEWSPAPER,
+                item("EDITORIAL", "校报", "校报稿")));
         assertFalse(FeeTemplateExportWriter.matches(FeeTemplateExportWriter.PHOTO,
                 item("VIDEO", null, "视频")));
     }

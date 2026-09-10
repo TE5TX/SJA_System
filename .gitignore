@@ -51,3 +51,6 @@ deploy/nginx.https.conf.template
 deploy/security-test/POST_TEST_REMEDIATION_BACKLOG.md
 deploy/security-test/POST_TEST_REMEDIATION_BACKLOG.md
 SJA_System_images_20260901.tar
+
+# 202609021445 - 完成了本地离线部署包及其中数据库数据、镜像和密钥配置的Git隔离。
+/部署文件/

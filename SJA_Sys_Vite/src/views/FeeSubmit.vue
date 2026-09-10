@@ -40,7 +40,8 @@
                   </el-form-item>
                 </el-col>
               </el-row>
-              <el-form-item v-if="form.workInfo.platform === '微信'" label="阅读量">
+              <!-- 202609081000 - 修复了采编部微信未发布任务仍要求填写阅读量的问题。 -->
+              <el-form-item v-if="form.workInfo.platform === '微信' && form.workInfo.isPublished === 1" label="阅读量">
                 <el-input-number
                   v-model="form.workInfo.readCount"
                   :min="0"
@@ -239,6 +240,8 @@
                   <span>{{ authorStudentNo(item.userId) }}</span>
                 </div>
               </div>
+              <!-- 202609081000 - 完成了月度补贴自动匹配人员支持单人删除的任务。 -->
+              <el-button link type="danger" :icon="Delete" @click="removeSubsidyContributor(item.userId)">删除</el-button>
             </div>
             <el-empty v-if="form.contributors.length === 0" description="当前角色暂无有效人员" />
           </template>
@@ -635,6 +638,13 @@ const removeContributor = index => {
   authorNamesInput.value = form.contributors.map(item => authorName(item.userId)).join(',')
 }
 
+/**
+ * 月度补贴人员由角色自动匹配，但允许本次任务排除个别不应参与补贴的成员。
+ */
+const removeSubsidyContributor = userId => {
+  form.contributors = form.contributors.filter(item => String(item.userId) !== String(userId))
+}
+
 const findAuthor = userId => users.value.find(user => String(user.id) === String(userId))
 const authorName = userId => findAuthor(userId)?.realName || `用户 ${userId}`
 const authorStudentNo = userId => findAuthor(userId)?.studentNo || findAuthor(userId)?.username || '-'
@@ -682,6 +692,10 @@ const handleSubmit = async () => {
     // 202608121145 - 修复了未发布稿费任务仍提交发布日期的问题。
     if (form.workType !== 'SUBSIDY' && submittedWorkInfo.isPublished !== 1) {
       delete submittedWorkInfo.publishDate
+    }
+    // 202609081000 - 修复了采编部微信未发布任务仍写入无意义阅读量的问题。
+    if (form.workType === 'EDITORIAL' && submittedWorkInfo.platform === '微信' && submittedWorkInfo.isPublished !== 1) {
+      delete submittedWorkInfo.readCount
     }
     const accepted = await submitFee({
       workType: form.workType,

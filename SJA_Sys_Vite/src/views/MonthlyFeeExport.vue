@@ -8,12 +8,14 @@
     <el-card class="export-panel">
       <!-- 202608111715 - 新增了按月份导出全团成员稿费发放名单的页面。 -->
       <el-form label-position="top" class="export-form mobile-form-top-label">
-        <el-form-item class="month-field" label="稿费月份" required>
+        <el-form-item class="month-field" label="稿费月份范围" required>
           <el-date-picker
-            v-model="month"
-            type="month"
+            v-model="monthRange"
+            type="monthrange"
             value-format="YYYY-MM"
-            placeholder="请选择月份"
+            start-placeholder="开始月份"
+            end-placeholder="结束月份"
+            range-separator="至"
             :clearable="false"
           />
         </el-form-item>
@@ -32,7 +34,7 @@
         </el-form-item>
         <el-form-item class="export-action">
           <el-button type="success" :icon="Download" :loading="exporting" @click="handleExport">
-            导出月份稿费名单
+            导出时间段稿费名单
           </el-button>
         </el-form-item>
       </el-form>
@@ -51,27 +53,29 @@ const currentMonth = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-const month = ref(currentMonth())
+// 202609100927 - 完成了月份稿费名单按起止月份区间导出的功能。
+const monthRange = ref([currentMonth(), currentMonth()])
 const exporting = ref(false)
 
 const handleExport = async () => {
-  if (!month.value) {
-    ElMessage.warning('请选择稿费月份')
+  if (!Array.isArray(monthRange.value) || monthRange.value.length !== 2) {
+    ElMessage.warning('请选择完整的稿费月份范围')
     return
   }
+  const [startMonth, endMonth] = monthRange.value
   exporting.value = true
   try {
-    const response = await exportMonthlyFeeSummary({ month: month.value })
+    const response = await exportMonthlyFeeSummary({ startMonth, endMonth })
     const blob = new Blob([response.data], {
       type: response.headers['content-type'] || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     })
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `校学生记者团稿费发放名单计算（${month.value}）.xlsx`
+    link.download = `校学生记者团稿费发放名单计算（${startMonth}至${endMonth}）.xlsx`
     link.click()
     window.URL.revokeObjectURL(url)
-    ElMessage.success('月份稿费名单导出完成')
+    ElMessage.success('时间段稿费名单导出完成')
   } finally {
     exporting.value = false
   }
@@ -91,7 +95,7 @@ const handleExport = async () => {
 .export-form {
   /* 202608312307 - 桌面端改为横向导出工具栏，避免宽屏页面左侧拥挤。 */
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(120px, 150px) minmax(360px, 1fr) auto;
+  grid-template-columns: minmax(320px, 380px) minmax(120px, 150px) minmax(360px, 1fr) auto;
   align-items: end;
   gap: 20px 28px;
 }

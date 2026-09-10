@@ -1,5 +1,6 @@
 package com.sja.system.service;
 
+import com.sja.system.common.ApiException;
 import com.sja.system.dto.MonthlyFeeExportDTO;
 import com.sja.system.entity.SysDept;
 import com.sja.system.entity.SysRole;
@@ -24,14 +25,19 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class MonthlyFeeExportServiceTest {
@@ -69,7 +75,7 @@ class MonthlyFeeExportServiceTest {
                 role(1L, 1, "主席"), role(3L, 3, "秘书长"), role(2L, 2, "老师")));
         when(userRoleMapper.selectList(any())).thenReturn(Arrays.asList(
                 userRole(1L, 3L), userRole(5L, 2L), userRole(6L, 1L)));
-        when(exportMapper.selectMonthlyComponents(any(), any(), any())).thenReturn(Arrays.asList(
+        when(exportMapper.selectMonthlyComponents(any(), any(), any(), any())).thenReturn(Arrays.asList(
                 component(1L, "30.0", "主席团成员"), component(1L, "40.0", "微信统筹编辑"),
                 component(2L, "50.0", "校园巡查组员"), component(3L, "20.0", null),
                 component(4L, "30.0", null), component(6L, "10.0", "主席团成员"),
@@ -77,9 +83,16 @@ class MonthlyFeeExportServiceTest {
         when(exportMapper.selectEditorialPlatforms()).thenReturn(Collections.emptyList());
 
         MonthlyFeeExportDTO dto = new MonthlyFeeExportDTO();
-        dto.setMonth("2026-06");
+        // 202609100927 - 完成了跨月份导出查询边界和文件名的回归验证。
+        dto.setStartMonth("2026-05");
+        dto.setEndMonth("2026-06");
         MockHttpServletResponse response = new MockHttpServletResponse();
         service.export(dto, 99L, 0, "管理员", response);
+
+        verify(exportMapper).selectMonthlyComponents(
+                eq(LocalDate.of(2026, 5, 1)), eq(LocalDate.of(2026, 6, 30)),
+                eq("2026-05"), eq("2026-06"));
+        assertTrue(response.getHeader("Content-Disposition").contains("2026-05%E8%87%B32026-06"));
 
         assertTrue(response.getContentAsByteArray().length > 0);
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(response.getContentAsByteArray()))) {
@@ -146,7 +159,7 @@ class MonthlyFeeExportServiceTest {
         when(userRoleMapper.selectList(any())).thenReturn(Arrays.asList(
                 userRole(1L, 1L), userRole(2L, 3L), userRole(3L, 4L), userRole(3L, 5L),
                 userRole(4L, 4L), userRole(5L, 4L), userRole(6L, 4L), userRole(7L, 4L), userRole(8L, 4L)));
-        when(exportMapper.selectMonthlyComponents(any(), any(), any())).thenReturn(Arrays.asList(
+        when(exportMapper.selectMonthlyComponents(any(), any(), any(), any())).thenReturn(Arrays.asList(
                 component(1L, "1.0", "主席团成员"), component(2L, "1.0", "主席团成员"),
                 component(3L, "1.0", "主席团成员"), component(4L, "1.0", "主席团成员"),
                 component(5L, "1.0", "主席团成员"), component(6L, "1.0", "主席团成员"),
@@ -154,7 +167,8 @@ class MonthlyFeeExportServiceTest {
         when(exportMapper.selectEditorialPlatforms()).thenReturn(Collections.singletonList(platform(4L, "院网")));
 
         MonthlyFeeExportDTO dto = new MonthlyFeeExportDTO();
-        dto.setMonth("2026-06");
+        dto.setStartMonth("2026-06");
+        dto.setEndMonth("2026-06");
         MockHttpServletResponse response = new MockHttpServletResponse();
         service.export(dto, 99L, 0, "管理员", response);
 
@@ -170,11 +184,30 @@ class MonthlyFeeExportServiceTest {
     @Test
     void monthlyComponentQueryOnlyIncludesApprovedTasks() throws Exception {
         Select select = MonthlyFeeExportMapper.class
-                .getMethod("selectMonthlyComponents", java.time.LocalDate.class, java.time.LocalDate.class, String.class)
+                .getMethod("selectMonthlyComponents", java.time.LocalDate.class, java.time.LocalDate.class,
+                        String.class, String.class)
                 .getAnnotation(Select.class);
         String sql = String.join(" ", select.value());
         assertFalse(sql.contains("SUBMITTED"));
         assertEquals(5, sql.split("audit_status='APPROVED'", -1).length - 1);
+        assertTrue(sql.contains("s.subsidy_month BETWEEN #{startMonth} AND #{endMonth}"));
+    }
+
+    @Test
+    void rejectsReversedMonthRangeBeforeQuerying() {
+        MonthlyFeeExportMapper exportMapper = mock(MonthlyFeeExportMapper.class);
+        MonthlyFeeExportService service = new MonthlyFeeExportService(exportMapper, mock(SysUserMapper.class),
+                mock(SysDeptMapper.class), mock(SysUserDeptMapper.class), mock(SysRoleMapper.class),
+                mock(SysUserRoleMapper.class), mock(OperationLogService.class));
+        MonthlyFeeExportDTO dto = new MonthlyFeeExportDTO();
+        dto.setStartMonth("2026-09");
+        dto.setEndMonth("2026-08");
+
+        ApiException error = assertThrows(ApiException.class, () ->
+                service.export(dto, 99L, 0, "管理员", new MockHttpServletResponse()));
+
+        assertEquals("开始月份不能晚于结束月份", error.getMessage());
+        verifyNoInteractions(exportMapper);
     }
 
     private SysUser user(Long id, String name, String idCard) {

@@ -2,7 +2,7 @@
   <div class="fee-audit">
     <div class="page-title">
       <h1>{{ canAuditFee ? '稿费审核与导出' : '稿费任务管理' }}</h1>
-      <p>{{ canAuditFee ? '查看稿费明细、审核通过或驳回，并按月份导出对账清单。' : '查看所有部门任务，并修改尚未审核的任务信息。' }}</p>
+      <p>{{ canAuditFee ? '查看稿费明细、审核通过或驳回，并按筛选条件导出对账清单。' : '查看所有部门任务，并修改尚未审核的任务信息。' }}</p>
     </div>
 
     <el-card>
@@ -13,10 +13,27 @@
             <el-option v-for="dept in deptOptions" :key="dept.value" :label="dept.label" :value="dept.value" />
           </el-select>
           <el-date-picker
-            v-model="query.month"
-            type="month"
-            value-format="YYYY-MM"
-            placeholder="全部月份"
+            v-model="query.publishDateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="发布开始日期"
+            end-placeholder="发布结束日期"
+            range-separator="至"
+            aria-label="发布日期范围"
+            class="date-range-filter"
+            clearable
+            @change="searchFees"
+          />
+          <!-- 202609091610 - 完成了发布日期和创建日期的起止范围筛选。 -->
+          <el-date-picker
+            v-model="query.createDateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="创建开始日期"
+            end-placeholder="创建结束日期"
+            range-separator="至"
+            aria-label="创建日期范围"
+            class="date-range-filter"
             clearable
             @change="searchFees"
           />
@@ -24,6 +41,8 @@
             <el-option label="已提交" value="SUBMITTED" />
             <el-option label="已通过" value="APPROVED" />
             <el-option label="已驳回" value="REJECTED" />
+            <!-- 202609081000 - 完成了稿费审核与导出页未发布任务筛选的任务。 -->
+            <el-option label="未发布" value="UNPUBLISHED" />
           </el-select>
           <!-- 202608121041 - 新增了按参与人员姓名实时查找稿费任务的功能。 -->
           <el-input
@@ -399,7 +418,17 @@ const stepThousandNumberFields = ['readCount', 'wordCount']
 const numberFieldKeys = ['videoDurationSec', 'likeCount', 'authorCount', 'authorAvgFee']
 
 // 202608111533 - 修复了稿费审核与导出列表单页不能选择100或200条的问题。
-const query = reactive({ deptCode: '', month: '', status: '', contributorName: '', pageNum: 1, pageSize: 10 })
+// 202609091610 - 完成了列表与导出共用日期范围参数的转换。
+const dateQueryParams = () => ({
+  deptCode: query.deptCode,
+  status: query.status,
+  contributorName: query.contributorName,
+  publishStartDate: query.publishDateRange?.[0] || '',
+  publishEndDate: query.publishDateRange?.[1] || '',
+  createStartDate: query.createDateRange?.[0] || '',
+  createEndDate: query.createDateRange?.[1] || ''
+})
+const query = reactive({ deptCode: '', publishDateRange: [], createDateRange: [], status: '', contributorName: '', pageNum: 1, pageSize: 10 })
 const records = ref([])
 const total = ref(0)
 const loading = ref(false)
@@ -498,7 +527,8 @@ const exportPresetFields = {
 const exportPreset = ref('CUSTOM')
 const exportFields = ref([...defaultExportFields])
 const allExportFieldsSelected = computed(() => exportFields.value.length === exportFieldOptions.length)
-const fixedWorkbookTemplates = new Set(['EDITORIAL_WECHAT', 'EDITORIAL_WEBSITE', 'PHOTO', 'VISUAL', 'VIDEO'])
+// 202609081435 - 完成了采编校报使用与参考工作簿一致的固定导出模板的任务。
+const fixedWorkbookTemplates = new Set(['EDITORIAL_WECHAT', 'EDITORIAL_WEBSITE', 'EDITORIAL_NEWSPAPER', 'PHOTO', 'VISUAL', 'VIDEO'])
 const usesFixedWorkbookTemplate = computed(() => fixedWorkbookTemplates.has(exportPreset.value))
 
 // 202608101716 - 将稿费金额统一显示为四舍五入后的一位小数。
@@ -550,12 +580,15 @@ const fieldLabelMap = {
 
 const workInfoRows = computed(() => {
   const info = detail.value?.workInfo || {}
-  return Object.entries(info).map(([key, value]) => ({
+  // 202609081000 - 修复了视频部详情仍显示无计费作用时长字段的问题。
+  return Object.entries(info)
+    .filter(([key]) => !(detail.value?.workType === 'VIDEO' && key === 'videoDurationSec'))
+    .map(([key, value]) => ({
     label: fieldLabelMap[key] || key,
     value: key === 'authorAvgFee'
       ? money(value)
       : (['isPublished', 'isSpecialNode', 'isReposted', 'isComplexEdit'].includes(key) ? (Number(value) === 1 ? '是' : '否') : (value ?? '-'))
-  }))
+    }))
 })
 const amountSensitiveFields = new Set(['isSpecialNode', 'specialMultiplier', 'authorAvgFee'])
 const editWorkFields = computed(() => Object.keys(editForm.workInfo || {})
@@ -657,7 +690,7 @@ const selectedTaskRefs = () => selectedRecords.value.map(item => ({
 const loadList = async () => {
   loading.value = true
   try {
-    const res = await getFeeList({ ...query })
+    const res = await getFeeList({ ...dateQueryParams(), pageNum: query.pageNum, pageSize: query.pageSize })
     records.value = res.data?.list || []
     total.value = Number(res.data?.total || 0)
   } finally {
@@ -680,7 +713,7 @@ const scheduleContributorSearch = () => {
 
 const resetQuery = () => {
   clearSelection()
-  Object.assign(query, { deptCode: '', month: '', status: '', contributorName: '', pageNum: 1, pageSize: 10 })
+  Object.assign(query, { deptCode: '', publishDateRange: [], createDateRange: [], status: '', contributorName: '', pageNum: 1, pageSize: 10 })
   loadList()
 }
 
@@ -927,10 +960,7 @@ const handleExport = async () => {
   exporting.value = true
   try {
     const response = await exportFee({
-      deptCode: query.deptCode,
-      month: query.month,
-      status: query.status,
-      contributorName: query.contributorName,
+      ...dateQueryParams(),
       templateType: exportPreset.value,
       fields: exportFields.value,
       selectedTasks: exportSelectedOnly.value ? selectedTaskRefs() : null
@@ -942,11 +972,13 @@ const handleExport = async () => {
     const templateFileNames = {
       EDITORIAL_WECHAT: '校学生记者团稿费统计（微信）',
       EDITORIAL_WEBSITE: '校学生记者团稿费统计（院网）',
+      EDITORIAL_NEWSPAPER: '校学生记者团稿费统计（校报）',
       PHOTO: '校学生记者团稿费统计（摄影）',
       VISUAL: '校学生记者团稿费统计（视觉）',
       VIDEO: '校学生记者团稿费统计（视频）'
     }
-    link.download = `${templateFileNames[exportPreset.value] || (exportSelectedOnly.value ? '已选稿费清单' : '稿费清单')}_${query.month || '全部'}.xlsx`
+    // 202609081510 - 统一了所有稿费统计表在浏览器端的下载文件名。
+    link.download = `${templateFileNames[exportPreset.value] || '校学生记者团稿费统计（自定义）'}_${query.publishDateRange?.length === 2 ? query.publishDateRange.join('至') : '全部'}.xlsx`
     link.click()
     window.URL.revokeObjectURL(url)
     exportVisible.value = false
@@ -977,6 +1009,12 @@ onMounted(() => {
 .toolbar :deep(.el-select),
 .toolbar :deep(.el-date-editor) {
   width: 160px;
+}
+
+.toolbar :deep(.date-range-filter) {
+  width: 300px;
+  max-width: 100%;
+  flex: 0 1 300px;
 }
 
 .toolbar .contributor-search {
