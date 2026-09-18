@@ -6,13 +6,17 @@ import com.sja.system.common.ApiException;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserImportCandidateDTO;
 import com.sja.system.dto.UserImportSnapshot;
+import com.sja.system.dto.UserRosterSnapshot;
 import com.sja.system.entity.SysDept;
 import com.sja.system.entity.SysRole;
+import com.sja.system.entity.SysUser;
 import com.sja.system.mapper.SysDeptMapper;
 import com.sja.system.mapper.SysRoleMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.vo.UserImportPreviewVO;
 import com.sja.system.vo.UserImportResultVO;
+import com.sja.system.vo.UserRosterPreviewVO;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +30,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.util.List;
+import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -164,6 +169,196 @@ class UserImportServiceTest {
         verify(userService, times(2)).verifyCurrentPassword(7L, "current-password");
     }
 
+    @Test
+    void previewsReorderedRosterHeadersAndSkipsOnlyInvalidRows() throws Exception {
+        // 202609181445 - 验证乱序九列表头、空白可选字段、重复学号及有效行令牌。
+        stubRosterSelection();
+        when(sysUserMapper.selectList(any())).thenReturn(List.of());
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        MockMultipartFile file = rosterWorkbook(false, false);
+
+        UserRosterPreviewVO preview = service.previewRoster(file, 5L, 7L, 3);
+
+        assertEquals(3, preview.total());
+        assertEquals(2, preview.validCount());
+        assertEquals(1, preview.invalidCount());
+        assertEquals(List.of("额外信息"), preview.ignoredHeaders());
+        assertEquals(2, preview.rows().get(0).rowNumber());
+        assertEquals(4, preview.rows().get(2).rowNumber());
+        assertTrue(preview.rows().get(2).errors().contains("学号在文件中重复"));
+        assertNotNull(preview.importToken());
+        ArgumentCaptor<String> snapshot = ArgumentCaptor.forClass(String.class);
+        verify(valueOperations).set(eq("test:user-import:roster:v2:7:" + preview.importToken()),
+                snapshot.capture(), eq(Duration.ofSeconds(600)));
+        assertEquals(2, objectMapper.readTree(snapshot.getValue()).get("candidates").size());
+        assertEquals(1, objectMapper.readTree(snapshot.getValue()).get("skippedRows").size());
+        assertFalse(snapshot.getValue().contains("roleIds"));
+        verify(userService, never()).createUser(any(), any(), any(), any());
+    }
+
+    @Test
+    void rejectsDuplicateRosterHeaderAsWholeFileError() throws Exception {
+        when(sysRoleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(activeRole(5, "采编部员")));
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.previewRoster(rosterWorkbook(true, false), 5L, 7L, 3));
+        assertEquals(400, error.getStatus());
+        assertTrue(error.getMessage().contains("表头重复"));
+    }
+
+    @Test
+    void rejectsNumericIdentifierCellsWithoutGuessingPrecision() throws Exception {
+        stubRosterSelection();
+        when(sysUserMapper.selectList(any())).thenReturn(List.of());
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        UserRosterPreviewVO preview = service.previewRoster(rosterWorkbook(false, true), 5L, 7L, 3);
+        assertTrue(preview.rows().get(0).errors().stream().anyMatch(error -> error.contains("文本格式")));
+        assertEquals(2, preview.validCount());
+    }
+
+    @Test
+    void reportsExistingStudentNumberWithoutRejectingOtherCandidates() throws Exception {
+        stubRosterSelection();
+        SysUser existing = new SysUser();
+        existing.setStudentNo("202600000001");
+        when(sysUserMapper.selectList(any())).thenReturn(List.of(existing), List.of());
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        UserRosterPreviewVO preview = service.previewRoster(rosterWorkbook(false, false), 5L, 7L, 3);
+
+        assertEquals(1, preview.validCount());
+        assertEquals(2, preview.invalidCount());
+        assertTrue(preview.rows().get(0).errors().contains("学号或登录账号已存在"));
+        assertTrue(preview.rows().get(1).valid());
+    }
+
+    @Test
+    void preventsAssigningElevatedRosterRole() throws Exception {
+        when(sysRoleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(activeRole(1, "主席")));
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.previewRoster(rosterWorkbook(false, false), 1L, 7L, 3));
+
+        assertEquals(403, error.getStatus());
+        verify(sysUserMapper, never()).selectList(any());
+    }
+
+    @Test
+    void rejectsRemovedMemberTypeHeader() throws Exception {
+        // 202609181445 - 旧模板身份列不能被当作无关列悄悄忽略。
+        when(sysRoleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(activeRole(5, "采编部员")));
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.previewRoster(rosterWorkbook(false, false, null, true), 5L, 7L, 3));
+
+        assertEquals(400, error.getStatus());
+        assertTrue(error.getMessage().contains("已移除"));
+        verify(sysDeptMapper, never()).selectList(any());
+    }
+
+    @Test
+    void rejectsDepartmentOutsideFourAllowedOptions() throws Exception {
+        stubRosterSelection();
+        when(sysUserMapper.selectList(any())).thenReturn(List.of());
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        UserRosterPreviewVO preview = service.previewRoster(
+                rosterWorkbook(false, false, "宣传部", false), 5L, 7L, 3);
+
+        assertFalse(preview.rows().get(0).valid());
+        assertTrue(preview.rows().get(0).errors().stream()
+                .anyMatch(reason -> reason.contains("只能填写采编部、摄影部、视觉部或视频部")));
+        assertEquals(2, preview.validCount());
+    }
+
+    @Test
+    void acceptsFourAllowedDepartmentsAndRechecksTheirNames() throws Exception {
+        when(sysRoleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(activeRole(5, "采编部员")));
+        when(sysDeptMapper.selectList(any())).thenReturn(List.of(activeDept(),
+                activeDept(3L, "摄影部"), activeDept(4L, "视觉部"), activeDept(5L, "视频部")));
+        when(sysUserMapper.selectList(any())).thenReturn(List.of());
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        UserRosterPreviewVO preview = service.previewRoster(rosterWorkbook(false, false,
+                "采编部、摄影部、视觉部、视频部", false), 5L, 7L, 3);
+
+        assertTrue(preview.rows().get(0).valid());
+        assertEquals(List.of("采编部", "摄影部", "视觉部", "视频部"),
+                preview.rows().get(0).deptNames());
+        when(sysDeptMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(activeDept(2L, "宣传部")));
+        UserRosterSnapshot.Candidate candidate = new UserRosterSnapshot.Candidate(2, "测试人员",
+                "202600000001", null, null, null, "440000200001010001", null, null, List.of(2L));
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.validateRosterDepartments(candidate));
+        assertEquals(400, error.getStatus());
+        assertTrue(error.getMessage().contains("只能填写"));
+    }
+
+    @Test
+    void consumesRosterTokenOnceOnlyForItsOperator() throws Exception {
+        // 202609181147 - 验证人员名单令牌单次消费且与操作人及名单命名空间绑定。
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        String token = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
+        UserRosterSnapshot snapshot = new UserRosterSnapshot(7L, 5L, 1,
+                List.of(new UserRosterSnapshot.Candidate(2, "测试人员", "202600000001",
+                        null, null, null, "440000200001010001", null, null,
+                        List.of())), List.of());
+        when(valueOperations.getAndDelete("test:user-import:roster:v2:7:" + token))
+                .thenReturn(objectMapper.writeValueAsString(snapshot), null);
+
+        assertEquals(snapshot, service.consumeRosterSnapshot(token, 7L));
+        ApiException replay = assertThrows(ApiException.class, () -> service.consumeRosterSnapshot(token, 7L));
+        assertEquals(400, replay.getStatus());
+        verify(valueOperations, times(2)).getAndDelete("test:user-import:roster:v2:7:" + token);
+    }
+
+    @Test
+    void rejectsRoleChangeBetweenPreviewAndConfirmation() {
+        when(sysRoleMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(SysRole.builder().id(5L).roleCode(5)
+                        .roleName("采编部员").isValid(0).build()));
+
+        ApiException error = assertThrows(ApiException.class, () -> service.validateRosterRole(5L, 3));
+
+        assertEquals(400, error.getStatus());
+        assertTrue(error.getMessage().contains("已禁用"));
+    }
+
+    private void stubRosterSelection() {
+        when(sysRoleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(activeRole(5, "采编部员")));
+        when(sysDeptMapper.selectList(any())).thenReturn(List.of(activeDept()));
+    }
+
+    private MockMultipartFile rosterWorkbook(boolean duplicateHeader, boolean numericStudent) throws IOException {
+        return rosterWorkbook(duplicateHeader, numericStudent, null, false);
+    }
+
+    private MockMultipartFile rosterWorkbook(boolean duplicateHeader, boolean numericStudent,
+                                             String firstDepartment, boolean legacyMemberHeader) throws IOException {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("人员名单");
+            String[] headers = {"学号", "姓名", "银行卡号", "团内部门", "身份证号码", "二级学院",
+                    "年级专业班级", "手机号码", "宿舍地址", "额外信息"};
+            var header = sheet.createRow(0);
+            for (int i = 0; i < headers.length; i++) header.createCell(i).setCellValue(headers[i]);
+            if (duplicateHeader) header.createCell(9).setCellValue("学号");
+            if (legacyMemberHeader) header.createCell(9).setCellValue("正式部员/留任部员");
+            String[] students = {"202600000001", "202600000002", "202600000001"};
+            for (int i = 0; i < 3; i++) {
+                var row = sheet.createRow(i + 1);
+                if (numericStudent && i == 0) row.createCell(0).setCellValue(202600000001D);
+                else row.createCell(0).setCellValue(students[i]);
+                row.createCell(1).setCellValue("测试人员" + i);
+                row.createCell(4).setCellValue("44000020000101000" + i);
+                if (i == 0 && firstDepartment != null) row.createCell(3).setCellValue(firstDepartment);
+            }
+            workbook.write(output);
+            return new MockMultipartFile("file", "人员名单.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
+        }
+    }
+
     private void stubSelection(int roleCode) {
         when(sysDeptMapper.selectBatchIds(anyCollection())).thenReturn(List.of(activeDept()));
         when(sysRoleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(activeRole(roleCode, "部员")));
@@ -171,6 +366,10 @@ class UserImportServiceTest {
 
     private SysDept activeDept() {
         return SysDept.builder().id(2L).deptName("采编部").deptCode("EDITORIAL").isValid(1).build();
+    }
+
+    private SysDept activeDept(Long id, String name) {
+        return SysDept.builder().id(id).deptName(name).isValid(1).build();
     }
 
     private SysRole activeRole(int roleCode, String roleName) {

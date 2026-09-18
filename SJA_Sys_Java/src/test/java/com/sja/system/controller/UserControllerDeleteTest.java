@@ -5,6 +5,7 @@ import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.AsyncTaskQueueService;
 import com.sja.system.service.OperationLogService;
 import com.sja.system.service.UserImportService;
+import com.sja.system.service.UserRosterImportService;
 import com.sja.system.service.UserService;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -22,7 +23,8 @@ class UserControllerDeleteTest {
         UserService userService = mock(UserService.class);
         SecurityUtils securityUtils = mock(SecurityUtils.class);
         UserController controller = new UserController(userService, mock(UserImportService.class),
-                mock(OperationLogService.class), securityUtils, mock(AsyncTaskQueueService.class));
+                mock(UserRosterImportService.class), mock(OperationLogService.class),
+                securityUtils, mock(AsyncTaskQueueService.class));
         MockHttpServletRequest request = new MockHttpServletRequest();
         UserDeleteDTO body = new UserDeleteDTO();
         body.setCurrentPassword("current-password");

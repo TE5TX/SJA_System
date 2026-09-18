@@ -114,6 +114,11 @@
               <el-icon><UserFilled /></el-icon>
               <template #title>人员信息</template>
             </el-menu-item>
+            <!-- 202609181028 - 在系统管理中增加受权限限制的人员批量导入入口。 -->
+            <el-menu-item v-if="canManageRecruitment" index="/app/user-batch-import">
+              <el-icon><UploadFilled /></el-icon>
+              <template #title>人员批量导入</template>
+            </el-menu-item>
             <el-menu-item index="/app/logs">
               <el-icon><Tickets /></el-icon>
               <template #title>操作日志</template>

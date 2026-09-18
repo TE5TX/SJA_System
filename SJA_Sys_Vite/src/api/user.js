@@ -114,6 +114,36 @@ export function downloadUserImportTemplate() {
   })
 }
 
+// 202609181028 - 增加十列人员名单模板下载，保留现有两列批量注册模板接口。
+export function downloadUserRosterImportTemplate() {
+  return request({
+    url: '/v1/users/import/roster/template',
+    method: 'get',
+    responseType: 'blob',
+    timeout: 30000
+  })
+}
+
+// 202609181104 - 新增十列名单的独立预览请求，不复用两列批量注册接口。
+export function previewUserRosterImport(formData) {
+  return request({
+    url: '/v1/users/import/roster/preview',
+    method: 'post',
+    data: formData,
+    timeout: 60000
+  })
+}
+
+// 202609181147 - 增加人员名单一次性确认导入请求，保留两列注册的原有接口。
+export function confirmUserRosterImport(importToken, currentPassword) {
+  return request({
+    url: '/v1/users/import/roster/confirm',
+    method: 'post',
+    data: { importToken, currentPassword },
+    timeout: 120000
+  })
+}
+
 export function confirmUserImport(importToken, currentPassword) {
   return request({
     url: '/v1/users/import/confirm',

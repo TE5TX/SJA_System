@@ -67,6 +67,13 @@ const routes = [
         component: () => import('@/views/UserManagement.vue'),
         meta: { title: '人员信息' }
       },
+      // 202609181028 - 完成了人员批量导入页面的独立权限路由。
+      {
+        path: 'user-batch-import',
+        name: 'UserBatchImport',
+        component: () => import('@/views/UserBatchImport.vue'),
+        meta: { title: '人员批量导入', allowedRoleCodes: [0, 1, 3] }
+      },
       {
         path: 'logs',
         name: 'OperationLogs',

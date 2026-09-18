@@ -8,6 +8,7 @@ import com.sja.system.service.FeeService;
 import com.sja.system.service.MonthlyFeeExportService;
 import com.sja.system.service.OperationLogService;
 import com.sja.system.service.UserImportService;
+import com.sja.system.service.UserRosterImportService;
 import com.sja.system.service.UserService;
 import com.sja.system.vo.AsyncTaskAcceptedVO;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,8 @@ class AsyncWriteControllerTest {
         SecurityUtils securityUtils = mock(SecurityUtils.class);
         AsyncTaskQueueService queueService = mock(AsyncTaskQueueService.class);
         UserController controller = new UserController(mock(UserService.class),
-                mock(UserImportService.class), mock(OperationLogService.class), securityUtils, queueService);
+                mock(UserImportService.class), mock(UserRosterImportService.class),
+                mock(OperationLogService.class), securityUtils, queueService);
         MockHttpServletRequest request = new MockHttpServletRequest();
         ProfileUpdateDTO dto = new ProfileUpdateDTO();
         AsyncTaskAcceptedVO accepted = acceptedTask();

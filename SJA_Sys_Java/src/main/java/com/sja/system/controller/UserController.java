@@ -20,8 +20,11 @@ import com.sja.system.service.OperationLogService;
 import com.sja.system.service.AsyncTaskQueueService;
 import com.sja.system.service.UserService;
 import com.sja.system.service.UserImportService;
+import com.sja.system.service.UserRosterImportService;
 import com.sja.system.vo.AsyncTaskAcceptedVO;
 import com.sja.system.vo.UserImportPreviewVO;
+import com.sja.system.vo.UserRosterPreviewVO;
+import com.sja.system.vo.UserRosterImportResultVO;
 import com.sja.system.vo.UserImportResultVO;
 import com.sja.system.vo.UserVO;
 import lombok.RequiredArgsConstructor;
@@ -70,6 +73,7 @@ public class UserController {
 
     private final UserService userService;
     private final UserImportService userImportService;
+    private final UserRosterImportService userRosterImportService;
     private final OperationLogService operationLogService;
     private final SecurityUtils securityUtils;
     private final AsyncTaskQueueService asyncTaskQueueService;
@@ -193,16 +197,46 @@ public class UserController {
     @GetMapping("/users/import/template")
     @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
     public void downloadUserImportTemplate(HttpServletResponse response) throws IOException {
-        String encodedFileName = URLEncoder.encode("人员批量注册模板.xlsx", StandardCharsets.UTF_8.name())
-                .replace("+", "%20");
+        writeUserImportTemplate(response, "人员批量注册模板.xlsx", userImportService.createBasicTemplate());
+    }
+
+    // 202609181445 - 提供九列名单模板接口，并复用现有批量注册模板的 HTTP 响应处理。
+    @GetMapping("/users/import/roster/template")
+    @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
+    public void downloadUserRosterImportTemplate(HttpServletResponse response) throws IOException {
+        writeUserImportTemplate(response, "人员批量导入模板.xlsx", userImportService.createRosterTemplate());
+    }
+
+    // 202609181445 - 提供独立的九列名单解析预览接口，保持原两列批量注册接口行为不变。
+    @PostMapping("/users/import/roster/preview")
+    @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
+    public Result<UserRosterPreviewVO> previewUserRosterImport(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("roleId") Long roleId,
+            HttpServletRequest request) {
+        return Result.success(userImportService.previewRoster(file, roleId,
+                securityUtils.getCurrentUserId(request), securityUtils.getCurrentRoleCode(request)));
+    }
+
+    // 202609181445 - 提供九列名单的一次性确认接口，与旧版两列确认流程隔离。
+    @PostMapping("/users/import/roster/confirm")
+    @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
+    public Result<UserRosterImportResultVO> confirmUserRosterImport(
+            @RequestBody @Valid UserImportConfirmDTO dto, HttpServletRequest request) {
+        return Result.success("人员名单导入处理完成", userRosterImportService.confirm(
+                dto.getImportToken(), dto.getCurrentPassword(),
+                securityUtils.getCurrentUserId(request),
+                securityUtils.getCurrentUsernameFromToken(request),
+                securityUtils.getCurrentRoleCode(request), request.getRemoteAddr()));
+    }
+
+    private void writeUserImportTemplate(HttpServletResponse response, String fileName, byte[] content)
+            throws IOException {
+        String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8.name()).replace("+", "%20");
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + encodedFileName);
-        EasyExcel.write(response.getOutputStream())
-                .head(List.of(List.of("姓名"), List.of("学号")))
-                .registerWriteHandler(new SimpleColumnWidthStyleStrategy(22))
-                .sheet("批量注册人员")
-                .doWrite(Collections.emptyList());
+        response.getOutputStream().write(content);
     }
 
     @PostMapping("/users/import/confirm")

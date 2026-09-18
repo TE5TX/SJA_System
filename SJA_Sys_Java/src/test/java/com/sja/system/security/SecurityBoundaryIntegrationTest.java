@@ -2,6 +2,8 @@ package com.sja.system.security;
 
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.service.LoginCaptchaService;
+import com.sja.system.service.OperationLogService;
+import com.sja.system.service.UserRosterImportService;
 import com.sja.system.service.RecruitmentService;
 import com.sja.system.vo.RecruitmentStatusVO;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -50,6 +53,12 @@ class SecurityBoundaryIntegrationTest {
 
     @MockitoBean
     private LoginCaptchaService loginCaptchaService;
+
+    @MockitoBean
+    private OperationLogService operationLogService;
+
+    @MockitoBean
+    private UserRosterImportService userRosterImportService;
 
     @Test
     void allowsConfiguredFrontendPreflight() throws Exception {
@@ -93,16 +102,57 @@ class SecurityBoundaryIntegrationTest {
 
     @Test
     void limitsBatchRegistrationToAdminChairmanAndSecretary() throws Exception {
-        // 202608210907 - 验证批量注册模板接口只允许管理员、主席和秘书长访问。
+        // 202609181028 - 验证新旧模板接口均只允许有批量导入权限的身份访问。
+        for (String path : new String[]{"/api/v1/users/import/template",
+                "/api/v1/users/import/roster/template"}) {
+            for (int roleCode : new int[]{0, 1, 3}) {
+                mockMvc.perform(get(path).with(authentication(authenticationForRole(roleCode))))
+                        .andExpect(status().isOk());
+            }
+            mockMvc.perform(get(path).with(authentication(authenticationForRole(13))))
+                    .andExpect(status().isForbidden());
+            mockMvc.perform(get(path)).andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Test
+    void protectsRosterPreviewFromUnauthorizedRoles() throws Exception {
+        // 202609181445 - 验证九列名单预览沿用管理员、主席和秘书长的权限边界。
+        MockMultipartFile file = new MockMultipartFile("file", "名单.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", new byte[0]);
         for (int roleCode : new int[]{0, 1, 3}) {
-            mockMvc.perform(get("/api/v1/users/import/template")
+            mockMvc.perform(multipart("/api/v1/users/import/roster/preview").file(file)
+                            .param("roleId", "5")
+                            .with(authentication(authenticationForRole(roleCode))))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(multipart("/api/v1/users/import/roster/preview").file(file)
+                        .param("roleId", "5")
+                        .with(authentication(authenticationForRole(13))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(multipart("/api/v1/users/import/roster/preview").file(file)
+                        .param("roleId", "5"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void limitsRosterConfirmationToImportOperators() throws Exception {
+        // 202609181147 - 验证确认接口只允许管理员、主席和秘书长使用。
+        String body = "{\"importToken\":\"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG\","
+                + "\"currentPassword\":\"current-password\"}";
+        for (int roleCode : new int[]{0, 1, 3}) {
+            mockMvc.perform(post("/api/v1/users/import/roster/confirm")
+                            .contentType("application/json").content(body)
                             .with(authentication(authenticationForRole(roleCode))))
                     .andExpect(status().isOk());
         }
-
-        mockMvc.perform(get("/api/v1/users/import/template")
+        mockMvc.perform(post("/api/v1/users/import/roster/confirm")
+                        .contentType("application/json").content(body)
                         .with(authentication(authenticationForRole(13))))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/v1/users/import/roster/confirm")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
