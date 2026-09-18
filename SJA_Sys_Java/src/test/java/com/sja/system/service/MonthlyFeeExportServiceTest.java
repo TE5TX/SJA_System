@@ -191,6 +191,8 @@ class MonthlyFeeExportServiceTest {
         assertFalse(sql.contains("SUBMITTED"));
         assertEquals(5, sql.split("audit_status='APPROVED'", -1).length - 1);
         assertTrue(sql.contains("s.subsidy_month BETWEEN #{startMonth} AND #{endMonth}"));
+        // 202609151004 - 验证已通过但未发布的稿费任务也会进入月份导出。
+        assertEquals(4, sql.split("is_published=0 OR", -1).length - 1);
     }
 
     @Test
