@@ -60,7 +60,7 @@
 import { nextTick, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { login } from '@/api/auth'
+import { login, prepareCsrfToken } from '@/api/auth'
 import { useUserStore } from '@/store/user'
 
 const router = useRouter()
@@ -156,11 +156,13 @@ const submitLogin = async (captchaToken) => {
       password: loginForm.password,
       captchaToken
     })
-    const { token, userInfo, menus, mustChangePassword } = res.data
+    const { userInfo, menus, mustChangePassword } = res.data
 
-    userStore.setToken(token)
+    // 202609201535 - 登录响应不再向JavaScript暴露Access Token。
+    userStore.setAuthenticated(true)
     userStore.setUserInfo(userInfo)
     userStore.setMustChangePassword(mustChangePassword)
+    await prepareCsrfToken()
 
     if (menus) {
       localStorage.setItem('menus', JSON.stringify(menus))

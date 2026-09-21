@@ -3,6 +3,8 @@ package com.sja.system.service.impl;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.sja.system.entity.SysOperationLog;
 import com.sja.system.mapper.SysOperationLogMapper;
+import com.sja.system.dto.OperationLogQueryDTO;
+import com.sja.system.common.ApiException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -49,5 +51,17 @@ class OperationLogServiceImplTest {
         service.detachUserReferences(8L);
 
         verify(mapper).update(eq(null), any(UpdateWrapper.class));
+    }
+
+    @Test
+    void rejectsAuditLogReadsForNonManagerAtServiceBoundary() {
+        SysOperationLogMapper mapper = mock(SysOperationLogMapper.class);
+        OperationLogServiceImpl service = new OperationLogServiceImpl(mapper, Optional::empty);
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.getAuthorizedLogList(new OperationLogQueryDTO(), 4));
+
+        // 202609181625 - 验证操作日志查询权限不再仅由 Controller 约束。
+        assertEquals(403, error.getStatus());
     }
 }

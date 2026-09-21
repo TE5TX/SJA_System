@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sja.system.application.port.AuditRequestContextProvider;
 import com.sja.system.application.port.AuditRequestContextProvider.AuditRequestContext;
+import com.sja.system.authorization.RoleAuthorizationPolicy;
+import com.sja.system.common.ApiException;
 import com.sja.system.common.PageResult;
 import com.sja.system.common.MaskingUtils;
 import com.sja.system.dto.OperationLogQueryDTO;
@@ -143,6 +145,16 @@ public class OperationLogServiceImpl implements OperationLogService {
                 .collect(Collectors.toList());
 
         return new PageResult<>(voList, resultPage.getTotal(), (long) pn, (long) ps);
+    }
+
+    @Override
+    public PageResult<OperationLogVO> getAuthorizedLogList(OperationLogQueryDTO query,
+                                                            Integer operatorRoleCode) {
+        // 202609181625 - 将操作日志读取的角色边界从 Controller 下沉至审计服务。
+        if (!RoleAuthorizationPolicy.canViewOperationLogs(operatorRoleCode)) {
+            throw ApiException.forbidden("只有管理员或秘书长可以查看操作日志");
+        }
+        return getLogList(query);
     }
 
     private OperationLogVO toVO(SysOperationLog entity) {

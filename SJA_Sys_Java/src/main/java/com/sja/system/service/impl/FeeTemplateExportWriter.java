@@ -5,7 +5,7 @@ import com.sja.system.vo.FeeListVO;
 import org.apache.poi.common.usermodel.HyperlinkType;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -17,7 +17,12 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Writes the fixed departmental workbooks used by the student press corps. */
+/**
+ * 写入学生记者团各部门使用的固定稿费模板。
+ *
+ * <p>该组件只负责工作簿布局，供独立的稿费导出服务调用。</p>
+ */
+// 202609201644 - 将固定模板写入组件开放给独立稿费导出服务复用。
 final class FeeTemplateExportWriter {
 
     static final String EDITORIAL_WECHAT = "EDITORIAL_WECHAT";
@@ -60,12 +65,17 @@ final class FeeTemplateExportWriter {
         }
     }
 
-    static void write(OutputStream outputStream, String templateType, List<ExportItem> items,
+    /**
+     * 按迭代器逐行写入固定模板，避免导出前在业务层聚合全部任务。
+     */
+    static void write(OutputStream outputStream, String templateType, Iterable<ExportItem> items,
                       String selectedMonth) throws IOException {
         TemplateDefinition definition = DEFINITIONS.get(templateType);
         if (definition == null) throw new IllegalArgumentException("不支持的稿费导出模板: " + templateType);
 
-        try (Workbook workbook = new XSSFWorkbook()) {
+        // 202609201115 - 固定模板改用流式工作簿，限制大量导出时的内存占用。
+        try (SXSSFWorkbook workbook = new SXSSFWorkbook(200)) {
+            workbook.setCompressTempFiles(true);
             Sheet sheet = workbook.createSheet("Sheet1");
             Styles styles = new Styles(workbook);
             int lastColumn = definition.headers.size() - 1;
@@ -97,6 +107,7 @@ final class FeeTemplateExportWriter {
             sheet.getPrintSetup().setFitWidth((short) 1);
             sheet.getPrintSetup().setFitHeight((short) 0);
             workbook.write(outputStream);
+            workbook.dispose();
         }
     }
 

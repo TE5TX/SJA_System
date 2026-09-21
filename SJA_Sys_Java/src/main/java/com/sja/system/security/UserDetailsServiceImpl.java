@@ -2,6 +2,7 @@ package com.sja.system.security;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.application.port.ActiveUserAccessPort;
+import com.sja.system.authorization.KnownRole;
 import com.sja.system.application.port.ActiveUserAccessPort.ActiveUserAccess;
 import com.sja.system.entity.SysMenu;
 import com.sja.system.entity.SysRole;
@@ -94,7 +95,7 @@ public class UserDetailsServiceImpl implements UserDetailsService, ActiveUserAcc
 
         // 3. Load role details and build authorities
         List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-        Integer highestRoleCode = 13;
+        Integer highestRoleCode = KnownRole.VISITOR.code();
 
         if (userRoles != null && !userRoles.isEmpty()) {
             List<Long> roleIds = userRoles.stream()
@@ -129,7 +130,7 @@ public class UserDetailsServiceImpl implements UserDetailsService, ActiveUserAcc
 
         // If no authorities found, add a default
         if (authorities.isEmpty()) {
-            authorities.add(new SimpleGrantedAuthority("ROLE_13"));
+            authorities.add(new SimpleGrantedAuthority(KnownRole.VISITOR.authority()));
         }
 
         log.debug("Loaded user: {}, authorities: {}", user.getUsername(), authorities);

@@ -2,6 +2,7 @@ package com.sja.system.service;
 
 import com.alibaba.excel.EasyExcel;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sja.system.application.model.UploadedFile;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserImportCandidateDTO;
@@ -13,6 +14,7 @@ import com.sja.system.entity.SysUser;
 import com.sja.system.mapper.SysDeptMapper;
 import com.sja.system.mapper.SysRoleMapper;
 import com.sja.system.mapper.SysUserMapper;
+import com.sja.system.infrastructure.web.MultipartUploadedFile;
 import com.sja.system.vo.UserImportPreviewVO;
 import com.sja.system.vo.UserImportResultVO;
 import com.sja.system.vo.UserRosterPreviewVO;
@@ -175,7 +177,7 @@ class UserImportServiceTest {
         stubRosterSelection();
         when(sysUserMapper.selectList(any())).thenReturn(List.of());
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        MockMultipartFile file = rosterWorkbook(false, false);
+        UploadedFile file = rosterWorkbook(false, false);
 
         UserRosterPreviewVO preview = service.previewRoster(file, 5L, 7L, 3);
 
@@ -330,12 +332,12 @@ class UserImportServiceTest {
         when(sysDeptMapper.selectList(any())).thenReturn(List.of(activeDept()));
     }
 
-    private MockMultipartFile rosterWorkbook(boolean duplicateHeader, boolean numericStudent) throws IOException {
+    private UploadedFile rosterWorkbook(boolean duplicateHeader, boolean numericStudent) throws IOException {
         return rosterWorkbook(duplicateHeader, numericStudent, null, false);
     }
 
-    private MockMultipartFile rosterWorkbook(boolean duplicateHeader, boolean numericStudent,
-                                             String firstDepartment, boolean legacyMemberHeader) throws IOException {
+    private UploadedFile rosterWorkbook(boolean duplicateHeader, boolean numericStudent,
+                                        String firstDepartment, boolean legacyMemberHeader) throws IOException {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             var sheet = workbook.createSheet("人员名单");
             String[] headers = {"学号", "姓名", "银行卡号", "团内部门", "身份证号码", "二级学院",
@@ -354,8 +356,8 @@ class UserImportServiceTest {
                 if (i == 0 && firstDepartment != null) row.createCell(3).setCellValue(firstDepartment);
             }
             workbook.write(output);
-            return new MockMultipartFile("file", "人员名单.xlsx",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
+            return new MultipartUploadedFile(new MockMultipartFile("file", "人员名单.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray()));
         }
     }
 
@@ -377,14 +379,14 @@ class UserImportServiceTest {
                 .roleName(roleName).isValid(1).build();
     }
 
-    private MockMultipartFile workbook(String firstHeader, String secondHeader, List<List<String>> rows) {
+    private UploadedFile workbook(String firstHeader, String secondHeader, List<List<String>> rows) {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         EasyExcel.write(output)
                 .head(List.of(List.of(firstHeader), List.of(secondHeader)))
                 .autoCloseStream(false)
                 .sheet("人员")
                 .doWrite(rows);
-        return new MockMultipartFile("file", "人员批量注册.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
+        return new MultipartUploadedFile(new MockMultipartFile("file", "人员批量注册.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray()));
     }
 }

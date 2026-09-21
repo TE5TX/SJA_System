@@ -11,6 +11,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sja.system.common.ApiException;
+import com.sja.system.authorization.RoleAuthorizationPolicy;
+import com.sja.system.application.model.UploadedFile;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.dto.UserImportCandidateDTO;
 import com.sja.system.dto.UserImportSnapshot;
@@ -39,7 +41,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
@@ -77,7 +78,6 @@ public class UserImportService {
     private static final Set<String> ROSTER_DEPARTMENT_NAMES = Set.of(
             "采编部", "摄影部", "视觉部", "视频部");
     private static final String ROSTER_KEY_SEGMENT = ":roster:v2:";
-    private static final Set<Integer> IMPORT_OPERATOR_ROLES = Set.of(0, 1, 3);
 
     private final SysUserMapper sysUserMapper;
     private final SysDeptMapper sysDeptMapper;
@@ -146,7 +146,7 @@ public class UserImportService {
     }
 
     /** Parses the first worksheet and returns a non-mutating validation preview. */
-    public UserImportPreviewVO preview(MultipartFile file, List<Long> deptIds, List<Long> roleIds,
+    public UserImportPreviewVO preview(UploadedFile file, List<Long> deptIds, List<Long> roleIds,
                                        Long operatorId, Integer operatorRoleCode) {
         requireAuthorizedOperator(operatorId, operatorRoleCode);
         validateFile(file);
@@ -182,7 +182,7 @@ public class UserImportService {
 
     /** Validates a nine-column roster without writing any user or relationship records. */
     // 202609181104 - 完成了乱序表头、可选字段和逐行跳过的人员名单预览。
-    public UserRosterPreviewVO previewRoster(MultipartFile file, Long roleId,
+    public UserRosterPreviewVO previewRoster(UploadedFile file, Long roleId,
                                              Long operatorId, Integer operatorRoleCode) {
         requireAuthorizedOperator(operatorId, operatorRoleCode);
         validateFile(file);
@@ -311,10 +311,10 @@ public class UserImportService {
         return new UserImportResultVO(userIds.size(), userIds);
     }
 
-    private ImportReadListener readWorkbook(MultipartFile file) {
+    private ImportReadListener readWorkbook(UploadedFile file) {
         ImportReadListener listener = new ImportReadListener(maxRows);
         try {
-            EasyExcel.read(file.getInputStream(), listener)
+            EasyExcel.read(file.inputStream(), listener)
                     .headRowNumber(1)
                     .autoCloseStream(true)
                     .sheet(0)
@@ -341,9 +341,7 @@ public class UserImportService {
     }
 
     private boolean isAssignableRosterRole(SysRole role, Integer operatorRoleCode) {
-        Integer code = role.getRoleCode();
-        return code != null && code >= operatorRoleCode
-                && !Set.of(0, 1, 2, 3, 13).contains(code);
+        return RoleAuthorizationPolicy.canAssignRosterRole(operatorRoleCode, role.getRoleCode());
     }
 
     /** Rechecks department status and allowed names after the preview was created. */
@@ -385,8 +383,8 @@ public class UserImportService {
         }
     }
 
-    private RosterWorkbook readRosterWorkbook(MultipartFile file) {
-        try (Workbook workbook = WorkbookFactory.create(file.getInputStream())) {
+    private RosterWorkbook readRosterWorkbook(UploadedFile file) {
+        try (Workbook workbook = WorkbookFactory.create(file.inputStream())) {
             Sheet sheet = workbook.getSheetAt(0);
             Row header = sheet.getRow(0);
             if (header == null) throw ApiException.badRequest("Excel第一行缺少表头");
@@ -547,11 +545,9 @@ public class UserImportService {
         List<SysDept> depts = loadActiveDepts(deptIds);
         List<SysRole> roles = loadActiveRoles(roleIds);
 
-        if (operatorRoleCode != 0) {
-            for (SysRole role : roles) {
-                if (role.getRoleCode() == null || role.getRoleCode() < operatorRoleCode) {
-                    throw ApiException.forbidden("不能批量注册权限高于当前用户的身份: " + role.getRoleName());
-                }
+        for (SysRole role : roles) {
+            if (!RoleAuthorizationPolicy.canAssignRole(operatorRoleCode, role.getRoleCode())) {
+                throw ApiException.forbidden("不能批量注册权限高于当前用户的身份: " + role.getRoleName());
             }
         }
         return new Selection(deptIds, roleIds,
@@ -617,12 +613,12 @@ public class UserImportService {
         }
     }
 
-    private void validateFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) throw ApiException.badRequest("请选择要导入的xlsx文件");
-        if (file.getSize() > maxFileBytes) {
+    private void validateFile(UploadedFile file) {
+        if (file == null || file.empty()) throw ApiException.badRequest("请选择要导入的xlsx文件");
+        if (file.size() > maxFileBytes) {
             throw ApiException.badRequest("xlsx文件不能超过 " + (maxFileBytes / 1024 / 1024) + "MB");
         }
-        String filename = file.getOriginalFilename();
+        String filename = file.originalFilename();
         if (!StringUtils.hasText(filename) || !filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
             throw ApiException.badRequest("只允许上传xlsx格式文件");
         }
@@ -630,7 +626,7 @@ public class UserImportService {
 
     void requireAuthorizedOperator(Long operatorId, Integer operatorRoleCode) {
         if (operatorId == null) throw ApiException.unauthorized("未授权");
-        if (operatorRoleCode == null || !IMPORT_OPERATOR_ROLES.contains(operatorRoleCode)) {
+        if (!RoleAuthorizationPolicy.canImportUsers(operatorRoleCode)) {
             throw ApiException.forbidden("只有管理员、主席或秘书长可以批量注册人员");
         }
     }

@@ -9,6 +9,9 @@ import com.alibaba.excel.write.metadata.style.WriteFont;
 import com.alibaba.excel.write.style.HorizontalCellStyleStrategy;
 import com.alibaba.excel.write.style.column.LongestMatchColumnWidthStyleStrategy;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.sja.system.application.model.FeeExportFile;
+import com.sja.system.authorization.KnownRole;
+import com.sja.system.authorization.RoleAuthorizationPolicy;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.MonthlyFeeExportDTO;
 import com.sja.system.entity.SysDept;
@@ -33,11 +36,10 @@ import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 
-import jakarta.servlet.http.HttpServletResponse;
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -57,9 +59,6 @@ import java.util.stream.Collectors;
 public class MonthlyFeeExportService {
 
     private static final int MONEY_SCALE = 1;
-    private static final Set<Integer> MEMBER_ROLE_CODES = new HashSet<>(Arrays.asList(
-            1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14));
-
     private final MonthlyFeeExportMapper monthlyFeeExportMapper;
     private final SysUserMapper sysUserMapper;
     private final SysDeptMapper sysDeptMapper;
@@ -68,9 +67,14 @@ public class MonthlyFeeExportService {
     private final SysUserRoleMapper sysUserRoleMapper;
     private final OperationLogService operationLogService;
 
-    public void export(MonthlyFeeExportDTO dto, Long operatorId, Integer roleCode,
-                       String operatorName, HttpServletResponse response) {
-        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
+    /**
+     * 生成指定月份区间的稿费发放名单。
+     *
+     * @return 与HTTP协议无关的Excel文件
+     */
+    public FeeExportFile export(MonthlyFeeExportDTO dto, Long operatorId, Integer roleCode,
+                                String operatorName) {
+        if (!RoleAuthorizationPolicy.canManageMonthlyFeeExport(roleCode)) {
             throw ApiException.forbidden("只有管理员或秘书长可以导出月份稿费发放名单");
         }
 
@@ -103,9 +107,13 @@ public class MonthlyFeeExportService {
 
         List<MemberRow> rows = buildMemberRows(amountsByUser, subsidyCategoriesByUser, editorialPlatformsByUser);
         String monthRange = dto.getStartMonth() + "至" + dto.getEndMonth();
-        writeWorkbook(monthRange, rows, response);
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        writeWorkbook(rows, outputStream);
         operationLogService.log(operatorId, operatorName, String.valueOf(roleCode), "EXPORT",
                 "FEE", null, String.format("导出%s稿费发放名单，共%d人", monthRange, rows.size()), "");
+        // 202609201130 - 修复了月份稿费导出服务直接操作Servlet响应的问题。
+        return new FeeExportFile("校学生记者团稿费发放名单计算（" + monthRange + "）.xlsx",
+                FeeExportFile.XLSX_CONTENT_TYPE, outputStream.toByteArray());
     }
 
     private List<MemberRow> buildMemberRows(Map<Long, List<BigDecimal>> amountsByUser,
@@ -166,7 +174,8 @@ public class MonthlyFeeExportService {
                 .filter(item -> !"PRESIDIUM".equals(item.getDeptCode()))
                 .findFirst().orElse(null);
         int departmentOrder = departmentOrder(ordinaryDept);
-        boolean chairman = roles.contains(1) || roles.contains(3)
+        boolean chairman = roles.contains(KnownRole.CHAIRMAN.code())
+                || roles.contains(KnownRole.SECRETARY_GENERAL.code())
                 || subsidyCategories.contains("主席团成员")
                 || depts.stream().anyMatch(item -> "PRESIDIUM".equals(item.getDeptCode()));
         if (chairman) {
@@ -174,8 +183,10 @@ public class MonthlyFeeExportService {
             return new Group(0, 0, chairmanOrder(ordinaryDept, roles, editorialPlatforms),
                     "主席团成员", chairmanRemark(roles, subsidyCategories));
         }
-        boolean patrolLeader = roles.contains(11) || subsidyCategories.contains("校园巡查组长");
-        boolean patrolMember = roles.contains(12) || subsidyCategories.contains("校园巡查组员");
+        boolean patrolLeader = roles.contains(KnownRole.PATROL_LEADER.code())
+                || subsidyCategories.contains("校园巡查组长");
+        boolean patrolMember = roles.contains(KnownRole.PATROL_MEMBER.code())
+                || subsidyCategories.contains("校园巡查组员");
         if (patrolLeader || patrolMember) {
             boolean leader = patrolLeader;
             return new Group(1, 0, leader ? 0 : 1, "校园巡查小组", leader ? "巡查组长" : "巡查");
@@ -183,19 +194,19 @@ public class MonthlyFeeExportService {
         if (ordinaryDept != null) {
             return new Group(2, departmentOrder, 0, ordinaryDept.getDeptName(), "");
         }
-        if (roles.stream().anyMatch(MEMBER_ROLE_CODES::contains)) {
+        if (roles.stream().anyMatch(RoleAuthorizationPolicy::isMonthlyMemberRole)) {
             return new Group(2, 99, 0, "其他部员", "");
         }
         return null;
     }
 
     private int chairmanOrder(SysDept dept, Set<Integer> roles, Set<String> editorialPlatforms) {
-        if (roles.contains(1)) return 0;
-        if (roles.contains(3)) return 1;
+        if (roles.contains(KnownRole.CHAIRMAN.code())) return 0;
+        if (roles.contains(KnownRole.SECRETARY_GENERAL.code())) return 1;
         if (dept == null) return 8;
         switch (String.valueOf(dept.getDeptCode())) {
             case "EDITORIAL":
-                if (roles.contains(5)) return 2;
+                if (roles.contains(KnownRole.WECHAT_EDITOR.code())) return 2;
                 return editorialPlatforms.contains("院网") ? 3 : 4;
             case "PHOTOGRAPHY": return 5;
             case "VISUAL": return 6;
@@ -218,18 +229,16 @@ public class MonthlyFeeExportService {
     private String chairmanRemark(Set<Integer> roles, Set<String> subsidyCategories) {
         List<String> remarks = new ArrayList<>();
         remarks.add("主席团");
-        if (roles.contains(5) || subsidyCategories.contains("微信统筹编辑")) remarks.add("微信编辑");
-        if (roles.contains(6) || subsidyCategories.contains("排版编辑")) remarks.add("排版编辑");
+        if (roles.contains(KnownRole.WECHAT_EDITOR.code()) || subsidyCategories.contains("微信统筹编辑")) {
+            remarks.add("微信编辑");
+        }
+        if (roles.contains(KnownRole.LAYOUT_EDITOR.code()) || subsidyCategories.contains("排版编辑")) {
+            remarks.add("排版编辑");
+        }
         return String.join("+", remarks);
     }
 
-    private void writeWorkbook(String monthRange, List<MemberRow> rows, HttpServletResponse response) {
-        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setCharacterEncoding("UTF-8");
-        String fileName = URLEncoder.encode("校学生记者团稿费发放名单计算（" + monthRange + "）.xlsx", StandardCharsets.UTF_8)
-                .replace("+", "%20");
-        response.setHeader("Content-Disposition", "attachment;filename=" + fileName);
-
+    private void writeWorkbook(List<MemberRow> rows, OutputStream outputStream) {
         List<List<String>> head = Arrays.asList(
                 Collections.singletonList("所属部门"), Collections.singletonList("人员姓名"),
                 Collections.singletonList("人员身份证号码"), Collections.singletonList("人员稿费计算情况"),
@@ -259,7 +268,7 @@ public class MonthlyFeeExportService {
         applyThinBorders(contentStyle);
 
         // 202608121123 - 修复了月份稿费导出表未统一居中且缺少框线的问题。
-        try (ExcelWriter writer = EasyExcel.write(response.getOutputStream())
+        try (ExcelWriter writer = EasyExcel.write(outputStream)
                 .registerWriteHandler(new HorizontalCellStyleStrategy(headStyle, contentStyle))
                 .registerWriteHandler(new LongestMatchColumnWidthStyleStrategy()).build()) {
             com.alibaba.excel.write.builder.ExcelWriterSheetBuilder builder = EasyExcel.writerSheet(0, "月份稿费发放名单").head(head);

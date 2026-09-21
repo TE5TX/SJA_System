@@ -1,13 +1,13 @@
 package com.sja.system.controller;
 
-import com.sja.system.common.ApiException;
+import com.sja.system.application.model.AvatarFile;
 import com.sja.system.common.Result;
+import com.sja.system.infrastructure.web.MultipartUploadedFile;
 import com.sja.system.service.AvatarStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,39 +18,34 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.net.MalformedURLException;
 import java.util.Map;
 
+/**
+ * 头像上传与读取协议适配器。
+ */
 @RestController
 @RequestMapping("/api/v1/upload")
 @RequiredArgsConstructor
+// 202609211059 - 完成了头像读取校验和媒体类型判断从Controller下沉。
 public class UploadController {
 
     private final AvatarStorageService avatarStorageService;
 
     @PostMapping("/avatar")
     public Result<Map<String, String>> uploadAvatar(@RequestParam("file") MultipartFile file) {
-        return Result.success(Map.of("url", avatarStorageService.store(file)));
+        // 202609211059 - 完成了Web上传对象向应用层文件模型的适配。
+        return Result.success(Map.of("url", avatarStorageService.store(new MultipartUploadedFile(file))));
     }
 
     @GetMapping("/avatar/{filename:.+}")
-    public ResponseEntity<Resource> getAvatar(@PathVariable String filename) {
-        // 202608140858 - 头像仅允许认证用户读取，且禁止缓存和读取未绑定文件。
-        Path path = avatarStorageService.resolveReferencedFilename(filename);
-        if (!Files.isRegularFile(path)) {
-            throw ApiException.notFound("照片不存在");
-        }
-        try {
-            MediaType mediaType = filename.endsWith(".png") ? MediaType.IMAGE_PNG : MediaType.IMAGE_JPEG;
-            return ResponseEntity.ok()
-                    .contentType(mediaType)
-                    .cacheControl(CacheControl.noStore())
-                    .header("X-Content-Type-Options", "nosniff")
-                    .body(new UrlResource(path.toUri()));
-        } catch (IOException e) {
-            throw ApiException.notFound("照片不存在");
-        }
+    public ResponseEntity<Resource> getAvatar(@PathVariable String filename) throws MalformedURLException {
+        // 202609211059 - 完成了头像存在性、引用关系和媒体类型判断从Controller下沉。
+        AvatarFile file = avatarStorageService.loadReferenced(filename);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .cacheControl(CacheControl.noStore())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(new UrlResource(file.path().toUri()));
     }
 }

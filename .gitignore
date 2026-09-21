@@ -4,6 +4,8 @@ SJA_Sys_Vite/tac-web (1).zip
 
 /SJA_Sys_React/*
 /.codex-tmp/
+# 202609201535 - 防止本地修改备份被误提交到Git仓库。
+/.codex-backups/
 /docs/
 # Local database snapshots and credential reset scripts contain sensitive data.
 /sql/sja_system_db_*.sql

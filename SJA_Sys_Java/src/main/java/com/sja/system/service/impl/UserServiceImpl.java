@@ -56,6 +56,9 @@ public class UserServiceImpl implements UserService {
 
     private static final String PHONE_PATTERN = "^1[3-9]\\d{9}$";
 
+    /** 关联查询分批大小，避免导出大量人员时生成过长的 IN 条件。 */
+    private static final int RELATION_QUERY_BATCH_SIZE = 1000;
+
     private final SysUserMapper sysUserMapper;
     private final SysRoleMapper sysRoleMapper;
     private final SysDeptMapper sysDeptMapper;
@@ -71,7 +74,7 @@ public class UserServiceImpl implements UserService {
         if (user == null) {
             throw ApiException.notFound("用户不存在");
         }
-        return buildUserVO(user);
+        return buildUserVO(user, loadUserRelations(Collections.singletonList(userId)));
     }
 
     @Override
@@ -80,7 +83,7 @@ public class UserServiceImpl implements UserService {
         if (user == null) {
             throw ApiException.badRequest("用户不存在");
         }
-        return buildUserVO(user);
+        return buildUserVO(user, loadUserRelations(Collections.singletonList(userId)));
     }
 
     @Override
@@ -276,87 +279,20 @@ public class UserServiceImpl implements UserService {
         // 202608111533 - 修复了人员管理列表缺少200条分页选项且服务端未限制分页大小的问题。
         int pageSize = query.getPageSize() != null
                 ? Math.min(200, Math.max(1, query.getPageSize())) : 10;
-
-        // Determine which user IDs to filter by
-        List<Long> filteredUserIds = null;
-
-        // If deptCode is provided, find user IDs in that department
-        if (StringUtils.hasText(query.getDeptCode())) {
-            QueryWrapper<SysUserDept> deptQuery = new QueryWrapper<>();
-            // First find dept by code
-            QueryWrapper<SysDept> deptCodeQuery = new QueryWrapper<>();
-            deptCodeQuery.eq("dept_code", query.getDeptCode()).eq("is_valid", 1);
-            SysDept dept = sysDeptMapper.selectOne(deptCodeQuery);
-            if (dept != null) {
-                deptQuery.eq("dept_id", dept.getId());
-                List<SysUserDept> userDepts = sysUserDeptMapper.selectList(deptQuery);
-                filteredUserIds = userDepts.stream()
-                        .map(SysUserDept::getUserId)
-                        .collect(Collectors.toList());
-                if (filteredUserIds.isEmpty()) {
-                    return new PageResult<>(Collections.emptyList(), 0L, (long) pageNum, (long) pageSize);
-                }
-            } else {
-                return new PageResult<>(Collections.emptyList(), 0L, (long) pageNum, (long) pageSize);
-            }
+        QueryWrapper<SysUser> userQuery = buildUserQuery(query);
+        if (userQuery == null) {
+            return new PageResult<>(Collections.emptyList(), 0L, (long) pageNum, (long) pageSize);
         }
-
-        // If roleCode is provided, find user IDs with that role
-        if (query.getRoleCode() != null) {
-            QueryWrapper<SysRole> roleQuery = new QueryWrapper<>();
-            roleQuery.eq("role_code", query.getRoleCode()).eq("is_valid", 1);
-            SysRole role = sysRoleMapper.selectOne(roleQuery);
-            if (role != null) {
-                QueryWrapper<SysUserRole> userRoleQuery = new QueryWrapper<>();
-                userRoleQuery.eq("role_id", role.getId());
-                List<SysUserRole> userRoles = sysUserRoleMapper.selectList(userRoleQuery);
-                List<Long> roleUserIds = userRoles.stream()
-                        .map(SysUserRole::getUserId)
-                        .collect(Collectors.toList());
-
-                if (filteredUserIds != null) {
-                    // Intersect both filters
-                    filteredUserIds.retainAll(roleUserIds);
-                } else {
-                    filteredUserIds = roleUserIds;
-                }
-
-                if (filteredUserIds.isEmpty()) {
-                    return new PageResult<>(Collections.emptyList(), 0L, (long) pageNum, (long) pageSize);
-                }
-            } else {
-                return new PageResult<>(Collections.emptyList(), 0L, (long) pageNum, (long) pageSize);
-            }
-        }
-
-        // Build the main user query
-        QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
-        if (StringUtils.hasText(query.getUsername())) {
-            userQuery.like("username", query.getUsername());
-        }
-        if (StringUtils.hasText(query.getRealName())) {
-            userQuery.like("real_name", query.getRealName());
-        }
-        if (StringUtils.hasText(query.getStudentNo())) {
-            userQuery.like("student_no", query.getStudentNo());
-        }
-        if (StringUtils.hasText(query.getCollege())) {
-            userQuery.like("college", query.getCollege());
-        }
-        if (query.getIsValid() != null) {
-            userQuery.eq("is_valid", query.getIsValid());
-        }
-        if (filteredUserIds != null) {
-            userQuery.in("id", filteredUserIds);
-        }
-
-        userQuery.orderByDesc("create_time");
 
         Page<SysUser> page = new Page<>(pageNum, pageSize);
         Page<SysUser> resultPage = sysUserMapper.selectPage(page, userQuery);
 
+        // 202609201030 - 修复了人员列表逐条查询角色和部门导致的 N+1 查询问题。
+        UserRelations userRelations = loadUserRelations(resultPage.getRecords().stream()
+                .map(SysUser::getId)
+                .collect(Collectors.toList()));
         List<UserVO> voList = resultPage.getRecords().stream()
-                .map(this::buildUserVO)
+                .map(user -> buildUserVO(user, userRelations))
                 .peek(MaskingUtils::maskUser)
                 .collect(Collectors.toList());
 
@@ -406,30 +342,23 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public List<UserVO> queryUsersForExport(UserQueryDTO query) {
-        final int exportPageSize = 500;
-        List<UserVO> users = new ArrayList<>();
-        int pageNum = 1;
-        long total;
+        QueryWrapper<SysUser> userQuery = buildUserQuery(query);
+        if (userQuery == null) {
+            return Collections.emptyList();
+        }
+        List<SysUser> users = sysUserMapper.selectList(userQuery);
+        if (users.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        do {
-            UserQueryDTO pageQuery = new UserQueryDTO();
-            pageQuery.setUsername(query.getUsername());
-            pageQuery.setRealName(query.getRealName());
-            pageQuery.setStudentNo(query.getStudentNo());
-            pageQuery.setCollege(query.getCollege());
-            pageQuery.setDeptCode(query.getDeptCode());
-            pageQuery.setRoleCode(query.getRoleCode());
-            pageQuery.setIsValid(query.getIsValid());
-            pageQuery.setPageNum(pageNum);
-            pageQuery.setPageSize(exportPageSize);
-
-            PageResult<UserVO> result = queryUsers(pageQuery);
-            users.addAll(result.getList());
-            total = result.getTotal();
-            pageNum++;
-        } while (users.size() < total);
-
-        return users;
+        // 202609201117 - 修复了人员导出循环分页导致角色、部门关系重复查询的问题。
+        UserRelations relations = loadUserRelations(users.stream()
+                .map(SysUser::getId)
+                .collect(Collectors.toList()));
+        return users.stream()
+                .map(user -> buildUserVO(user, relations))
+                .peek(MaskingUtils::maskUser)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -726,9 +655,82 @@ public class UserServiceImpl implements UserService {
     // ======================== Private helpers ========================
 
     /**
-     * Build a UserVO from a SysUser entity, including role names and dept names.
+     * 根据人员查询条件构造统一的用户查询。
+     *
+     * <p>列表和导出必须复用同一套筛选规则，避免两种场景的查询结果不一致。
+     * 当部门、角色不存在或交集为空时返回 {@code null}，表示无需继续访问用户表。</p>
      */
-    private UserVO buildUserVO(SysUser user) {
+    private QueryWrapper<SysUser> buildUserQuery(UserQueryDTO query) {
+        List<Long> filteredUserIds = null;
+
+        if (StringUtils.hasText(query.getDeptCode())) {
+            SysDept department = sysDeptMapper.selectOne(new QueryWrapper<SysDept>()
+                    .eq("dept_code", query.getDeptCode())
+                    .eq("is_valid", 1));
+            if (department == null) {
+                return null;
+            }
+            filteredUserIds = sysUserDeptMapper.selectList(new QueryWrapper<SysUserDept>()
+                            .eq("dept_id", department.getId()))
+                    .stream()
+                    .map(SysUserDept::getUserId)
+                    .collect(Collectors.toList());
+            if (filteredUserIds.isEmpty()) {
+                return null;
+            }
+        }
+
+        if (query.getRoleCode() != null) {
+            SysRole role = sysRoleMapper.selectOne(new QueryWrapper<SysRole>()
+                    .eq("role_code", query.getRoleCode())
+                    .eq("is_valid", 1));
+            if (role == null) {
+                return null;
+            }
+            List<Long> roleUserIds = sysUserRoleMapper.selectList(new QueryWrapper<SysUserRole>()
+                            .eq("role_id", role.getId()))
+                    .stream()
+                    .map(SysUserRole::getUserId)
+                    .collect(Collectors.toList());
+            if (filteredUserIds == null) {
+                filteredUserIds = roleUserIds;
+            } else {
+                filteredUserIds.retainAll(roleUserIds);
+            }
+            if (filteredUserIds.isEmpty()) {
+                return null;
+            }
+        }
+
+        QueryWrapper<SysUser> userQuery = new QueryWrapper<>();
+        if (StringUtils.hasText(query.getUsername())) {
+            userQuery.like("username", query.getUsername());
+        }
+        if (StringUtils.hasText(query.getRealName())) {
+            userQuery.like("real_name", query.getRealName());
+        }
+        if (StringUtils.hasText(query.getStudentNo())) {
+            userQuery.like("student_no", query.getStudentNo());
+        }
+        if (StringUtils.hasText(query.getCollege())) {
+            userQuery.like("college", query.getCollege());
+        }
+        if (query.getIsValid() != null) {
+            userQuery.eq("is_valid", query.getIsValid());
+        }
+        if (filteredUserIds != null) {
+            userQuery.in("id", filteredUserIds);
+        }
+        // 202609201117 - 完成了人员列表与人员导出筛选规则的统一复用。
+        return userQuery.orderByDesc("create_time");
+    }
+
+    /**
+     * 将用户实体及已批量加载的角色、部门关系转换为人员视图对象。
+     *
+     * <p>本方法只负责数据转换，不执行数据库查询，避免列表场景产生 N+1 查询。</p>
+     */
+    private UserVO buildUserVO(SysUser user, UserRelations userRelations) {
         UserVO vo = new UserVO();
         vo.setId(user.getId());
         vo.setUsername(user.getUsername());
@@ -747,49 +749,152 @@ public class UserServiceImpl implements UserService {
         vo.setRemark(user.getRemark());
         vo.setCreateTime(user.getCreateTime());
 
-        // Load role names
-        QueryWrapper<SysUserRole> roleQuery = new QueryWrapper<>();
-        roleQuery.eq("user_id", user.getId());
-        List<SysUserRole> userRoles = sysUserRoleMapper.selectList(roleQuery);
-        List<String> roleNames = new ArrayList<>();
-        List<Long> roleIds = new ArrayList<>();
-        List<Integer> roleCodes = new ArrayList<>();
-        if (userRoles != null) {
-            for (SysUserRole ur : userRoles) {
-                SysRole role = sysRoleMapper.selectById(ur.getRoleId());
-                if (role != null) {
-                    roleIds.add(role.getId());
-                    roleCodes.add(role.getRoleCode());
-                    roleNames.add(role.getRoleName());
-                }
-            }
-        }
-        vo.setRoleNames(roleNames);
-        vo.setRoleIds(roleIds);
-        vo.setRoleCodes(roleCodes);
+        List<SysRole> roles = userRelations.rolesOf(user.getId());
+        vo.setRoleNames(roles.stream().map(SysRole::getRoleName).collect(Collectors.toList()));
+        vo.setRoleIds(roles.stream().map(SysRole::getId).collect(Collectors.toList()));
+        vo.setRoleCodes(roles.stream().map(SysRole::getRoleCode).collect(Collectors.toList()));
 
-        // Load department names
-        QueryWrapper<SysUserDept> deptQuery = new QueryWrapper<>();
-        deptQuery.eq("user_id", user.getId());
-        List<SysUserDept> userDepts = sysUserDeptMapper.selectList(deptQuery);
-        List<String> deptNames = new ArrayList<>();
-        List<Long> deptIds = new ArrayList<>();
-        List<String> deptCodes = new ArrayList<>();
-        if (userDepts != null) {
-            for (SysUserDept ud : userDepts) {
-                SysDept dept = sysDeptMapper.selectById(ud.getDeptId());
-                if (dept != null) {
-                    deptIds.add(dept.getId());
-                    deptCodes.add(dept.getDeptCode());
-                    deptNames.add(dept.getDeptName());
-                }
-            }
-        }
-        vo.setDeptNames(deptNames);
-        vo.setDeptIds(deptIds);
-        vo.setDeptCodes(deptCodes);
+        List<SysDept> departments = userRelations.departmentsOf(user.getId());
+        vo.setDeptNames(departments.stream().map(SysDept::getDeptName).collect(Collectors.toList()));
+        vo.setDeptIds(departments.stream().map(SysDept::getId).collect(Collectors.toList()));
+        vo.setDeptCodes(departments.stream().map(SysDept::getDeptCode).collect(Collectors.toList()));
 
         return vo;
+    }
+
+    /**
+     * 批量加载指定用户的角色和部门关系，供列表、详情和导出统一复用。
+     *
+     * <p>关联表按用户及主键排序，保证页面展示顺序稳定；查询不额外过滤有效状态，
+     * 保持原有按关联记录展示角色、部门的业务语义。</p>
+     */
+    private UserRelations loadUserRelations(List<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return UserRelations.empty();
+        }
+
+        List<Long> distinctUserIds = userIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (distinctUserIds.isEmpty()) {
+            return UserRelations.empty();
+        }
+
+        List<SysUserRole> userRoles = loadUserRolesInBatches(distinctUserIds);
+        Map<Long, SysRole> rolesById = loadRolesById(userRoles);
+        Map<Long, List<SysRole>> rolesByUserId = groupRolesByUser(userRoles, rolesById);
+
+        List<SysUserDept> userDepts = loadUserDepartmentsInBatches(distinctUserIds);
+        Map<Long, SysDept> departmentsById = loadDepartmentsById(userDepts);
+        Map<Long, List<SysDept>> departmentsByUserId = groupDepartmentsByUser(userDepts, departmentsById);
+
+        return new UserRelations(rolesByUserId, departmentsByUserId);
+    }
+
+    /** 按固定大小分批查询用户角色关系，避免大批量导出时生成过长的 IN 条件。 */
+    private List<SysUserRole> loadUserRolesInBatches(List<Long> userIds) {
+        List<SysUserRole> result = new ArrayList<>();
+        for (int start = 0; start < userIds.size(); start += RELATION_QUERY_BATCH_SIZE) {
+            int end = Math.min(start + RELATION_QUERY_BATCH_SIZE, userIds.size());
+            result.addAll(sysUserRoleMapper.selectList(new QueryWrapper<SysUserRole>()
+                    .in("user_id", userIds.subList(start, end))
+                    .orderByAsc("user_id")
+                    .orderByAsc("id")));
+        }
+        return result;
+    }
+
+    /** 按固定大小分批查询用户部门关系，避免大批量导出时生成过长的 IN 条件。 */
+    private List<SysUserDept> loadUserDepartmentsInBatches(List<Long> userIds) {
+        List<SysUserDept> result = new ArrayList<>();
+        for (int start = 0; start < userIds.size(); start += RELATION_QUERY_BATCH_SIZE) {
+            int end = Math.min(start + RELATION_QUERY_BATCH_SIZE, userIds.size());
+            result.addAll(sysUserDeptMapper.selectList(new QueryWrapper<SysUserDept>()
+                    .in("user_id", userIds.subList(start, end))
+                    .orderByAsc("user_id")
+                    .orderByAsc("id")));
+        }
+        // 202609201117 - 修复了人员导出一次性查询全部关联数据导致 SQL 条件过长的问题。
+        return result;
+    }
+
+    /** 批量查询角色实体并按主键建立索引。 */
+    private Map<Long, SysRole> loadRolesById(List<SysUserRole> userRoles) {
+        Set<Long> roleIds = userRoles.stream()
+                .map(SysUserRole::getRoleId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (roleIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return sysRoleMapper.selectBatchIds(roleIds).stream()
+                .collect(Collectors.toMap(SysRole::getId, role -> role));
+    }
+
+    /** 批量查询部门实体并按主键建立索引。 */
+    private Map<Long, SysDept> loadDepartmentsById(List<SysUserDept> userDepts) {
+        Set<Long> departmentIds = userDepts.stream()
+                .map(SysUserDept::getDeptId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (departmentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return sysDeptMapper.selectBatchIds(departmentIds).stream()
+                .collect(Collectors.toMap(SysDept::getId, department -> department));
+    }
+
+    /** 按用户归集已查询到的角色，忽略已被删除的角色关联。 */
+    private Map<Long, List<SysRole>> groupRolesByUser(List<SysUserRole> userRoles,
+                                                        Map<Long, SysRole> rolesById) {
+        Map<Long, List<SysRole>> result = new HashMap<>();
+        for (SysUserRole userRole : userRoles) {
+            SysRole role = rolesById.get(userRole.getRoleId());
+            if (role != null) {
+                result.computeIfAbsent(userRole.getUserId(), ignored -> new ArrayList<>()).add(role);
+            }
+        }
+        return result;
+    }
+
+    /** 按用户归集已查询到的部门，忽略已被删除的部门关联。 */
+    private Map<Long, List<SysDept>> groupDepartmentsByUser(List<SysUserDept> userDepts,
+                                                              Map<Long, SysDept> departmentsById) {
+        Map<Long, List<SysDept>> result = new HashMap<>();
+        for (SysUserDept userDept : userDepts) {
+            SysDept department = departmentsById.get(userDept.getDeptId());
+            if (department != null) {
+                result.computeIfAbsent(userDept.getUserId(), ignored -> new ArrayList<>()).add(department);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 人员关联数据的只读容器，避免视图装配层再次访问 Mapper。
+     */
+    private static final class UserRelations {
+        private final Map<Long, List<SysRole>> rolesByUserId;
+        private final Map<Long, List<SysDept>> departmentsByUserId;
+
+        private UserRelations(Map<Long, List<SysRole>> rolesByUserId,
+                              Map<Long, List<SysDept>> departmentsByUserId) {
+            this.rolesByUserId = rolesByUserId;
+            this.departmentsByUserId = departmentsByUserId;
+        }
+
+        private static UserRelations empty() {
+            return new UserRelations(Collections.emptyMap(), Collections.emptyMap());
+        }
+
+        private List<SysRole> rolesOf(Long userId) {
+            return rolesByUserId.getOrDefault(userId, Collections.emptyList());
+        }
+
+        private List<SysDept> departmentsOf(Long userId) {
+            return departmentsByUserId.getOrDefault(userId, Collections.emptyList());
+        }
     }
 
     private void updateUserDepts(Long userId, List<Long> deptIds) {

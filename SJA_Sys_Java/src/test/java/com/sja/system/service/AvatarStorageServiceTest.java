@@ -1,6 +1,7 @@
 package com.sja.system.service;
 
 import com.sja.system.common.ApiException;
+import com.sja.system.infrastructure.web.MultipartUploadedFile;
 import com.sja.system.mapper.SysUserMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,8 +42,8 @@ class AvatarStorageServiceTest {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         ImageIO.write(source, "PNG", bytes);
 
-        String url = service.store(new MockMultipartFile(
-                "file", "avatar.png", "image/png", bytes.toByteArray()));
+        String url = service.store(new MultipartUploadedFile(new MockMultipartFile(
+                "file", "avatar.png", "image/png", bytes.toByteArray())));
         BufferedImage stored = ImageIO.read(service.resolveUrl(url).toFile());
 
         assertTrue(url.matches("^/api/v1/upload/avatar/[0-9a-f-]{36}\\.(jpg|png)$"));
@@ -58,7 +59,8 @@ class AvatarStorageServiceTest {
         MockMultipartFile fake = new MockMultipartFile(
                 "file", "avatar.png", "image/png", "not an image".getBytes(StandardCharsets.UTF_8));
 
-        ApiException error = assertThrows(ApiException.class, () -> service.store(fake));
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.store(new MultipartUploadedFile(fake)));
 
         assertEquals(400, error.getStatus());
     }

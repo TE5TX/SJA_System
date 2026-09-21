@@ -1,14 +1,12 @@
 package com.sja.system.controller;
 
-import com.sja.system.common.ApiException;
+import com.sja.system.application.model.CurrentActor;
 import com.sja.system.common.Result;
 import com.sja.system.dto.RecruitmentRegistrationDTO;
 import com.sja.system.dto.RecruitmentStatusUpdateDTO;
-import com.sja.system.security.SecurityUtils;
-import com.sja.system.service.LoginCaptchaService;
+import com.sja.system.infrastructure.web.MultipartUploadedFile;
 import com.sja.system.service.RecruitmentService;
 import com.sja.system.vo.RecruitmentStatusVO;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -22,15 +20,16 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * 招新注册与发布状态管理协议适配器。
+ */
 @RestController
 @RequestMapping("/api/v1/recruitment")
 @RequiredArgsConstructor
+// 202609211059 - 完成了招新Controller身份解析下沉并确认公开注册流程无业务编排。
 public class RecruitmentController {
 
     private final RecruitmentService recruitmentService;
-    private final LoginCaptchaService loginCaptchaService;
-    private final SecurityUtils securityUtils;
-
     @GetMapping("/status")
     public Result<RecruitmentStatusVO> getStatus() {
         return Result.success(recruitmentService.getStatus());
@@ -40,25 +39,19 @@ public class RecruitmentController {
     public Result<Void> register(
             @RequestPart("data") @Valid RecruitmentRegistrationDTO dto,
             @RequestPart(value = "photo", required = false) MultipartFile photo) {
-        if (!loginCaptchaService.consume(dto.getCaptchaToken().trim())) {
-            throw ApiException.badRequest("验证码无效或已过期，请重新验证");
-        }
-        recruitmentService.register(dto, photo);
+        // 202609211059 - 完成了Web上传对象向应用层文件模型的适配。
+        recruitmentService.register(dto, photo == null ? null : new MultipartUploadedFile(photo));
         return Result.success("注册成功", null);
     }
 
     @PutMapping("/manage/status")
-    @PreAuthorize("hasAnyAuthority('ROLE_0', 'ROLE_1', 'ROLE_3')")
+    @PreAuthorize("@roleAuthorization.canManageRecruitment(authentication)")
     public Result<RecruitmentStatusVO> updateStatus(
             @RequestBody @Valid RecruitmentStatusUpdateDTO dto,
-            HttpServletRequest request) {
-        Long operatorId = securityUtils.getCurrentUserId(request);
-        Integer roleCode = securityUtils.getCurrentRoleCode(request);
-        if (operatorId == null) {
-            throw ApiException.unauthorized("未授权");
-        }
+            CurrentActor actor) {
+        // 202609211059 - 完成了招新管理Controller身份解析下沉。
         return Result.success(recruitmentService.updateStatus(
-                dto.getPublished(), dto.getPublishStartAt(), dto.getPublishEndAt(), operatorId,
-                securityUtils.getCurrentUsernameFromToken(request), roleCode));
+                dto.getPublished(), dto.getPublishStartAt(), dto.getPublishEndAt(), actor.userId(),
+                actor.username(), actor.roleCode()));
     }
 }

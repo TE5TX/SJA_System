@@ -1,8 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { prepareCsrfToken } from '@/api/auth'
 
 export const useUserStore = defineStore('user', () => {
-  const token = ref(sessionStorage.getItem('token') || '')
+  const authenticated = ref(false)
+  const sessionInitialized = ref(false)
   const mustChangePassword = ref(localStorage.getItem('mustChangePassword') === 'true')
 
   // 安全地解析 userInfo
@@ -32,10 +34,25 @@ export const useUserStore = defineStore('user', () => {
     return Object.fromEntries(keys.filter(key => key in info).map(key => [key, info[key]]))
   }
 
-  function setToken(newToken) {
-    token.value = newToken
-    if (newToken) sessionStorage.setItem('token', newToken)
-    else sessionStorage.removeItem('token')
+  function setAuthenticated(value) {
+    authenticated.value = Boolean(value)
+  }
+
+  /**
+   * 在受保护路由首次加载时验证HttpOnly Cookie，并初始化CSRF令牌。
+   */
+  async function initializeSession() {
+    if (sessionInitialized.value) return authenticated.value
+    try {
+      await prepareCsrfToken()
+      authenticated.value = true
+    } catch (error) {
+      authenticated.value = false
+    } finally {
+      // 202609201535 - 完成了页面刷新后通过安全Cookie恢复内存认证状态的任务。
+      sessionInitialized.value = true
+    }
+    return authenticated.value
   }
 
   function setUserInfo(info) {
@@ -51,7 +68,8 @@ export const useUserStore = defineStore('user', () => {
   }
 
   function logout() {
-    token.value = ''
+    authenticated.value = false
+    sessionInitialized.value = true
     userInfo.value = null
     sessionStorage.removeItem('token')
     localStorage.removeItem('token')
@@ -61,10 +79,12 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    token,
+    authenticated,
+    sessionInitialized,
     userInfo,
     mustChangePassword,
-    setToken,
+    setAuthenticated,
+    initializeSession,
     setUserInfo,
     setMustChangePassword,
     logout

@@ -1,6 +1,9 @@
 package com.sja.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.sja.system.application.model.UploadedFile;
+import com.sja.system.authorization.KnownRole;
+import com.sja.system.authorization.RoleAuthorizationPolicy;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.RecruitmentRegistrationDTO;
 import com.sja.system.dto.UserCreateDTO;
@@ -15,7 +18,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,8 +29,6 @@ import java.util.Set;
 public class RecruitmentService {
 
     private static final long FORM_ID = 1L;
-    private static final int VISITOR_ROLE_CODE = 13;
-    private static final Set<Integer> MANAGER_ROLE_CODES = Set.of(0, 1, 3);
     private static final Set<String> ALLOWED_DEPT_CODES =
             Set.of("EDITORIAL", "PHOTOGRAPHY", "VISUAL", "VIDEO");
 
@@ -38,6 +38,7 @@ public class RecruitmentService {
     private final UserService userService;
     private final AvatarStorageService avatarStorageService;
     private final OperationLogService operationLogService;
+    private final LoginCaptchaService loginCaptchaService;
 
     public RecruitmentStatusVO getStatus() {
         return toStatus(requireState(recruitmentFormMapper.selectById(FORM_ID)));
@@ -76,7 +77,11 @@ public class RecruitmentService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void register(RecruitmentRegistrationDTO dto, MultipartFile photo) {
+    public void register(RecruitmentRegistrationDTO dto, UploadedFile photo) {
+        // 202609181625 - 将招新验证码消费下沉至报名用例，避免其他调用入口绕过人机校验。
+        if (!loginCaptchaService.consume(dto.getCaptchaToken().trim())) {
+            throw ApiException.badRequest("验证码无效或已过期，请重新验证");
+        }
         // 202608312329 - 共享锁允许并发报名，并确保暂停操作与报名提交互斥。
         SysRecruitmentForm state = requireState(recruitmentFormMapper.selectRegistrationStateForShare());
         assertRegistrationOpen(state, LocalDateTime.now());
@@ -96,14 +101,14 @@ public class RecruitmentService {
             throw ApiException.badRequest("所选部门不存在或已禁用");
         }
         SysRole visitorRole = roleMapper.selectOne(new QueryWrapper<SysRole>()
-                .eq("role_code", VISITOR_ROLE_CODE)
+                .eq("role_code", KnownRole.VISITOR.code())
                 .eq("is_valid", 1));
         if (visitorRole == null) {
             throw ApiException.serviceUnavailable("游客角色未正确配置");
         }
 
         String photoUrl = null;
-        if (photo != null && !photo.isEmpty()) {
+        if (photo != null && !photo.empty()) {
             photoUrl = avatarStorageService.store(photo);
             avatarStorageService.deleteAfterRollback(photoUrl);
         }
@@ -126,7 +131,8 @@ public class RecruitmentService {
         user.setIsValid(1);
         user.setRemark("通过招新注册表单创建");
         try {
-            userService.createUser(user, null, dto.getRealName().trim(), String.valueOf(VISITOR_ROLE_CODE));
+            userService.createUser(user, null, dto.getRealName().trim(),
+                    String.valueOf(KnownRole.VISITOR.code()));
         } catch (DuplicateKeyException exception) {
             // 202609010054 - 并发重复报名最终以数据库唯一约束为准，并返回明确的业务错误。
             throw ApiException.conflict("学号、手机号或身份证号已被注册");
@@ -134,7 +140,7 @@ public class RecruitmentService {
     }
 
     private void assertManager(Integer roleCode) {
-        if (roleCode == null || !MANAGER_ROLE_CODES.contains(roleCode)) {
+        if (!RoleAuthorizationPolicy.canManageRecruitment(roleCode)) {
             throw ApiException.forbidden("只有主席、秘书长和管理员可以管理招新表单");
         }
     }

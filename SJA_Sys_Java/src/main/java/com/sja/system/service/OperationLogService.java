@@ -47,4 +47,9 @@ public interface OperationLogService {
     PageResult<OperationLogVO> getLogList(Integer pageNum, Integer pageSize);
 
     PageResult<OperationLogVO> getLogList(OperationLogQueryDTO query);
+
+    /**
+     * Retrieves audit logs after enforcing the business role boundary.
+     */
+    PageResult<OperationLogVO> getAuthorizedLogList(OperationLogQueryDTO query, Integer operatorRoleCode);
 }

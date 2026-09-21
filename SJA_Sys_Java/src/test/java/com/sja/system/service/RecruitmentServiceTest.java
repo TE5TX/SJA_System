@@ -1,6 +1,7 @@
 package com.sja.system.service;
 
 import com.sja.system.common.ApiException;
+import com.sja.system.application.model.UploadedFile;
 import com.sja.system.dto.RecruitmentRegistrationDTO;
 import com.sja.system.dto.UserCreateDTO;
 import com.sja.system.entity.SysDept;
@@ -9,6 +10,7 @@ import com.sja.system.entity.SysRole;
 import com.sja.system.mapper.SysDeptMapper;
 import com.sja.system.mapper.SysRecruitmentFormMapper;
 import com.sja.system.mapper.SysRoleMapper;
+import com.sja.system.infrastructure.web.MultipartUploadedFile;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
@@ -75,6 +77,19 @@ class RecruitmentServiceTest {
     }
 
     @Test
+    void rejectsRegistrationWhenCaptchaWasNotConsumed() {
+        Fixture fixture = fixture();
+        when(fixture.loginCaptchaService.consume("captcha-token")).thenReturn(false);
+
+        ApiException exception = assertThrows(ApiException.class,
+                () -> fixture.service.register(registration(), null));
+
+        // 202609181625 - 验证招新报名通过服务层消费验证码，不能绕过 HTTP Controller。
+        assertEquals(400, exception.getStatus());
+        verify(fixture.formMapper, never()).selectRegistrationStateForShare();
+    }
+
+    @Test
     void rejectsRegistrationOutsideTheConfiguredTimeWindow() {
         Fixture fixture = fixture();
         SysRecruitmentForm state = state(true);
@@ -119,10 +134,12 @@ class RecruitmentServiceTest {
         UserService userService = mock(UserService.class);
         AvatarStorageService avatarStorageService = mock(AvatarStorageService.class);
         OperationLogService operationLogService = mock(OperationLogService.class);
+        LoginCaptchaService loginCaptchaService = mock(LoginCaptchaService.class);
+        when(loginCaptchaService.consume(any())).thenReturn(true);
         RecruitmentService service = new RecruitmentService(formMapper, deptMapper, roleMapper,
-                userService, avatarStorageService, operationLogService);
+                userService, avatarStorageService, operationLogService, loginCaptchaService);
         return new Fixture(service, formMapper, deptMapper, roleMapper,
-                userService, avatarStorageService);
+                userService, avatarStorageService, loginCaptchaService);
     }
 
     private SysRecruitmentForm state(boolean published) {
@@ -150,8 +167,9 @@ class RecruitmentServiceTest {
         return dto;
     }
 
-    private MockMultipartFile photo() {
-        return new MockMultipartFile("photo", "avatar.png", "image/png", new byte[]{1});
+    private UploadedFile photo() {
+        return new MultipartUploadedFile(
+                new MockMultipartFile("photo", "avatar.png", "image/png", new byte[]{1}));
     }
 
     private record Fixture(
@@ -160,6 +178,7 @@ class RecruitmentServiceTest {
             SysDeptMapper deptMapper,
             SysRoleMapper roleMapper,
             UserService userService,
-            AvatarStorageService avatarStorageService) {
+            AvatarStorageService avatarStorageService,
+            LoginCaptchaService loginCaptchaService) {
     }
 }

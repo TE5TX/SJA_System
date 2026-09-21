@@ -1,5 +1,6 @@
 package com.sja.system.service;
 
+import com.sja.system.application.model.FeeExportFile;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.MonthlyFeeExportDTO;
 import com.sja.system.entity.SysDept;
@@ -21,7 +22,6 @@ import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
@@ -86,16 +86,16 @@ class MonthlyFeeExportServiceTest {
         // 202609100927 - 完成了跨月份导出查询边界和文件名的回归验证。
         dto.setStartMonth("2026-05");
         dto.setEndMonth("2026-06");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        service.export(dto, 99L, 0, "管理员", response);
+        FeeExportFile file = service.export(dto, 99L, 0, "管理员");
 
         verify(exportMapper).selectMonthlyComponents(
                 eq(LocalDate.of(2026, 5, 1)), eq(LocalDate.of(2026, 6, 30)),
                 eq("2026-05"), eq("2026-06"));
-        assertTrue(response.getHeader("Content-Disposition").contains("2026-05%E8%87%B32026-06"));
+        assertTrue(file.fileName().contains("2026-05至2026-06"));
+        assertEquals(FeeExportFile.XLSX_CONTENT_TYPE, file.contentType());
 
-        assertTrue(response.getContentAsByteArray().length > 0);
-        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(response.getContentAsByteArray()))) {
+        assertTrue(file.content().length > 0);
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(file.content()))) {
             org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
             assertEquals("所属部门", sheet.getRow(0).getCell(0).getStringCellValue());
             assertEquals("主席团成员", sheet.getRow(1).getCell(0).getStringCellValue());
@@ -169,10 +169,9 @@ class MonthlyFeeExportServiceTest {
         MonthlyFeeExportDTO dto = new MonthlyFeeExportDTO();
         dto.setStartMonth("2026-06");
         dto.setEndMonth("2026-06");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        service.export(dto, 99L, 0, "管理员", response);
+        FeeExportFile file = service.export(dto, 99L, 0, "管理员");
 
-        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(response.getContentAsByteArray()))) {
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(file.content()))) {
             org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
             String[] expected = {"主席", "秘书长", "采编微信", "采编院网", "采编校报", "摄影部长", "视觉部长", "视频部长"};
             for (int index = 0; index < expected.length; index++) {
@@ -206,7 +205,7 @@ class MonthlyFeeExportServiceTest {
         dto.setEndMonth("2026-08");
 
         ApiException error = assertThrows(ApiException.class, () ->
-                service.export(dto, 99L, 0, "管理员", new MockHttpServletResponse()));
+                service.export(dto, 99L, 0, "管理员"));
 
         assertEquals("开始月份不能晚于结束月份", error.getMessage());
         verifyNoInteractions(exportMapper);

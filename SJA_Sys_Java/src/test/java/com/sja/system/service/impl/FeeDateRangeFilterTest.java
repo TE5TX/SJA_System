@@ -1,7 +1,5 @@
 package com.sja.system.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.Wrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.mapper.BizEditorialArticleMapper;
@@ -9,15 +7,21 @@ import com.sja.system.mapper.BizPhotographyWorkMapper;
 import com.sja.system.mapper.BizVideoWorkMapper;
 import com.sja.system.mapper.BizVisualWorkMapper;
 import com.sja.system.mapper.BizMonthlySubsidyMapper;
+import com.sja.system.mapper.FeeQueryMapper;
+import com.sja.system.mapper.model.FeeListQuery;
 import com.sja.system.service.OperationLogService;
+import com.sja.system.service.fee.FeeAccessService;
+import com.sja.system.service.fee.FeeExportService;
+import com.sja.system.service.fee.FeeFixedTemplatePort;
+import com.sja.system.service.fee.FeeQueryService;
+import com.sja.system.service.fee.FeeWorkType;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.web.MockHttpServletResponse;
 
-import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,12 +37,23 @@ class FeeDateRangeFilterTest {
     @Mock private BizVideoWorkMapper videoMapper;
     @Mock private BizVisualWorkMapper visualMapper;
     @Mock private BizMonthlySubsidyMapper monthlySubsidyMapper;
+    @Mock private FeeQueryMapper feeQueryMapper;
     @Mock private OperationLogService operationLogService;
-    @InjectMocks private FeeServiceImpl service;
+    @Mock private FeeAccessService accessService;
+    @Mock private FeeFixedTemplatePort fixedTemplatePort;
+    @InjectMocks private FeeQueryService queryService;
+    private FeeExportService exportService;
+
+    @BeforeEach
+    void setUp() {
+        org.mockito.Mockito.lenient().when(accessService.allowedDepartmentCodes(1L, 0))
+                .thenReturn(FeeWorkType.allDepartmentCodes());
+        exportService = new FeeExportService(queryService, accessService, operationLogService, fixedTemplatePort);
+    }
 
     @Test
     void listCombinesBothRangesAcrossMonthBoundary() {
-        service.getFeeList(null, null, null, null, null,
+        queryService.list(null, null, null, null, null,
                 "2026-08-20", "2026-09-09", "2026-08-31", "2026-09-09",
                 1, 10, 1L, 0);
         verifyRanges();
@@ -52,49 +67,40 @@ class FeeDateRangeFilterTest {
         dto.setCreateStartDate("2026-08-31");
         dto.setCreateEndDate("2026-09-09");
         dto.setFields(List.of("title"));
-        service.exportFee(dto, 1L, 0, new MockHttpServletResponse());
+        exportService.export(dto, 1L, 0);
         verifyRanges();
     }
 
     @Test
     void rejectsReversedOrMalformedRangesBeforeQuerying() {
-        assertThrows(ApiException.class, () -> service.getFeeList(null, null, null, null, null,
+        assertThrows(ApiException.class, () -> queryService.list(null, null, null, null, null,
                 "2026-09-10", "2026-09-09", null, null, 1, 10, 1L, 0));
-        assertThrows(ApiException.class, () -> service.getFeeList(null, null, null, null, null,
+        assertThrows(ApiException.class, () -> queryService.list(null, null, null, null, null,
                 null, null, "2026-09-10", "2026-09-09", 1, 10, 1L, 0));
-        assertThrows(ApiException.class, () -> service.getFeeList(null, null, null, null, null,
+        assertThrows(ApiException.class, () -> queryService.list(null, null, null, null, null,
                 "2026-02-30", null, null, null, 1, 10, 1L, 0));
         verifyNoInteractions(editorialMapper, photographyMapper, videoMapper, visualMapper, monthlySubsidyMapper);
     }
 
     @Test
     void acceptsOpenEndedRange() {
-        service.getFeeList(null, null, null, null, null,
+        queryService.list(null, null, null, null, null,
                 "2026-08-20", null, null, "2026-09-09", 1, 10, 1L, 0);
-        verify(editorialMapper).selectList(argThat(q -> q.getSqlSegment().contains("publish_date >=")
-                && !q.getSqlSegment().contains("publish_date <=")
-                && !q.getSqlSegment().contains("create_time >=")
-                && q.getSqlSegment().contains("create_time <")));
+        verify(feeQueryMapper).countFeeItems(argThat(query -> query.getPublishStart() != null
+                && query.getPublishEnd() == null && query.getCreateStart() == null
+                && query.getCreateEndExclusive() != null));
     }
 
     private void verifyRanges() {
-        verify(editorialMapper).selectList(argThat(q -> matches(q, false)));
-        verify(photographyMapper).selectList(argThat(q -> matches(q, false)));
-        verify(videoMapper).selectList(argThat(q -> matches(q, false)));
-        verify(visualMapper).selectList(argThat(q -> matches(q, false)));
-        verify(monthlySubsidyMapper).selectList(argThat(q -> matches(q, true)));
+        verify(feeQueryMapper).countFeeItems(argThat(this::matches));
     }
 
-    private boolean matches(Wrapper<?> wrapper, boolean subsidy) {
-        if (!(wrapper instanceof QueryWrapper<?> query)) return false;
-        String sql = query.getSqlSegment();
-        String column = subsidy ? "subsidy_month" : "publish_date";
-        var values = query.getParamNameValuePairs().values();
-        return sql.contains(column + " >=") && sql.contains(column + " <=")
-                && sql.contains("create_time >=") && sql.contains("create_time <")
-                && values.contains(LocalDate.of(2026, 8, 31).atStartOfDay())
-                && values.contains(LocalDate.of(2026, 9, 10).atStartOfDay())
-                && values.contains(subsidy ? "2026-08" : LocalDate.of(2026, 8, 20))
-                && values.contains(subsidy ? "2026-09" : LocalDate.of(2026, 9, 9));
+    private boolean matches(FeeListQuery query) {
+        return java.time.LocalDate.of(2026, 8, 20).equals(query.getPublishStart())
+                && java.time.LocalDate.of(2026, 9, 9).equals(query.getPublishEnd())
+                && java.time.LocalDateTime.of(2026, 8, 31, 0, 0).equals(query.getCreateStart())
+                && java.time.LocalDateTime.of(2026, 9, 10, 0, 0).equals(query.getCreateEndExclusive())
+                && "2026-08".equals(query.getPublishStartMonth())
+                && "2026-09".equals(query.getPublishEndMonth());
     }
 }

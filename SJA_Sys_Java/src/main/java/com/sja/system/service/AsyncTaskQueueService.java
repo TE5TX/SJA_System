@@ -3,6 +3,7 @@ package com.sja.system.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sja.system.async.AsyncTaskEnvelope;
+import com.sja.system.async.AsyncTaskConsumerIdentity;
 import com.sja.system.async.AsyncTaskStatus;
 import com.sja.system.async.AsyncTaskType;
 import com.sja.system.common.ApiException;
@@ -63,6 +64,7 @@ public class AsyncTaskQueueService {
     private final ObjectMapper objectMapper;
     private final AsyncTaskPayloadCipher payloadCipher;
     private final AsyncTaskProperties properties;
+    private final AsyncTaskConsumerIdentity consumerIdentity;
 
     public AsyncTaskAcceptedVO enqueueProfile(Long userId,
                                                ProfileUpdateDTO dto,
@@ -285,7 +287,7 @@ public class AsyncTaskQueueService {
         List<MapRecord<String, Object, Object>> claimed = redisTemplate.opsForStream().claim(
                 properties.getStreamKey(),
                 properties.getConsumerGroup(),
-                properties.getConsumerName(),
+                consumerIdentity.name(),
                 properties.getVisibilityTimeout(),
                 staleIds.toArray(new RecordId[0]));
         List<MapRecord<String, String, String>> result = new ArrayList<>(claimed.size());

@@ -9,10 +9,19 @@ import com.sja.system.mapper.BizVideoWorkMapper;
 import com.sja.system.mapper.BizWorkContributorMapper;
 import com.sja.system.service.FeeCalculationService;
 import com.sja.system.service.OperationLogService;
+import com.sja.system.service.fee.EditorialFeeWorkAdapter;
+import com.sja.system.service.fee.FeeAccessService;
+import com.sja.system.service.fee.FeeCommandService;
+import com.sja.system.service.fee.FeeContributorService;
+import com.sja.system.service.fee.FeeQueryService;
+import com.sja.system.service.fee.FeeWorkAdapterRegistry;
+import com.sja.system.service.fee.FeeWorkStateService;
+import com.sja.system.service.fee.VideoFeeWorkAdapter;
+import com.sja.system.vo.FeeDetailVO;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -21,6 +30,7 @@ import java.time.LocalDate;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -43,9 +53,23 @@ class FeeServiceImplVideoRecalculationTest {
     private FeeCalculationService feeCalculationService;
     @Mock
     private OperationLogService operationLogService;
+    @Mock
+    private FeeAccessService accessService;
+    @Mock
+    private FeeQueryService queryService;
+    @Mock
+    private FeeWorkStateService stateService;
 
-    @InjectMocks
-    private FeeServiceImpl feeService;
+    private FeeCommandService feeService;
+
+    @BeforeEach
+    void setUp() {
+        FeeWorkAdapterRegistry registry = new FeeWorkAdapterRegistry(List.of(
+                new EditorialFeeWorkAdapter(editorialMapper), new VideoFeeWorkAdapter(videoMapper)));
+        feeService = new FeeCommandService(accessService, registry,
+                new FeeContributorService(contributorMapper), feeCalculationService,
+                queryService, stateService, operationLogService);
+    }
 
     @Test
     void unpublishedSubmissionDoesNotPersistPublishDate() {
@@ -68,7 +92,7 @@ class FeeServiceImplVideoRecalculationTest {
         when(feeCalculationService.calculateAutomaticFees("EDITORIAL", info, dto.getContributors()))
                 .thenReturn(Collections.singletonList(new BigDecimal("120.0")));
 
-        feeService.submitFee(1L, "admin", "管理员", 0, dto);
+        feeService.submit(1L, "admin", "管理员", 0, dto);
 
         ArgumentCaptor<BizEditorialArticle> articleCaptor = ArgumentCaptor.forClass(BizEditorialArticle.class);
         verify(editorialMapper).insert(articleCaptor.capture());
@@ -91,7 +115,12 @@ class FeeServiceImplVideoRecalculationTest {
         reloaded.setCategory("活动新闻类视频");
         reloaded.setLikeCount(300);
         reloaded.setTotalAmount(new BigDecimal("550.0"));
-        when(videoMapper.selectById(8L)).thenReturn(existing, existing, existing, reloaded);
+        when(videoMapper.selectById(8L)).thenReturn(existing);
+        when(accessService.canManageAmount(0)).thenReturn(true);
+        when(stateService.auditStatus("VIDEO", 8L)).thenReturn("SUBMITTED");
+        when(queryService.detail(8L, "VIDEO", 1L, 0))
+                .thenReturn(detail("VIDEO", "修改前", new BigDecimal("1.0")),
+                        detail("VIDEO", "计费重算测试", new BigDecimal("550.0")));
 
         FeeSubmitDTO dto = new FeeSubmitDTO();
         dto.setWorkType("VIDEO");
@@ -115,7 +144,7 @@ class FeeServiceImplVideoRecalculationTest {
         when(feeCalculationService.calculateAutomaticFees("VIDEO", info, dto.getContributors()))
                 .thenReturn(Collections.singletonList(new BigDecimal("550.0")));
 
-        feeService.updateFee(8L, "VIDEO", dto, 1L, "管理员", "0", 0);
+        feeService.update(8L, "VIDEO", dto, 1L, "管理员", "0", 0);
 
         ArgumentCaptor<BizWorkContributor> contributorCaptor = ArgumentCaptor.forClass(BizWorkContributor.class);
         verify(contributorMapper).insert(contributorCaptor.capture());
@@ -152,6 +181,11 @@ class FeeServiceImplVideoRecalculationTest {
         existing.setIsValid(1);
         existing.setAuditStatus("SUBMITTED");
         when(editorialMapper.selectById(9L)).thenReturn(existing);
+        when(accessService.canManageAmount(0)).thenReturn(true);
+        when(stateService.auditStatus("EDITORIAL", 9L)).thenReturn("SUBMITTED");
+        when(queryService.detail(9L, "EDITORIAL", 1L, 0))
+                .thenReturn(detail("EDITORIAL", "修改前", new BigDecimal("1.0")),
+                        detail("EDITORIAL", "采编计费重算测试", new BigDecimal("120.0")));
 
         FeeSubmitDTO dto = new FeeSubmitDTO();
         dto.setWorkType("EDITORIAL");
@@ -173,7 +207,7 @@ class FeeServiceImplVideoRecalculationTest {
         when(feeCalculationService.calculateAutomaticFees("EDITORIAL", info, dto.getContributors()))
                 .thenReturn(Collections.singletonList(new BigDecimal("120.0")));
 
-        feeService.updateFee(9L, "EDITORIAL", dto, 1L, "管理员", "0", 0);
+        feeService.update(9L, "EDITORIAL", dto, 1L, "管理员", "0", 0);
 
         ArgumentCaptor<BizWorkContributor> contributorCaptor = ArgumentCaptor.forClass(BizWorkContributor.class);
         verify(contributorMapper).insert(contributorCaptor.capture());
@@ -184,5 +218,15 @@ class FeeServiceImplVideoRecalculationTest {
         assertEquals(new BigDecimal("120.0"), articleCaptor.getAllValues().stream()
                 .filter(item -> item.getTotalAmount() != null)
                 .findFirst().orElseThrow(AssertionError::new).getTotalAmount());
+    }
+
+    private FeeDetailVO detail(String workType, String title, BigDecimal total) {
+        FeeDetailVO detail = new FeeDetailVO();
+        detail.setWorkType(workType);
+        detail.setWorkInfo(new HashMap<>(Map.of("title", title)));
+        detail.setContributors(Collections.emptyList());
+        detail.setStatus("SUBMITTED");
+        detail.setTotalAmount(total);
+        return detail;
     }
 }

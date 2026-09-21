@@ -1,5 +1,6 @@
 package com.sja.system.service;
 
+import com.sja.system.application.model.FeeExportFile;
 import com.sja.system.common.PageResult;
 import com.sja.system.dto.FeeAuditDTO;
 import com.sja.system.dto.FeeBatchAuditDTO;
@@ -8,7 +9,6 @@ import com.sja.system.dto.FeeExportDTO;
 import com.sja.system.vo.FeeDetailVO;
 import com.sja.system.vo.FeeListVO;
 
-import jakarta.servlet.http.HttpServletResponse;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -65,7 +65,7 @@ public interface FeeService {
     void updateFee(Long id, String workType, FeeSubmitDTO dto, Long operatorId, String operatorName, String operatorRole,
                    Integer roleCode);
 
-    List<BigDecimal> calculateFee(FeeSubmitDTO dto);
+    List<BigDecimal> calculateFee(FeeSubmitDTO dto, Integer operatorRoleCode);
 
     /**
      * Audit (approve/reject) a fee record.
@@ -77,11 +77,14 @@ public interface FeeService {
      * @param auditorName  auditor display name
      * @param auditorRole  auditor role name
      */
-    void auditFee(Long id, String workType, FeeAuditDTO dto, Long auditorId, String auditorName, String auditorRole);
+    void auditFee(Long id, String workType, FeeAuditDTO dto, Long auditorId, String auditorName,
+                  String auditorRole, Integer auditorRoleCode);
 
-    void batchAuditFee(FeeBatchAuditDTO dto, Long auditorId, String auditorName, String auditorRole);
+    void batchAuditFee(FeeBatchAuditDTO dto, Long auditorId, String auditorName, String auditorRole,
+                       Integer auditorRoleCode);
 
-    void resetAudit(Long id, String workType, Long operatorId, String operatorName, String operatorRole);
+    void resetAudit(Long id, String workType, Long operatorId, String operatorName, String operatorRole,
+                    Integer operatorRoleCode);
 
     /**
      * Mark a rejected fee task as invalid without physically deleting its data.
@@ -90,11 +93,12 @@ public interface FeeService {
                                String operatorRole, Integer roleCode);
 
     /**
-     * Export fee records to an Excel file written to the HTTP response.
+     * 根据查询条件生成稿费明细导出文件。
      *
-     * @param deptCode filter by department (nullable)
-     * @param month    filter by month in "yyyy-MM" format (nullable)
-     * @param response HTTP response to write the Excel file to
+     * @param dto        导出条件及字段配置
+     * @param operatorId 操作人ID
+     * @param roleCode   操作人角色编码
+     * @return 与HTTP协议无关的导出文件
      */
-    void exportFee(FeeExportDTO dto, Long operatorId, Integer roleCode, HttpServletResponse response);
+    FeeExportFile exportFee(FeeExportDTO dto, Long operatorId, Integer roleCode);
 }

@@ -1,7 +1,7 @@
 package com.sja.system.controller;
 
 import com.sja.system.common.Result;
-import com.sja.system.service.AsyncTaskQueueService;
+import com.sja.system.service.AsyncTaskApplicationService;
 import com.sja.system.vo.AsyncTaskStatusVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,12 +18,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AsyncTaskController {
 
-    private final AsyncTaskQueueService queueService;
+    private final AsyncTaskApplicationService asyncTaskApplicationService;
 
     @GetMapping("/{taskId}")
     public Result<AsyncTaskStatusVO> getStatus(@PathVariable String taskId,
                                                @RequestHeader("X-Task-Token") String statusToken) {
-        // 202608192148 - 修复了学号修改使旧JWT失效后无法读取任务最终状态的问题。
-        return Result.success(queueService.getStatus(taskId, statusToken));
+        // 202609211059 - 完成了异步任务Controller对具体Redis队列服务的解耦。
+        return Result.success(asyncTaskApplicationService.status(taskId, statusToken));
     }
 }

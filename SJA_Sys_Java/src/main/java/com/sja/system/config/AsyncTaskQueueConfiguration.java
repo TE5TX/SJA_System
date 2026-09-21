@@ -1,11 +1,13 @@
 package com.sja.system.config;
 
+import com.sja.system.async.AsyncTaskConsumerIdentity;
 import com.sja.system.service.AsyncTaskQueueService;
 import com.sja.system.service.AsyncTaskWorker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
@@ -53,9 +55,11 @@ public class AsyncTaskQueueConfiguration {
     }
 
     @Bean
+    @DependsOn("asyncTaskConsumerLease")
     public StreamMessageListenerContainer<String, MapRecord<String, String, String>> asyncTaskStreamContainer(
             RedisConnectionFactory connectionFactory,
             AsyncTaskProperties properties,
+            AsyncTaskConsumerIdentity consumerIdentity,
             AsyncTaskQueueService queueService,
             AsyncTaskWorker worker,
             @Qualifier("asyncTaskStreamPollExecutor") ExecutorService pollExecutor) {
@@ -73,7 +77,7 @@ public class AsyncTaskQueueConfiguration {
         StreamMessageListenerContainer<String, MapRecord<String, String, String>> container =
                 StreamMessageListenerContainer.create(connectionFactory, options);
         container.receive(
-                Consumer.from(properties.getConsumerGroup(), properties.getConsumerName()),
+                Consumer.from(properties.getConsumerGroup(), consumerIdentity.name()),
                 StreamOffset.create(properties.getStreamKey(), ReadOffset.lastConsumed()),
                 worker::accept);
         // 20260901 - 修复了 Redis Stream 监听容器未启动，异步任务始终停留在队列中的问题。
@@ -81,7 +85,7 @@ public class AsyncTaskQueueConfiguration {
         log.info("Redis Stream async task listener started: stream={}, group={}, consumer={}",
                 properties.getStreamKey(),
                 properties.getConsumerGroup(),
-                properties.getConsumerName());
+                consumerIdentity.name());
         return container;
     }
 }

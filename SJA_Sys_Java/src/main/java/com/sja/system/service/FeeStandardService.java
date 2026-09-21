@@ -1,6 +1,7 @@
 package com.sja.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.sja.system.authorization.RoleAuthorizationPolicy;
 import com.sja.system.common.ApiException;
 import com.sja.system.dto.FeeStandardUpdateDTO;
 import com.sja.system.entity.BizFeeStandard;
@@ -21,7 +22,8 @@ public class FeeStandardService {
     private final BizFeeStandardMapper feeStandardMapper;
     private final OperationLogService operationLogService;
 
-    public List<BizFeeStandard> list() {
+    public List<BizFeeStandard> list(Integer operatorRoleCode) {
+        ensureCanManageFeeStandards(operatorRoleCode, "查看稿费标准");
         QueryWrapper<BizFeeStandard> query = new QueryWrapper<>();
         query.eq("is_active", 1)
                 .orderByAsc("dept_code", "platform", "category", "rule_key");
@@ -43,7 +45,9 @@ public class FeeStandardService {
 
     @Transactional(rollbackFor = Exception.class)
     public void update(Long id, FeeStandardUpdateDTO dto, Long operatorId,
-                       String operatorName, String operatorRole, String ipAddress) {
+                       String operatorName, String operatorRole, String ipAddress,
+                       Integer operatorRoleCode) {
+        ensureCanManageFeeStandards(operatorRoleCode, "修改稿费标准");
         BizFeeStandard existing = feeStandardMapper.selectById(id);
         if (existing == null || !Integer.valueOf(1).equals(existing.getIsActive())) {
             throw ApiException.badRequest("稿费标准不存在或已停用");
@@ -64,5 +68,13 @@ public class FeeStandardService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /** Ensures fee-standard access is enforced independently of the HTTP endpoint. */
+    // 202609181625 - 将稿费标准查看和修改的业务授权下沉至服务层。
+    private void ensureCanManageFeeStandards(Integer operatorRoleCode, String action) {
+        if (!RoleAuthorizationPolicy.canManageFeeStandards(operatorRoleCode)) {
+            throw ApiException.forbidden("只有管理员或秘书长可以" + action);
+        }
     }
 }

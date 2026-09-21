@@ -13,9 +13,13 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
 import java.util.Map;
 
+/**
+ * 登录验证码协议适配器。
+ */
 @RestController
 @RequestMapping("/api/v1/auth/captcha")
 @RequiredArgsConstructor
+// 202609211059 - 核查确认验证码Controller仅承担请求与响应转换职责。
 public class CaptchaController {
 
     private final LoginCaptchaService loginCaptchaService;

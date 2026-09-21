@@ -17,7 +17,7 @@ public class AsyncTaskProperties {
     private boolean enabled = true;
     private String streamKey = "sja:async:write-tasks";
     private String consumerGroup = "sja-write-workers";
-    private String consumerName = "sja-write-worker-1";
+    private String consumerName;
     private int workerCount = 4;
     private int workerQueueCapacity = 500;
     private long queueCapacity = 5000;

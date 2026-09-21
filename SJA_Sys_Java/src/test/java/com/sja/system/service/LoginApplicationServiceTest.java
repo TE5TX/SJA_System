@@ -95,11 +95,30 @@ class LoginApplicationServiceTest {
         // 202609101605 - 完成了登录应用服务复用用户资料与菜单服务的测试。
         LoginResult result = service.login(dto, "127.0.0.1");
 
-        assertEquals("access", result.response().getToken());
-        assertEquals("refresh", result.refreshToken());
+        // 202609201535 - 验证登录响应模型不再携带可被JavaScript读取的Access Token。
+        assertEquals("access", result.tokenPair().getAccessToken());
+        assertEquals("refresh", result.tokenPair().getRefreshToken());
         assertEquals("测试用户", result.response().getUserInfo().getRealName());
         assertTrue(result.response().getMustChangePassword());
         verify(throttleService).recordSuccess("student", "127.0.0.1");
+    }
+
+    @Test
+    void delegatesValidRefreshTokenRotationToTokenService() {
+        TokenPair expected = new TokenPair("new-access", "new-refresh");
+        when(tokenService.rotate("refresh-token")).thenReturn(expected);
+
+        TokenPair actual = service.refresh("1", "refresh-token");
+
+        // 202609201535 - 验证Controller不再承担令牌刷新业务判断。
+        assertEquals(expected, actual);
+        verify(tokenService).rotate("refresh-token");
+    }
+
+    @Test
+    void rejectsMissingRefreshTokenBeforeCallingTokenService() {
+        assertThrows(ApiException.class, () -> service.refresh("1", " "));
+        verify(tokenService, never()).rotate(any());
     }
 
     private LoginDTO loginDto() {

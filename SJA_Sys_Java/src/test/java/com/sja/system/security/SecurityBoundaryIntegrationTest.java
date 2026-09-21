@@ -24,7 +24,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.mockito.Mockito.when;
 
@@ -123,15 +125,17 @@ class SecurityBoundaryIntegrationTest {
         for (int roleCode : new int[]{0, 1, 3}) {
             mockMvc.perform(multipart("/api/v1/users/import/roster/preview").file(file)
                             .param("roleId", "5")
+                            .with(csrf())
                             .with(authentication(authenticationForRole(roleCode))))
                     .andExpect(status().isBadRequest());
         }
         mockMvc.perform(multipart("/api/v1/users/import/roster/preview").file(file)
                         .param("roleId", "5")
+                        .with(csrf())
                         .with(authentication(authenticationForRole(13))))
                 .andExpect(status().isForbidden());
         mockMvc.perform(multipart("/api/v1/users/import/roster/preview").file(file)
-                        .param("roleId", "5"))
+                        .param("roleId", "5").with(csrf()))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -143,15 +147,17 @@ class SecurityBoundaryIntegrationTest {
         for (int roleCode : new int[]{0, 1, 3}) {
             mockMvc.perform(post("/api/v1/users/import/roster/confirm")
                             .contentType("application/json").content(body)
+                            .with(csrf())
                             .with(authentication(authenticationForRole(roleCode))))
                     .andExpect(status().isOk());
         }
         mockMvc.perform(post("/api/v1/users/import/roster/confirm")
                         .contentType("application/json").content(body)
+                        .with(csrf())
                         .with(authentication(authenticationForRole(13))))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/users/import/roster/confirm")
-                        .contentType("application/json").content(body))
+                        .contentType("application/json").content(body).with(csrf()))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -173,6 +179,7 @@ class SecurityBoundaryIntegrationTest {
             mockMvc.perform(put("/api/v1/recruitment/manage/status")
                             .contentType("application/json")
                             .content("{\"published\":true}")
+                            .with(csrf())
                             .with(authentication(authenticationForRole(roleCode))))
                     .andExpect(status().isOk());
         }
@@ -180,6 +187,7 @@ class SecurityBoundaryIntegrationTest {
         mockMvc.perform(put("/api/v1/recruitment/manage/status")
                         .contentType("application/json")
                         .content("{\"published\":true}")
+                        .with(csrf())
                         .with(authentication(authenticationForRole(4))))
                 .andExpect(status().isForbidden());
     }
@@ -200,6 +208,24 @@ class SecurityBoundaryIntegrationTest {
 
         mockMvc.perform(multipart("/api/v1/recruitment/register").file(data))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void rejectsAuthenticatedStateChangeWithoutCsrfToken() throws Exception {
+        // 202609201535 - 验证Cookie认证下的状态变更请求必须携带CSRF Token。
+        mockMvc.perform(put("/api/v1/recruitment/manage/status")
+                        .contentType("application/json")
+                        .content("{\"published\":true}")
+                        .with(authentication(authenticationForRole(0))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void issuesCsrfCookieForAuthenticatedFrontend() throws Exception {
+        mockMvc.perform(get("/api/v1/auth/csrf")
+                        .with(authentication(authenticationForRole(0))))
+                .andExpect(status().isOk())
+                .andExpect(cookie().exists("XSRF-TOKEN"));
     }
 
     private UsernamePasswordAuthenticationToken authenticationForRole(int roleCode) {

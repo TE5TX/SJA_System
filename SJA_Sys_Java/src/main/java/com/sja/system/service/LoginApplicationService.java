@@ -69,12 +69,40 @@ public class LoginApplicationService {
         TokenPair tokenPair = authTokenService.issue(user);
 
         LoginVO response = new LoginVO();
-        response.setToken(tokenPair.getAccessToken());
         response.setUserInfo(toSessionUser(profile));
         response.setMenus(menus);
         response.setMustChangePassword(Integer.valueOf(1).equals(profile.getMustChangePassword()));
         log.info("User logged in: {}", user.getUsername());
-        return new LoginResult(response, tokenPair.getRefreshToken());
+        // 202609201535 - 修复了Access Token暴露给前端并被Web Storage持久化的问题。
+        return new LoginResult(response, tokenPair);
+    }
+
+    /**
+     * 轮换当前会话的刷新令牌并签发新的访问令牌。
+     *
+     * @param refreshRequest 刷新请求专用标识
+     * @param refreshToken HttpOnly Cookie 中的刷新令牌
+     * @return 新的一对认证令牌
+     */
+    public TokenPair refresh(String refreshRequest, String refreshToken) {
+        if (!"1".equals(refreshRequest)) {
+            throw ApiException.badRequest("刷新请求标识无效");
+        }
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw ApiException.unauthorized("未提供刷新令牌，请重新登录");
+        }
+        return authTokenService.rotate(refreshToken);
+    }
+
+    /**
+     * 撤销指定用户的全部刷新令牌。
+     *
+     * @param userId 当前登录用户ID
+     */
+    public void logout(Long userId) {
+        if (userId != null) {
+            authTokenService.revokeAll(userId);
+        }
     }
 
     private ApiException authenticationFailed(String loginIdentifier, String clientIp) {

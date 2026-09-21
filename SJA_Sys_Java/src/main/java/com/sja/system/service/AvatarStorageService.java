@@ -2,6 +2,8 @@ package com.sja.system.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.common.ApiException;
+import com.sja.system.application.model.AvatarFile;
+import com.sja.system.application.model.UploadedFile;
 import com.sja.system.entity.SysUser;
 import com.sja.system.mapper.SysUserMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -9,7 +11,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -54,15 +55,15 @@ public class AvatarStorageService {
         this.outputDimension = outputDimension;
     }
 
-    public String store(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
+    public String store(UploadedFile file) {
+        if (file == null || file.empty()) {
             throw ApiException.badRequest("请选择要上传的照片");
         }
-        if (file.getSize() > 5L * 1024 * 1024) {
+        if (file.size() > 5L * 1024 * 1024) {
             throw ApiException.badRequest("照片大小不能超过 5MB");
         }
 
-        try (ImageInputStream input = ImageIO.createImageInputStream(file.getInputStream())) {
+        try (ImageInputStream input = ImageIO.createImageInputStream(file.inputStream())) {
             if (input == null) {
                 throw ApiException.badRequest("无法读取图片内容");
             }
@@ -143,6 +144,17 @@ public class AvatarStorageService {
             throw ApiException.notFound("照片不存在");
         }
         return path;
+    }
+
+    /**
+     * 返回已经完成文件存在性和数据库引用校验的头像读取模型。
+     */
+    // 202609211059 - 完成了头像文件检查和媒体类型判断从Controller下沉。
+    public AvatarFile loadReferenced(String filename) {
+        Path path = resolveReferencedFilename(filename);
+        String contentType = filename.toLowerCase(Locale.ROOT).endsWith(".png")
+                ? "image/png" : "image/jpeg";
+        return new AvatarFile(path, contentType);
     }
 
     public boolean isManagedUrl(String photoUrl) {

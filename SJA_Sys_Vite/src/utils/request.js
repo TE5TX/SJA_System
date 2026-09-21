@@ -4,12 +4,16 @@ import { ElMessage } from 'element-plus'
 const request = axios.create({
   baseURL: '/api',
   timeout: 15000,
-  withCredentials: true
+  withCredentials: true,
+  withXSRFToken: true,
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-XSRF-TOKEN'
 })
 
 let refreshPromise = null
 
 const clearAuth = () => {
+  // 202609201535 - 清理历史版本遗留的Web Storage令牌，认证令牌仅允许存在于HttpOnly Cookie。
   sessionStorage.removeItem('token')
   localStorage.removeItem('token')
   localStorage.removeItem('userInfo')
@@ -22,31 +26,12 @@ const refreshAccessToken = () => {
     refreshPromise = axios.post('/api/v1/auth/refresh', null, {
       withCredentials: true,
       headers: { 'X-SJA-Refresh': '1' }
-    }).then(response => {
-      const token = response.data?.data
-      if (!token) throw new Error('刷新令牌失败')
-      sessionStorage.setItem('token', token)
-      return token
-    }).finally(() => {
+    }).then(response => response.data).finally(() => {
       refreshPromise = null
     })
   }
   return refreshPromise
 }
-
-// 请求拦截器
-request.interceptors.request.use(
-  config => {
-    const token = sessionStorage.getItem('token')
-    if (token && !config.skipAuth) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-  },
-  async error => {
-    return Promise.reject(error)
-  }
-)
 
 // 响应拦截器
 request.interceptors.response.use(
@@ -70,21 +55,24 @@ request.interceptors.response.use(
       if (!isAuthRequest && !original._retry) {
         original._retry = true
         try {
-          const token = await refreshAccessToken()
-          original.headers = original.headers || {}
-          original.headers.Authorization = `Bearer ${token}`
+          // 202609201535 - Access Token由浏览器自动携带的HttpOnly Cookie提供，前端不再读取令牌。
+          await refreshAccessToken()
           return request(original)
         } catch (refreshError) {
           clearAuth()
-          ElMessage.error('登录已过期，请重新登录')
-          window.location.href = '/login'
+          if (!original.skipAuthRedirect) {
+            ElMessage.error('登录已过期，请重新登录')
+            window.location.href = '/login'
+          }
           return Promise.reject(refreshError)
         }
       }
       if (!isAuthRequest) {
         clearAuth()
-        ElMessage.error('登录已过期，请重新登录')
-        window.location.href = '/login'
+        if (!original.skipAuthRedirect) {
+          ElMessage.error('登录已过期，请重新登录')
+          window.location.href = '/login'
+        }
       }
     } else if (error.response?.status === 403 && message === '首次登录请先修改密码') {
       localStorage.setItem('mustChangePassword', 'true')

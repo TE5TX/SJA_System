@@ -1,10 +1,9 @@
 package com.sja.system.controller;
 
-import com.sja.system.common.ApiException;
+import com.sja.system.application.model.CurrentActor;
 import com.sja.system.common.Result;
 import com.sja.system.dto.FeeStandardUpdateDTO;
 import com.sja.system.entity.BizFeeStandard;
-import com.sja.system.security.SecurityUtils;
 import com.sja.system.service.FeeStandardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,37 +18,30 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 
+/**
+ * 稿费标准协议适配器。
+ */
 @RestController
 @RequestMapping("/api/v1/fee/standards")
 @RequiredArgsConstructor
+// 202609211059 - 完成了稿费标准Controller身份解析下沉。
 public class FeeStandardController {
 
     private final FeeStandardService feeStandardService;
-    private final SecurityUtils securityUtils;
-
     @GetMapping
     @PreAuthorize("hasAuthority('fee:audit')")
-    public Result<List<BizFeeStandard>> list(HttpServletRequest request) {
-        Integer roleCode = securityUtils.getCurrentRoleCode(request);
-        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
-            throw ApiException.forbidden("只有管理员或秘书长可以查看稿费标准");
-        }
-        return Result.success(feeStandardService.list());
+    public Result<List<BizFeeStandard>> list(CurrentActor actor) {
+        return Result.success(feeStandardService.list(actor.roleCode()));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('fee:audit')")
     public Result<Void> update(@PathVariable Long id,
                                @RequestBody @Valid FeeStandardUpdateDTO dto,
-                               HttpServletRequest request) {
-        Integer roleCode = securityUtils.getCurrentRoleCode(request);
-        if (roleCode == null || (roleCode != 0 && roleCode != 3)) {
-            throw ApiException.forbidden("只有管理员或秘书长可以修改稿费标准");
-        }
-        feeStandardService.update(id, dto,
-                securityUtils.getCurrentUserId(request),
-                securityUtils.getCurrentUsernameFromToken(request),
-                String.valueOf(roleCode), request.getRemoteAddr());
+                               CurrentActor actor, HttpServletRequest request) {
+        // 202609211059 - 完成了稿费标准Controller身份拼装下沉。
+        feeStandardService.update(id, dto, actor.userId(), actor.username(),
+                actor.roleText(), request.getRemoteAddr(), actor.roleCode());
         return Result.success();
     }
 }

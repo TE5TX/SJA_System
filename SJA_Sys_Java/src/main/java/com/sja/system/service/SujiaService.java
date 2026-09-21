@@ -3,6 +3,7 @@ package com.sja.system.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.application.model.SujiaExportFile;
 import com.sja.system.application.port.SujiaExportPort;
+import com.sja.system.authorization.RoleAuthorizationPolicy;
 import com.sja.system.entity.SysUser;
 import com.sja.system.entity.SysUserDept;
 import com.sja.system.mapper.SysUserDeptMapper;
@@ -27,7 +28,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SujiaService {
 
-    private static final Set<Integer> GLOBAL_INFO_MANAGER_ROLES = Set.of(0, 1, 2, 3);
     private static final String EXPORT_FILE_NAME = "素拓名单.xlsx";
     private static final String XLSX_CONTENT_TYPE =
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -80,7 +80,8 @@ public class SujiaService {
     }
 
     private boolean canViewAll(Integer roleCode) {
-        return roleCode != null && GLOBAL_INFO_MANAGER_ROLES.contains(roleCode);
+        // 202609201146 - 素拓全员数据范围改为复用统一角色授权策略。
+        return RoleAuthorizationPolicy.canViewAllPersonalInformation(roleCode);
     }
 
     private List<Long> getDepartmentUserIds(Long userId) {

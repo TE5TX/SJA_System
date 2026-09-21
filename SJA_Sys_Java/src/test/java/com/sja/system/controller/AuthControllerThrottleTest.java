@@ -1,11 +1,12 @@
 package com.sja.system.controller;
 
 import com.sja.system.application.model.LoginResult;
+import com.sja.system.application.model.TokenPair;
 import com.sja.system.common.ApiException;
 import com.sja.system.common.GlobalExceptionHandler;
 import com.sja.system.dto.LoginDTO;
 import com.sja.system.security.SecurityUtils;
-import com.sja.system.service.AuthTokenService;
+import com.sja.system.controller.support.AuthenticationCookieWriter;
 import com.sja.system.service.LoginApplicationService;
 import com.sja.system.vo.LoginVO;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,8 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthControllerThrottleTest {
 
     @Mock LoginApplicationService loginApplicationService;
-    @Mock AuthTokenService authTokenService;
     @Mock SecurityUtils securityUtils;
+    @Mock AuthenticationCookieWriter authenticationCookieWriter;
 
     @InjectMocks
     private AuthController controller;
@@ -65,8 +66,9 @@ class AuthControllerThrottleTest {
 
     @Test
     void passesTheDirectClientAddressToTheLoginUseCase() throws Exception {
+        TokenPair tokenPair = new TokenPair("access-token", "refresh-token");
         when(loginApplicationService.login(any(LoginDTO.class), eq("203.0.113.9")))
-                .thenReturn(new LoginResult(new LoginVO(), "refresh-token"));
+                .thenReturn(new LoginResult(new LoginVO(), tokenPair));
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -76,9 +78,11 @@ class AuthControllerThrottleTest {
                             return request;
                         })
                         .content(loginJson()))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token").doesNotExist());
 
         verify(loginApplicationService).login(any(LoginDTO.class), eq("203.0.113.9"));
+        verify(authenticationCookieWriter).write(any(), eq(tokenPair));
     }
 
     private String loginJson() {

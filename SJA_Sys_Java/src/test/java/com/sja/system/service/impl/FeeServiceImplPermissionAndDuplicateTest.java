@@ -12,6 +12,15 @@ import com.sja.system.mapper.BizWorkContributorMapper;
 import com.sja.system.mapper.SysDeptMapper;
 import com.sja.system.mapper.SysUserMapper;
 import com.sja.system.mapper.SysUserDeptMapper;
+import com.sja.system.service.FeeCalculationService;
+import com.sja.system.service.OperationLogService;
+import com.sja.system.service.fee.EditorialFeeWorkAdapter;
+import com.sja.system.service.fee.FeeAccessService;
+import com.sja.system.service.fee.FeeCommandService;
+import com.sja.system.service.fee.FeeContributorService;
+import com.sja.system.service.fee.FeeQueryService;
+import com.sja.system.service.fee.FeeWorkAdapterRegistry;
+import com.sja.system.service.fee.FeeWorkStateService;
 import com.sja.system.vo.FeeDetailVO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,9 +54,19 @@ class FeeServiceImplPermissionAndDuplicateTest {
     private BizWorkContributorMapper contributorMapper;
     @Mock
     private SysUserMapper sysUserMapper;
+    @Mock
+    private FeeAccessService accessService;
+    @Mock
+    private FeeContributorService contributorService;
+    @Mock
+    private FeeCalculationService calculationService;
+    @Mock
+    private FeeWorkStateService stateService;
+    @Mock
+    private OperationLogService operationLogService;
 
     @InjectMocks
-    private FeeServiceImpl feeService;
+    private FeeQueryService queryService;
 
     @Test
     void ministerCanViewAnyDepartmentButNeverReceivesAmounts() {
@@ -69,11 +88,12 @@ class FeeServiceImplPermissionAndDuplicateTest {
         when(contributorMapper.selectList(any())).thenReturn(Collections.singletonList(contributor));
 
         SysUser author = new SysUser();
+        author.setId(8L);
         author.setRealName("测试作者");
         author.setStudentNo("2026000000001");
-        when(sysUserMapper.selectById(8L)).thenReturn(author);
+        when(sysUserMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(author));
 
-        FeeDetailVO detail = feeService.getFeeDetail(1L, "EDITORIAL", 93L, 4);
+        FeeDetailVO detail = queryService.detail(1L, "EDITORIAL", 93L, 4);
 
         assertEquals("跨部门稿件", detail.getWorkInfo().get("title"));
         assertNull(detail.getTotalAmount());
@@ -98,8 +118,13 @@ class FeeServiceImplPermissionAndDuplicateTest {
         contributor.setRoleInWork("AUTHOR");
         dto.setContributors(Collections.singletonList(contributor));
 
+        EditorialFeeWorkAdapter adapter = new EditorialFeeWorkAdapter(editorialMapper);
+        FeeWorkAdapterRegistry registry = new FeeWorkAdapterRegistry(Collections.singletonList(adapter));
+        FeeCommandService commandService = new FeeCommandService(accessService, registry, contributorService,
+                calculationService, queryService, stateService, operationLogService);
+
         ApiException error = assertThrows(ApiException.class,
-                () -> feeService.submitFee(2L, "secretary", "秘书长", 3, dto));
+                () -> commandService.submit(2L, "secretary", "秘书长", 3, dto));
 
         assertEquals(409, error.getStatus());
         org.mockito.Mockito.verify(editorialMapper, org.mockito.Mockito.never())

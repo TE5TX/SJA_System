@@ -26,6 +26,16 @@ export function refreshToken() {
   })
 }
 
+// 202609201535 - 获取双重提交Cookie模式使用的CSRF令牌。
+export function prepareCsrfToken() {
+  return request({
+    url: '/v1/auth/csrf',
+    method: 'get',
+    skipAuthRedirect: true,
+    skipGlobalError: true
+  })
+}
+
 // 修改密码
 export function changePassword(data) {
   return request({

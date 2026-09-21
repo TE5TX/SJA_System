@@ -19,7 +19,7 @@ import java.io.IOException;
 
 /**
  * JWT authentication filter that runs once per request.
- * Extracts the Bearer token from the Authorization header, validates it,
+ * 从 HttpOnly Cookie 提取访问令牌、验证令牌，
  * and sets the Spring Security authentication context.
  */
 @Slf4j
@@ -64,13 +64,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Extract the raw JWT string from the Authorization header.
+     * 从仅由服务端写入的 HttpOnly Cookie 提取访问令牌。
      */
     private String resolveToken(HttpServletRequest request) {
-        String bearerToken = request.getHeader("Authorization");
-        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
-            return bearerToken.substring(7);
+        if (request.getCookies() == null) {
+            return null;
         }
-        return null;
+        // 202609201535 - 修复了前端必须读取Access Token并拼装Authorization请求头的问题。
+        return java.util.Arrays.stream(request.getCookies())
+                .filter(cookie -> AuthenticationCookieNames.ACCESS.equals(cookie.getName()))
+                .map(jakarta.servlet.http.Cookie::getValue)
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElse(null);
     }
 }

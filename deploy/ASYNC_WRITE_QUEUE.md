@@ -49,6 +49,9 @@ SJA_TOMCAT_MAX_THREADS=120
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SJA_ASYNC_TASK_WORKER_COUNT` | `4` | 同时执行数据库写入的线程数 |
+| `SJA_ASYNC_TASK_CONSUMER_NAME` | 自动生成 | Redis Stream消费者名称；多实例显式配置时每个实例必须唯一 |
+| `SJA_ASYNC_TASK_CONSUMER_LEASE_TTL` | `90s` | 同名消费者实例冲突检测租约有效期 |
+| `SJA_ASYNC_TASK_CONSUMER_LEASE_RENEW_INTERVAL` | `30s` | 消费者租约续期间隔，必须小于租约有效期 |
 | `SJA_ASYNC_TASK_WORKER_QUEUE_CAPACITY` | `500` | JVM 内等待工作线程的任务数 |
 | `SJA_ASYNC_TASK_QUEUE_CAPACITY` | `5000` | Redis Stream 最大受理数量 |
 | `SJA_ASYNC_TASK_MAX_RETRIES` | `2` | 基础设施故障自动重试次数 |
@@ -56,6 +59,32 @@ SJA_TOMCAT_MAX_THREADS=120
 | `SJA_ASYNC_TASK_STATUS_TTL` | `24h` | 前端可查询任务状态的时间 |
 
 不要随意修改 `SJA_ASYNC_TASK_ENCRYPTION_KEY`。旧密钥仍有任务排队时更换密钥，会导致旧任务无法解密。正确做法是先确认队列为空，再轮换并重建后端容器。
+
+### 多实例消费者名称
+
+`202609201556` 起，未配置 `SJA_ASYNC_TASK_CONSUMER_NAME` 时，系统会根据主机名、进程ID和随机后缀生成唯一名称。单实例及 Docker Compose 动态扩容建议保持为空，让每个容器使用自己的 `HOSTNAME`。
+
+需要显式配置时，每个实例必须使用不同值，例如：
+
+```bash
+# 实例一
+SJA_ASYNC_TASK_CONSUMER_NAME=sja-backend-node-01
+
+# 实例二
+SJA_ASYNC_TASK_CONSUMER_NAME=sja-backend-node-02
+```
+
+Kubernetes 应通过 Downward API 注入 Pod 名称：
+
+```yaml
+env:
+  - name: SJA_ASYNC_TASK_CONSUMER_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+```
+
+系统会为消费者名称申请 Redis 租约。如果两个实例误用相同名称，后启动的实例会拒绝启动消费者，避免 pending 消息归属和监控数据混乱。
 
 ## 4. 数据库升级
 
@@ -86,6 +115,8 @@ docker compose exec redis redis-cli -a "${REDIS_PASSWORD}" \
 docker compose exec redis redis-cli -a "${REDIS_PASSWORD}" \
   XINFO GROUPS sja:async:write-tasks
 docker compose exec redis redis-cli -a "${REDIS_PASSWORD}" \
+  XINFO CONSUMERS sja:async:write-tasks sja-write-workers
+docker compose exec redis redis-cli -a "${REDIS_PASSWORD}" \
   XPENDING sja:async:write-tasks sja-write-workers
 docker compose logs --tail=200 backend
 ```
@@ -97,6 +128,7 @@ docker compose logs --tail=200 backend
 - Redis 短时不可用：新请求返回 `503`，未确认消息保留，Redis 恢复后继续处理。
 - MySQL 短时不可用：任务最多自动重试 2 次；仍失败则前端收到 `FAILED`。
 - 后端处理中退出：消息保留在 pending，超过 5 分钟后由恢复任务重新领取。
+- 版本升级后，旧消费者 `sja-write-worker-1` 的 pending 会在可见性超时后被新实例认领。只有确认其 pending 数量为 `0` 后，才可以使用 `XGROUP DELCONSUMER` 清理旧消费者。
 - 数据库已提交、Redis 状态未更新：消费者重放时通过 `sys_async_task_execution.task_id` 跳过业务写入，只补齐成功状态。
 - 账号排队期间被禁用或撤销权限：任务失败，不沿用入队时的旧权限。
 

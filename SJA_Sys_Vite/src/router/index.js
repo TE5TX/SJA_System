@@ -101,14 +101,17 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   const allowedRoleCodes = to.meta.allowedRoleCodes
-  if (to.meta.requiresAuth && !userStore.token) {
+  if (to.meta.requiresAuth && !userStore.sessionInitialized) {
+    await userStore.initializeSession()
+  }
+  if (to.meta.requiresAuth && !userStore.authenticated) {
     next('/login')
-  } else if (userStore.token && userStore.mustChangePassword && to.path !== '/change-password') {
+  } else if (userStore.authenticated && userStore.mustChangePassword && to.path !== '/change-password') {
     next('/change-password')
-  } else if (userStore.token && !userStore.mustChangePassword && to.path === '/change-password') {
+  } else if (userStore.authenticated && !userStore.mustChangePassword && to.path === '/change-password') {
     next('/app')
   } else if (Array.isArray(allowedRoleCodes)
     && !allowedRoleCodes.some(code => userStore.userInfo?.roleCodes?.includes(code))) {

@@ -1,19 +1,13 @@
 package com.sja.system.controller;
 
+import com.sja.system.application.model.CurrentActor;
 import com.sja.system.dto.FeeSubmitDTO;
 import com.sja.system.dto.ProfileUpdateDTO;
-import com.sja.system.security.SecurityUtils;
-import com.sja.system.service.AsyncTaskQueueService;
-import com.sja.system.service.FeeService;
-import com.sja.system.service.MonthlyFeeExportService;
-import com.sja.system.service.OperationLogService;
-import com.sja.system.service.UserImportService;
-import com.sja.system.service.UserRosterImportService;
-import com.sja.system.service.UserService;
+import com.sja.system.service.FeeApplicationService;
+import com.sja.system.service.UserApplicationService;
 import com.sja.system.vo.AsyncTaskAcceptedVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.mock.web.MockHttpServletRequest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
@@ -24,41 +18,34 @@ class AsyncWriteControllerTest {
 
     @Test
     void profileUpdateReturnsAcceptedTask() {
-        SecurityUtils securityUtils = mock(SecurityUtils.class);
-        AsyncTaskQueueService queueService = mock(AsyncTaskQueueService.class);
-        UserController controller = new UserController(mock(UserService.class),
-                mock(UserImportService.class), mock(UserRosterImportService.class),
-                mock(OperationLogService.class), securityUtils, queueService);
-        MockHttpServletRequest request = new MockHttpServletRequest();
+        UserApplicationService applicationService = mock(UserApplicationService.class);
+        UserController controller = new UserController(applicationService);
+        CurrentActor actor = new CurrentActor(56L, "20230001", 4);
         ProfileUpdateDTO dto = new ProfileUpdateDTO();
         AsyncTaskAcceptedVO accepted = acceptedTask();
-        when(securityUtils.getCurrentUserId(request)).thenReturn(56L);
-        when(queueService.enqueueProfile(56L, dto, "profile-request-1")).thenReturn(accepted);
+        when(applicationService.updateProfile(dto, "profile-request-1", actor)).thenReturn(accepted);
 
-        var response = controller.updateProfile(dto, "profile-request-1", request);
+        var response = controller.updateProfile(dto, "profile-request-1", actor);
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         assertEquals(accepted, response.getBody().getData());
-        verify(queueService).enqueueProfile(56L, dto, "profile-request-1");
+        verify(applicationService).updateProfile(dto, "profile-request-1", actor);
     }
 
     @Test
     void feeSubmitReturnsAcceptedTask() {
-        SecurityUtils securityUtils = mock(SecurityUtils.class);
-        AsyncTaskQueueService queueService = mock(AsyncTaskQueueService.class);
-        FeeController controller = new FeeController(mock(FeeService.class),
-                mock(MonthlyFeeExportService.class), mock(UserService.class), securityUtils, queueService);
-        MockHttpServletRequest request = new MockHttpServletRequest();
+        FeeApplicationService applicationService = mock(FeeApplicationService.class);
+        FeeController controller = new FeeController(applicationService);
+        CurrentActor actor = new CurrentActor(56L, "20230001", 4);
         FeeSubmitDTO dto = new FeeSubmitDTO();
         AsyncTaskAcceptedVO accepted = acceptedTask();
-        when(securityUtils.getCurrentUserId(request)).thenReturn(56L);
-        when(queueService.enqueueFee(56L, dto, "fee-request-1")).thenReturn(accepted);
+        when(applicationService.submit(dto, "fee-request-1", actor)).thenReturn(accepted);
 
-        var response = controller.submitFee(dto, "fee-request-1", request);
+        var response = controller.submitFee(dto, "fee-request-1", actor);
 
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
         assertEquals(accepted, response.getBody().getData());
-        verify(queueService).enqueueFee(56L, dto, "fee-request-1");
+        verify(applicationService).submit(dto, "fee-request-1", actor);
     }
 
     private AsyncTaskAcceptedVO acceptedTask() {
