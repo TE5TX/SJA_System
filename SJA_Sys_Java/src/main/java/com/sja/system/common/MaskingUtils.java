@@ -1,6 +1,6 @@
 package com.sja.system.common;
 
-import com.sja.system.vo.UserVO;
+import com.sja.system.application.vo.user.UserVO;
 
 // 202608101042 - 修复了人员列表、导出和操作日志暴露完整敏感信息的问题。
 public final class MaskingUtils {

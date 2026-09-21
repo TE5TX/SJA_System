@@ -2,11 +2,11 @@ package com.sja.system.service.fee;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.common.ApiException;
-import com.sja.system.dto.FeeSubmitDTO;
-import com.sja.system.entity.BizMonthlySubsidy;
-import com.sja.system.entity.BizWorkContributor;
-import com.sja.system.mapper.BizMonthlySubsidyMapper;
-import com.sja.system.mapper.BizWorkContributorMapper;
+import com.sja.system.application.dto.fee.FeeSubmitDTO;
+import com.sja.system.dal.dataobject.BizMonthlySubsidy;
+import com.sja.system.dal.dataobject.BizWorkContributor;
+import com.sja.system.dal.mysql.BizMonthlySubsidyMapper;
+import com.sja.system.dal.mysql.BizWorkContributorMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

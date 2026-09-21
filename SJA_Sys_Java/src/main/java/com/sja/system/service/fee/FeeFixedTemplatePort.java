@@ -1,7 +1,7 @@
 package com.sja.system.service.fee;
 
-import com.sja.system.vo.FeeDetailVO;
-import com.sja.system.vo.FeeListVO;
+import com.sja.system.application.vo.fee.FeeDetailVO;
+import com.sja.system.application.vo.fee.FeeListVO;
 
 import java.io.IOException;
 import java.io.OutputStream;

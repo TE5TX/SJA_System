@@ -1,12 +1,12 @@
 package com.sja.system.service.fee;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.sja.system.authorization.RoleAuthorizationPolicy;
+import com.sja.system.service.authorization.RoleAuthorizationPolicy;
 import com.sja.system.common.ApiException;
-import com.sja.system.entity.SysDept;
-import com.sja.system.entity.SysUserDept;
-import com.sja.system.mapper.SysDeptMapper;
-import com.sja.system.mapper.SysUserDeptMapper;
+import com.sja.system.dal.dataobject.SysDept;
+import com.sja.system.dal.dataobject.SysUserDept;
+import com.sja.system.dal.mysql.SysDeptMapper;
+import com.sja.system.dal.mysql.SysUserDeptMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

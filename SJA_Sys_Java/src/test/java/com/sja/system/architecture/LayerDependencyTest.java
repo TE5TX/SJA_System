@@ -16,31 +16,29 @@ class LayerDependencyTest {
 
     @Test
     void controllersDoNotImportMappers() throws IOException {
-        assertNoImport(MAIN_SOURCE.resolve("controller"), "import com.sja.system.mapper.");
+        assertNoImport(MAIN_SOURCE.resolve("controller"), "import com.sja.system.dal.mysql.");
     }
 
     @Test
     void controllersDoNotParseSecurityIdentityOrCoordinateSensitiveOperations() throws IOException {
         // 202609211059 - 防止Controller再次解析安全主体、直接选择异步队列或编排密码复核。
         Path controllers = MAIN_SOURCE.resolve("controller");
-        assertNoImport(controllers, "import com.sja.system.security.SecurityUtils;");
-        assertNoImport(controllers, "import com.sja.system.service.AsyncTaskQueueService;");
+        assertNoImport(controllers, "import com.sja.system.framework.security.SecurityUtils;");
+        assertNoImport(controllers, "import com.sja.system.service.async.AsyncTaskQueueService;");
         assertNoPattern(controllers, Pattern.compile("\\.verifyCurrentPassword\\s*\\("));
     }
 
     @Test
     void refactoredControllersDoNotContainPersistenceOrExcelCode() throws IOException {
         Path controllers = MAIN_SOURCE.resolve("controller");
-        for (String controller : List.of("AuthController.java", "SujiaController.java")) {
-            Path source = controllers.resolve(controller);
-            assertNoImport(source, "import com.baomidou.mybatisplus.");
-            assertNoImport(source, "import com.alibaba.excel.");
-        }
+        // 202609211427 - 完成了Controller按业务域分包后的全目录持久化与Excel依赖检查。
+        assertNoImport(controllers, "import com.baomidou.mybatisplus.");
+        assertNoImport(controllers, "import com.alibaba.excel.");
     }
 
     @Test
     void servicesDoNotImportSecurityImplementations() throws IOException {
-        assertNoImport(MAIN_SOURCE.resolve("service"), "import com.sja.system.security.");
+        assertNoImport(MAIN_SOURCE.resolve("service"), "import com.sja.system.framework.security.");
     }
 
     @Test
@@ -61,7 +59,7 @@ class LayerDependencyTest {
         Path controllers = MAIN_SOURCE.resolve("controller");
         Pattern duplicatedDownloadHandling = Pattern.compile(
                 "Content-Disposition|CONTENT_DISPOSITION|getOutputStream\\s*\\(|URLEncoder");
-        try (var files = Files.list(controllers)) {
+        try (var files = Files.walk(controllers)) {
             List<Path> violations = files
                     .filter(path -> path.toString().endsWith(".java"))
                     .filter(path -> duplicatedDownloadHandling.matcher(read(path)).find())
@@ -85,9 +83,9 @@ class LayerDependencyTest {
     @Test
     void feeFacadeDoesNotDependOnPersistenceOrImplementationDetails() throws IOException {
         // 202609210900 - 防止稿费门面再次直接访问Mapper或五类作品实体。
-        Path facade = MAIN_SOURCE.resolve("service").resolve("impl").resolve("FeeServiceImpl.java");
-        assertNoImport(facade, "import com.sja.system.mapper.");
-        assertNoImport(facade, "import com.sja.system.entity.");
+        Path facade = MAIN_SOURCE.resolve("service").resolve("fee").resolve("FeeServiceImpl.java");
+        assertNoImport(facade, "import com.sja.system.dal.mysql.");
+        assertNoImport(facade, "import com.sja.system.dal.dataobject.");
     }
 
     @Test
@@ -99,15 +97,23 @@ class LayerDependencyTest {
     @Test
     void asyncCoreDoesNotDependOnOuterLayers() throws IOException {
         // 202609201556 - 防止异步队列核心身份模型反向依赖配置、Web或业务实现层。
-        Path asyncPackage = MAIN_SOURCE.resolve("async");
+        Path asyncPackage = MAIN_SOURCE.resolve("service").resolve("async").resolve("model");
         for (String forbidden : List.of(
-                "import com.sja.system.config.",
+                "import com.sja.system.framework.config.",
                 "import com.sja.system.controller.",
-                "import com.sja.system.infrastructure.",
-                "import com.sja.system.security.",
+                "import com.sja.system.framework.web.",
+                "import com.sja.system.framework.redis.",
+                "import com.sja.system.framework.security.",
                 "import com.sja.system.service.")) {
             assertNoImport(asyncPackage, forbidden);
         }
+    }
+
+    @Test
+    void businessEntryPointsAreGroupedByDomain() throws IOException {
+        // 202609211427 - 防止Controller和Service再次退化为根目录平铺结构。
+        assertNoJavaFileDirectlyUnder(MAIN_SOURCE.resolve("controller"));
+        assertNoJavaFileDirectlyUnder(MAIN_SOURCE.resolve("service"));
     }
 
     @Test
@@ -141,6 +147,18 @@ class LayerDependencyTest {
                     .toList();
             assertTrue(violations.isEmpty(),
                     () -> "禁止的代码模式 " + forbiddenPattern + " 出现在: " + violations);
+        }
+    }
+
+    private void assertNoJavaFileDirectlyUnder(Path packagePath) throws IOException {
+        try (var files = Files.list(packagePath)) {
+            List<Path> violations = files
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .filter(path -> !path.getFileName().toString().equals("package-info.java"))
+                    .toList();
+            assertTrue(violations.isEmpty(),
+                    () -> "业务入口必须按领域分包，不得直接平铺在根目录: " + violations);
         }
     }
 

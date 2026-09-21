@@ -1,10 +1,10 @@
 package com.sja.system.service.fee;
 
 import com.sja.system.common.ApiException;
-import com.sja.system.dto.FeeAuditDTO;
-import com.sja.system.dto.FeeBatchAuditDTO;
-import com.sja.system.dto.FeeTaskRefDTO;
-import com.sja.system.service.OperationLogService;
+import com.sja.system.application.dto.fee.FeeAuditDTO;
+import com.sja.system.application.dto.fee.FeeBatchAuditDTO;
+import com.sja.system.application.dto.fee.FeeTaskRefDTO;
+import com.sja.system.service.system.OperationLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

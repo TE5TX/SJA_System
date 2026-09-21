@@ -1,6 +1,6 @@
 package com.sja.system.service.fee;
 
-import com.sja.system.dto.FeeSubmitDTO;
+import com.sja.system.application.dto.fee.FeeSubmitDTO;
 
 import java.math.BigDecimal;
 import java.util.List;

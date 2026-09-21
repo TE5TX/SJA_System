@@ -6,7 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@MapperScan("com.sja.system.mapper")
+// 202609211427 - 完成了Mapper扫描路径迁移至DAL层，统一数据库访问组件边界。
+@MapperScan("com.sja.system.dal.mysql")
 @EnableScheduling
 public class SjaSystemApplication {
 

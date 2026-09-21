@@ -3,9 +3,9 @@ package com.sja.system.service.fee;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.sja.system.common.ApiException;
-import com.sja.system.dto.FeeSubmitDTO;
-import com.sja.system.entity.BizVisualWork;
-import com.sja.system.mapper.BizVisualWorkMapper;
+import com.sja.system.application.dto.fee.FeeSubmitDTO;
+import com.sja.system.dal.dataobject.BizVisualWork;
+import com.sja.system.dal.mysql.BizVisualWorkMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

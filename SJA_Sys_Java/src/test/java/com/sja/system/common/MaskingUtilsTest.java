@@ -1,6 +1,6 @@
 package com.sja.system.common;
 
-import com.sja.system.vo.UserVO;
+import com.sja.system.application.vo.user.UserVO;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

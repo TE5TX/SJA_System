@@ -1,16 +1,16 @@
 package com.sja.system.service.fee;
 
 import com.sja.system.common.ApiException;
-import com.sja.system.entity.BizEditorialArticle;
-import com.sja.system.entity.BizMonthlySubsidy;
-import com.sja.system.entity.BizPhotographyWork;
-import com.sja.system.entity.BizVideoWork;
-import com.sja.system.entity.BizVisualWork;
-import com.sja.system.mapper.BizEditorialArticleMapper;
-import com.sja.system.mapper.BizMonthlySubsidyMapper;
-import com.sja.system.mapper.BizPhotographyWorkMapper;
-import com.sja.system.mapper.BizVideoWorkMapper;
-import com.sja.system.mapper.BizVisualWorkMapper;
+import com.sja.system.dal.dataobject.BizEditorialArticle;
+import com.sja.system.dal.dataobject.BizMonthlySubsidy;
+import com.sja.system.dal.dataobject.BizPhotographyWork;
+import com.sja.system.dal.dataobject.BizVideoWork;
+import com.sja.system.dal.dataobject.BizVisualWork;
+import com.sja.system.dal.mysql.BizEditorialArticleMapper;
+import com.sja.system.dal.mysql.BizMonthlySubsidyMapper;
+import com.sja.system.dal.mysql.BizPhotographyWorkMapper;
+import com.sja.system.dal.mysql.BizVideoWorkMapper;
+import com.sja.system.dal.mysql.BizVisualWorkMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;

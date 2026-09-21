@@ -1,6 +1,6 @@
 package com.sja.system.application.model;
 
-import com.sja.system.vo.LoginVO;
+import com.sja.system.application.vo.auth.LoginVO;
 
 /**
  * 登录响应数据以及由 Web 适配层写入 HttpOnly Cookie 的认证令牌。
