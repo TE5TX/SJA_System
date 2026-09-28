@@ -32,10 +32,13 @@ public class PhotographyFeeWorkAdapter implements FeeWorkAdapter {
     @Override public void update(Long id, Map<String, Object> info) {
         if (mapper.selectById(id) == null) throw ApiException.notFound("摄影作品不存在");
         BizPhotographyWork entity = values(new BizPhotographyWork(), info); entity.setId(id); mapper.updateById(entity);
-        if (!Integer.valueOf(1).equals(FeeValueReader.integer(info, "isPublished"))) {
-            UpdateWrapper<BizPhotographyWork> update = new UpdateWrapper<>();
-            update.eq("id", id).set("publish_date", null); mapper.update(null, update);
-        }
+    }
+
+    @Override public void assignCreationDateToUnpublishedWork(Long id) {
+        // 202609281554 - 摄影未发布作品使用数据库创建日期，编辑时保持原创建日期不变。
+        UpdateWrapper<BizPhotographyWork> update = new UpdateWrapper<>();
+        update.eq("id", id).setSql("publish_date = DATE(create_time)");
+        mapper.update(null, update);
     }
 
     @Override public void updateTotal(Long id, BigDecimal total, int contributorCount) {

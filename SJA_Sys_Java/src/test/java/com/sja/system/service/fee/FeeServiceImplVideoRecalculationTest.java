@@ -1,6 +1,7 @@
 package com.sja.system.service.fee;
 
 import com.sja.system.application.dto.fee.FeeSubmitDTO;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.sja.system.dal.dataobject.BizEditorialArticle;
 import com.sja.system.dal.dataobject.BizVideoWork;
 import com.sja.system.dal.dataobject.BizWorkContributor;
@@ -37,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,7 +74,8 @@ class FeeServiceImplVideoRecalculationTest {
     }
 
     @Test
-    void unpublishedSubmissionDoesNotPersistPublishDate() {
+    void unpublishedSubmissionUsesDatabaseCreationDateInsteadOfClientDate() {
+        // 202609281554 - 验证未发布任务忽略伪造的客户端日期，并从数据库创建时间设置隐藏发布日期。
         FeeSubmitDTO dto = new FeeSubmitDTO();
         dto.setWorkType("EDITORIAL");
         Map<String, Object> info = new HashMap<>();
@@ -98,6 +101,10 @@ class FeeServiceImplVideoRecalculationTest {
         verify(editorialMapper).insert(articleCaptor.capture());
         assertNull(articleCaptor.getValue().getPublishDate());
         assertNull(info.get("publishDate"));
+        @SuppressWarnings("rawtypes")
+        ArgumentCaptor<UpdateWrapper> dateUpdate = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(editorialMapper).update(isNull(), dateUpdate.capture());
+        assertTrue(dateUpdate.getValue().getSqlSet().contains("publish_date = DATE(create_time)"));
     }
 
     @Test

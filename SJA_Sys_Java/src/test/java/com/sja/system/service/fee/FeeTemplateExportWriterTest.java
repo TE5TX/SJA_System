@@ -18,6 +18,23 @@ import static org.junit.jupiter.api.Assertions.*;
 class FeeTemplateExportWriterTest {
 
     @Test
+    void unpublishedTaskShowsDashInPublicationColumnButKeepsAttributionMonth() throws Exception {
+        // 202609281627 - 验证未发布任务的隐藏日期只决定归属月份，不作为真实发布日期导出。
+        FeeListVO item = item("VIDEO", null, "待发布视频");
+        FeeDetailVO detail = detail(new LinkedHashMap<String, Object>() {{
+            put("category", "活动新闻类视频");
+            put("publishDate", LocalDate.of(2026, 9, 28));
+            put("isPublished", 0);
+        }}, contributor("张三", "SHOOTER", "100.0", null));
+
+        try (Workbook workbook = writeAndRead(FeeTemplateExportWriter.VIDEO, item, detail)) {
+            Row row = workbook.getSheetAt(0).getRow(3);
+            assertEquals("9月", row.getCell(0).getStringCellValue());
+            assertEquals("-", row.getCell(3).getStringCellValue());
+        }
+    }
+
+    @Test
     void writesWechatWorkbookUsingExistingDepartmentTemplate() throws Exception {
         FeeListVO item = item("EDITORIAL", "微信", "测试推文");
         FeeDetailVO detail = detail(new LinkedHashMap<String, Object>() {{

@@ -33,10 +33,13 @@ public class VideoFeeWorkAdapter implements FeeWorkAdapter {
     @Override public void update(Long id, Map<String, Object> info) {
         if (mapper.selectById(id) == null) throw ApiException.notFound("视频作品不存在");
         BizVideoWork entity = values(new BizVideoWork(), info); entity.setId(id); mapper.updateById(entity);
-        if (!Integer.valueOf(1).equals(FeeValueReader.integer(info, "isPublished"))) {
-            UpdateWrapper<BizVideoWork> update = new UpdateWrapper<>();
-            update.eq("id", id).set("publish_date", null); mapper.update(null, update);
-        }
+    }
+
+    @Override public void assignCreationDateToUnpublishedWork(Long id) {
+        // 202609281554 - 视频未发布作品使用数据库创建日期，编辑时保持原创建日期不变。
+        UpdateWrapper<BizVideoWork> update = new UpdateWrapper<>();
+        update.eq("id", id).setSql("publish_date = DATE(create_time)");
+        mapper.update(null, update);
     }
 
     @Override public void updateTotal(Long id, BigDecimal total, int contributorCount) {

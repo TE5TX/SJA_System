@@ -204,7 +204,9 @@ public class FeeExportService {
             case "title" -> item.getTitle();
             case "platform" -> display(info.get("platform"));
             case "category" -> display(info.get("category"));
-            case "publishDate" -> display(info.get("publishDate"));
+            // 202609281627 - 自定义导出不将未发布任务的内部归属日期误写为实际发布日期。
+            case "publishDate" -> "0".equals(String.valueOf(info.get("isPublished")))
+                    ? "-" : display(info.get("publishDate"));
             case "articleLink" -> display(info.containsKey("videoLink") ? info.get("videoLink") : info.get("articleLink"));
             case "isPublished" -> yesNo(info.get("isPublished"));
             case "readCount" -> display(info.get("readCount"));

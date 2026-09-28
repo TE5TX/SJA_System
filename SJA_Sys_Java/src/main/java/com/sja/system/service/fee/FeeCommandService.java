@@ -60,6 +60,10 @@ public class FeeCommandService {
             workInfo.put("authorCount", contributors != null ? contributors.size() : 0);
         }
         Long workId = adapter.create(workInfo, userId);
+        // 202609281554 - 未发布作品由数据库创建时间确定隐藏发布日期，忽略客户端传入的日期。
+        if (isUnpublishedWork(workType, workInfo)) {
+            adapter.assignCreationDateToUnpublishedWork(workId);
+        }
         List<BigDecimal> fees = calculationService.calculateAutomaticFees(workType, workInfo, contributors);
         if (fees == null && contributors != null) {
             // 202609210900 - 保留管理员提交无法自动计价项目时使用显式金额的原有行为。
@@ -95,6 +99,9 @@ public class FeeCommandService {
         normalizeUnpublishedDate(workType, info);
         ensureNotDuplicate(adapter, info, dto.getContributors(), id);
         adapter.update(id, info);
+        if (isUnpublishedWork(workType, info)) {
+            adapter.assignCreationDateToUnpublishedWork(id);
+        }
         List<BigDecimal> fees = calculationService.calculateAutomaticFees(workType, info, dto.getContributors());
         BigDecimal total = contributorService.replace(workType, id, dto.getContributors(), fees);
         adapter.updateTotal(id, total, dto.getContributors() != null ? dto.getContributors().size() : 0);
@@ -115,10 +122,15 @@ public class FeeCommandService {
     }
 
     private void normalizeUnpublishedDate(String workType, Map<String, Object> info) {
-        if (FeeWorkType.require(workType) != FeeWorkType.SUBSIDY
-                && !Objects.equals(FeeValueReader.integer(info, "isPublished"), 1)) {
+        if (isUnpublishedWork(workType, info)) {
             info.put("publishDate", null);
         }
+    }
+
+    /** 判断普通作品是否处于未发布状态；月度补贴始终按补贴月份处理。 */
+    private boolean isUnpublishedWork(String workType, Map<String, Object> info) {
+        return FeeWorkType.require(workType) != FeeWorkType.SUBSIDY
+                && !Objects.equals(FeeValueReader.integer(info, "isPublished"), 1);
     }
 
     private void ensureNotDuplicate(FeeWorkAdapter adapter, Map<String, Object> info,

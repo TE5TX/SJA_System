@@ -38,7 +38,6 @@ public class EditorialFeeWorkAdapter implements FeeWorkAdapter {
         BizEditorialArticle entity = values(new BizEditorialArticle(), info);
         entity.setId(id);
         mapper.updateById(entity);
-        clearPublishDateWhenUnpublished(id, info);
     }
 
     @Override
@@ -84,10 +83,11 @@ public class EditorialFeeWorkAdapter implements FeeWorkAdapter {
         return entity;
     }
 
-    private void clearPublishDateWhenUnpublished(Long id, Map<String, Object> info) {
-        if (Integer.valueOf(1).equals(FeeValueReader.integer(info, "isPublished"))) return;
+    @Override
+    public void assignCreationDateToUnpublishedWork(Long id) {
+        // 202609281554 - 采编未发布稿件使用数据库创建日期，避免客户端时间或异步排队造成偏差。
         UpdateWrapper<BizEditorialArticle> update = new UpdateWrapper<>();
-        update.eq("id", id).set("publish_date", null);
+        update.eq("id", id).setSql("publish_date = DATE(create_time)");
         mapper.update(null, update);
     }
 }

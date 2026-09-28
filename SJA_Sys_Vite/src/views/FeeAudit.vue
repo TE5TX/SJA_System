@@ -96,7 +96,7 @@
         </el-table-column>
         <el-table-column prop="title" label="作品标题" min-width="220" show-overflow-tooltip />
         <el-table-column label="发布时间" width="120">
-          <template #default="{ row }">{{ row.publishDate || '-' }}</template>
+          <template #default="{ row }">{{ displayPublishDate(row.publishDate, row.isPublished) }}</template>
         </el-table-column>
         <el-table-column v-if="canManageFeeAmount" label="金额" width="120">
           <template #default="{ row }">¥{{ money(row.totalAmount) }}</template>
@@ -143,7 +143,7 @@
           </div>
           <dl class="mobile-record-card__grid">
             <div><dt>类型</dt><dd>{{ workTypeName(record.workType) }}</dd></div>
-            <div><dt>发布时间</dt><dd>{{ record.publishDate || '-' }}</dd></div>
+            <div><dt>发布时间</dt><dd>{{ displayPublishDate(record.publishDate, record.isPublished) }}</dd></div>
             <div v-if="canManageFeeAmount"><dt>金额</dt><dd>¥{{ money(record.totalAmount) }}</dd></div>
             <div><dt>创建时间</dt><dd>{{ time(record.createTime) }}</dd></div>
           </dl>
@@ -279,6 +279,12 @@
             :options="[2, 3]"
           />
           <!-- 202609281449 - 修复了编辑稿费任务时滚轮误改发布日期的问题，保留日期选择器与弹窗正常滚动。 -->
+          <!-- 202609281627 - 未发布任务的创建日期仅作内部归属，编辑弹窗不将其显示成实际发布时间。 -->
+          <div
+            v-else-if="field.key === 'publishDate' && String(editForm.workInfo.isPublished) === '0'"
+            class="readonly-field"
+            aria-readonly="true"
+          >-</div>
           <el-date-picker
             v-else-if="field.key === 'publishDate'"
             v-model="editForm.workInfo[field.key]"
@@ -530,6 +536,8 @@ const usesFixedWorkbookTemplate = computed(() => fixedWorkbookTemplates.has(expo
 // 202608101716 - 将稿费金额统一显示为四舍五入后的一位小数。
 const money = value => Number(value || 0).toFixed(1)
 const time = value => value ? String(value).replace('T', ' ').slice(0, 16) : '-'
+// 202609281627 - 未发布任务的隐藏日期只用于内部统计，页面统一以“-”表示尚无实际发布日期。
+const displayPublishDate = (value, isPublished) => String(isPublished) === '0' ? '-' : (value || '-')
 const workTypeName = type => workTypeMap[type] || type || '-'
 const roleName = role => roleMap[role] || role || '-'
 const statusName = status => ({ SUBMITTED: '已提交', APPROVED: '已通过', REJECTED: '已驳回' }[status] || status || '-')
@@ -574,16 +582,23 @@ const fieldLabelMap = {
   remark: '备注'
 }
 
+const booleanWorkInfoFields = new Set(['isPublished', 'isSpecialNode', 'isReposted', 'isComplexEdit'])
+/** 将作品字段转换为详情面板中的展示值，不改变提交或查询使用的原始数据。 */
+const formatWorkInfoValue = (key, value, info) => {
+  if (key === 'publishDate') return displayPublishDate(value, info.isPublished)
+  if (key === 'authorAvgFee') return money(value)
+  if (booleanWorkInfoFields.has(key)) return Number(value) === 1 ? '是' : '否'
+  return value ?? '-'
+}
+
 const workInfoRows = computed(() => {
   const info = detail.value?.workInfo || {}
   // 202609081000 - 修复了视频部详情仍显示无计费作用时长字段的问题。
   return Object.entries(info)
     .filter(([key]) => !(detail.value?.workType === 'VIDEO' && key === 'videoDurationSec'))
     .map(([key, value]) => ({
-    label: fieldLabelMap[key] || key,
-    value: key === 'authorAvgFee'
-      ? money(value)
-      : (['isPublished', 'isSpecialNode', 'isReposted', 'isComplexEdit'].includes(key) ? (Number(value) === 1 ? '是' : '否') : (value ?? '-'))
+      label: fieldLabelMap[key] || key,
+      value: formatWorkInfoValue(key, value, info)
     }))
 })
 const amountSensitiveFields = new Set(['isSpecialNode', 'specialMultiplier', 'authorAvgFee'])

@@ -168,6 +168,7 @@
             </template>
 
             <el-row v-if="form.workType !== 'SUBSIDY'" :gutter="16">
+              <!-- 202609281554 - 未发布任务继续隐藏发布日期，由后端在入库时按任务创建日期填写。 -->
               <el-col v-if="form.workInfo.isPublished === 1" :xs="24" :sm="12">
                 <el-form-item label="发布时间" required>
                   <div
@@ -689,7 +690,7 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     const submittedWorkInfo = { ...form.workInfo }
-    // 202608121145 - 修复了未发布稿费任务仍提交发布日期的问题。
+    // 202609281554 - 未发布任务不发送客户端日期，避免覆盖后端按数据库创建时间填写的隐藏发布日期。
     if (form.workType !== 'SUBSIDY' && submittedWorkInfo.isPublished !== 1) {
       delete submittedWorkInfo.publishDate
     }

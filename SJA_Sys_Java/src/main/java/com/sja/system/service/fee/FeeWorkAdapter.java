@@ -18,6 +18,17 @@ public interface FeeWorkAdapter {
 
     void update(Long workId, Map<String, Object> info);
 
+    /**
+     * 未发布作品入库后，将隐藏的发布日期设为该任务实际创建日期。
+     *
+     * <p>202609281554 - 完成了未发布任务按数据库创建日期填写隐藏发布日期的持久化能力。</p>
+     *
+     * @param workId 已存在的作品主键
+     */
+    default void assignCreationDateToUnpublishedWork(Long workId) {
+        // 月度补贴按补贴月份归属，不使用作品发布日期。
+    }
+
     void updateTotal(Long workId, BigDecimal totalAmount, int contributorCount);
 
     Map<String, Object> preserveRestrictedFields(Long workId, Map<String, Object> submittedInfo);

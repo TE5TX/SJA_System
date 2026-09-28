@@ -206,21 +206,21 @@ final class FeeTemplateExportWriter {
 
     private static List<Object> wechatRow(RowContext context) {
         return Arrays.asList(context.month(), editorialCategory(context.info().get("category")), context.item.item.getTitle(),
-                context.publishDate(), context.names(context.contributors()), context.link(), context.info().get("readCount"),
+                context.displayedPublishDate(), context.names(context.contributors()), context.link(), context.info().get("readCount"),
                 context.item.detail.getTotalAmount(), context.amountSummary(context.contributors()), context.contributors().size(),
                 context.specialNode(), context.specialMultiplier(), context.remark());
     }
 
     private static List<Object> websiteRow(RowContext context) {
         return Arrays.asList(context.month(), websiteCategory(context.info().get("category")), context.item.item.getTitle(),
-                context.publishDate(), context.names(context.contributors()), context.link(), context.item.detail.getTotalAmount(),
+                context.displayedPublishDate(), context.names(context.contributors()), context.link(), context.item.detail.getTotalAmount(),
                 context.amountSummary(context.contributors()), context.contributors().size(),
                 context.specialNode(), context.specialMultiplier(), context.remark());
     }
 
     private static List<Object> newspaperRow(RowContext context) {
         return Arrays.asList(context.month(), value(context.info().get("category")), context.item.item.getTitle(),
-                context.publishDate(), context.names(context.contributors()), context.info().get("wordCount"), context.link(),
+                context.displayedPublishDate(), context.names(context.contributors()), context.info().get("wordCount"), context.link(),
                 context.item.detail.getTotalAmount(), context.amountSummary(context.contributors()), context.contributors().size(),
                 context.specialNode(), context.specialMultiplier(), context.remark());
     }
@@ -231,7 +231,7 @@ final class FeeTemplateExportWriter {
                 ? context.info().get("readCount")
                 : context.join(context.contributors(), contributor -> contributor.getWorkCount() != null
                 ? String.valueOf(contributor.getWorkCount()) : "");
-        return Arrays.asList(context.month(), photoPlatform(platform), context.item.item.getTitle(), context.publishDate(),
+        return Arrays.asList(context.month(), photoPlatform(platform), context.item.item.getTitle(), context.displayedPublishDate(),
                 context.names(context.contributors()), context.link(), quantity, context.item.detail.getTotalAmount(),
                 context.amountSummary(context.contributors()), context.contributors().size(),
                 context.specialNode(), context.specialMultiplier(), context.remark());
@@ -239,7 +239,7 @@ final class FeeTemplateExportWriter {
 
     private static List<Object> visualRow(RowContext context) {
         return Arrays.asList(context.month(), visualCategory(context.info().get("category")), context.item.item.getTitle(),
-                context.publishDate(), context.names(context.contributors()), context.link(), context.item.detail.getTotalAmount(),
+                context.displayedPublishDate(), context.names(context.contributors()), context.link(), context.item.detail.getTotalAmount(),
                 context.amountSummary(context.contributors()), context.contributors().size(),
                 context.specialNode(), context.specialMultiplier(), context.remark());
     }
@@ -253,7 +253,7 @@ final class FeeTemplateExportWriter {
                 .map(name -> name + "（剪辑）").forEach(names::add);
         String category = value(context.info().get("category"));
         if (isTrue(context.info().get("isSpecialNode"))) category += "+特殊节点视频";
-        return Arrays.asList(context.month(), category, context.item.item.getTitle(), context.publishDate(),
+        return Arrays.asList(context.month(), category, context.item.item.getTitle(), context.displayedPublishDate(),
                 String.join(" ", names), isTrue(context.info().get("isReposted")) ? "被官方媒体转载" : "无",
                 context.link(), context.item.detail.getTotalAmount(), context.amountSummary(shooters), shooters.size(),
                 context.amountSummary(editors), editors.size(), context.specialNode(), context.specialMultiplier(), context.remark());
@@ -339,6 +339,11 @@ final class FeeTemplateExportWriter {
                 }
             }
             return "";
+        }
+
+        /** 202609281627 - 固定模板的发布日期列隐藏未发布任务的内部归属日期。 */
+        private Object displayedPublishDate() {
+            return "0".equals(String.valueOf(info().get("isPublished"))) ? "-" : publishDate();
         }
 
         private LocalDate publishDate() {
