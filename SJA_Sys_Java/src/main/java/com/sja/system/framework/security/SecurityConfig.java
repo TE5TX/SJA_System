@@ -16,9 +16,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.session.SessionManagementFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -108,7 +108,8 @@ public class SecurityConfig {
                         .includeSubDomains(true)
                         .preload(true)
                         .maxAgeInSeconds(31536000)))
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            // 202609281435 - 修复了无状态JWT认证被会话管理误判为每次新登录，导致读取请求清除CSRF Cookie的问题。
+            .addFilterAfter(jwtAuthFilter, SessionManagementFilter.class)
             .addFilterBefore(requestTraceFilter, JwtAuthFilter.class)
             .addFilterAfter(passwordChangeRequiredFilter, JwtAuthFilter.class)
             .addFilterAfter(failedOperationAuditFilter, PasswordChangeRequiredFilter.class);

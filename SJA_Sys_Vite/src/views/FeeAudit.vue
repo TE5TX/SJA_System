@@ -278,19 +278,15 @@
             v-model="editForm.workInfo[field.key]"
             :options="[2, 3]"
           />
-          <div
+          <!-- 202609281449 - 修复了编辑稿费任务时滚轮误改发布日期的问题，保留日期选择器与弹窗正常滚动。 -->
+          <el-date-picker
             v-else-if="field.key === 'publishDate'"
-            class="wheel-date-picker"
-            @wheel.capture.prevent.stop="event => adjustEditDateByWheel(field.key, event)"
-          >
-            <el-date-picker
-              v-model="editForm.workInfo[field.key]"
-              type="date"
-              value-format="YYYY-MM-DD"
-              :teleported="false"
-              popper-class="single-year-date-picker"
-            />
-          </div>
+            v-model="editForm.workInfo[field.key]"
+            type="date"
+            value-format="YYYY-MM-DD"
+            :teleported="false"
+            popper-class="single-year-date-picker"
+          />
           <el-date-picker
             v-else-if="field.key === 'subsidyMonth'"
             v-model="editForm.workInfo[field.key]"
@@ -618,25 +614,6 @@ const editCategoryOptions = computed(() => {
   }
   return []
 })
-
-const formatDateValue = date => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-const adjustEditDateByWheel = (key, event) => {
-  event.preventDefault()
-  const deltaY = Number(event.deltaY || 0)
-  if (deltaY === 0) return
-  const parts = String(editForm.workInfo?.[key] || '').split('-').map(Number)
-  const current = parts.length === 3 && parts.every(Number.isFinite)
-    ? new Date(parts[0], parts[1] - 1, parts[2])
-    : new Date()
-  current.setDate(current.getDate() + (deltaY > 0 ? 1 : -1))
-  editForm.workInfo[key] = formatDateValue(current)
-}
 
 const selectNumberInputText = event => {
   const target = event?.target
@@ -1036,8 +1013,7 @@ onMounted(() => {
 .edit-work-form :deep(.el-select),
 .edit-work-form :deep(.el-date-editor),
 .edit-work-form :deep(.el-input-number),
-.edit-work-form :deep(.el-segmented),
-.wheel-date-picker {
+.edit-work-form :deep(.el-segmented) {
   width: 100%;
 }
 

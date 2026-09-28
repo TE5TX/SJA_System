@@ -175,6 +175,28 @@ class FeeServiceImplVideoRecalculationTest {
     }
 
     @Test
+    void contributorSaveTotalsTheRoundedAmountsActuallyPaid() {
+        // 202609281105 - 验证作品保存总额累加实际发给三人的金额，不将 400.2 回写为理论 400。
+        List<FeeSubmitDTO.ContributorDTO> contributors = new java.util.ArrayList<>();
+        for (String role : List.of("SHOOTER", "SHOOTER", "EDITOR")) {
+            FeeSubmitDTO.ContributorDTO contributor = new FeeSubmitDTO.ContributorDTO();
+            contributor.setUserId((long) contributors.size() + 1);
+            contributor.setRoleInWork(role);
+            contributors.add(contributor);
+        }
+
+        BigDecimal savedTotal = new FeeContributorService(contributorMapper).insert(
+                "VIDEO", 8L, contributors,
+                List.of(new BigDecimal("133.4"), new BigDecimal("133.4"), new BigDecimal("133.4")));
+
+        assertEquals(new BigDecimal("400.2"), savedTotal);
+        ArgumentCaptor<BizWorkContributor> saved = ArgumentCaptor.forClass(BizWorkContributor.class);
+        verify(contributorMapper, org.mockito.Mockito.times(3)).insert(saved.capture());
+        assertEquals(List.of(new BigDecimal("133.4"), new BigDecimal("133.4"), new BigDecimal("133.4")),
+                saved.getAllValues().stream().map(BizWorkContributor::getFeeAmount).toList());
+    }
+
+    @Test
     void managerEditorialEditUsesRecalculatedFeeInsteadOfSubmittedOldAmount() {
         BizEditorialArticle existing = new BizEditorialArticle();
         existing.setId(9L);

@@ -78,7 +78,7 @@ class MonthlyFeeExportServiceTest {
         when(userRoleMapper.selectList(any())).thenReturn(Arrays.asList(
                 userRole(1L, 3L), userRole(5L, 2L), userRole(6L, 1L)));
         when(exportMapper.selectMonthlyComponents(any(), any(), any(), any())).thenReturn(Arrays.asList(
-                component(1L, "30.0", "主席团成员"), component(1L, "40.0", "微信统筹编辑"),
+                component(1L, "133.4", "主席团成员"), component(1L, "40.0", "微信统筹编辑"),
                 component(2L, "50.0", "校园巡查组员"), component(3L, "20.0", null),
                 component(4L, "30.0", null), component(6L, "10.0", "主席团成员"),
                 component(7L, "80.0", "校园巡查组长"), component(8L, "40.0", null)));
@@ -103,8 +103,9 @@ class MonthlyFeeExportServiceTest {
             assertEquals("主席团成员", sheet.getRow(1).getCell(0).getStringCellValue());
             assertEquals("采编主席", sheet.getRow(1).getCell(1).getStringCellValue());
             assertEquals("视觉主席", sheet.getRow(2).getCell(1).getStringCellValue());
-            assertEquals("30+40", sheet.getRow(2).getCell(3).getStringCellValue());
-            assertEquals(70.0, sheet.getRow(2).getCell(4).getNumericCellValue());
+            // 202609281105 - 验证月份导出直接使用已保存的个人金额（含均分向上取整后的金额）。
+            assertEquals("133.4+40", sheet.getRow(2).getCell(3).getStringCellValue());
+            assertEquals(173.4, sheet.getRow(2).getCell(4).getNumericCellValue());
             assertEquals("主席团+微信编辑", sheet.getRow(2).getCell(5).getStringCellValue());
             assertEquals("校园巡查小组", sheet.getRow(3).getCell(0).getStringCellValue());
             assertEquals("小队队长", sheet.getRow(3).getCell(1).getStringCellValue());
@@ -113,7 +114,7 @@ class MonthlyFeeExportServiceTest {
             assertEquals("巡查", sheet.getRow(4).getCell(5).getStringCellValue());
             assertEquals("采编部", sheet.getRow(5).getCell(0).getStringCellValue());
             assertEquals("摄影部", sheet.getRow(7).getCell(0).getStringCellValue());
-            assertEquals(300.0, sheet.getRow(8).getCell(4).getNumericCellValue());
+            assertEquals(403.4, sheet.getRow(8).getCell(4).getNumericCellValue());
             for (org.apache.poi.ss.usermodel.Row row : sheet) {
                 assertFalse("老师".equals(row.getCell(1).getStringCellValue()));
             }

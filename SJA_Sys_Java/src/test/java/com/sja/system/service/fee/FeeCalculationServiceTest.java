@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -160,6 +161,64 @@ class FeeCalculationServiceTest {
     }
 
     @Test
+    void splitsBothShortVideoCategoriesAcrossAllContributorsAndSumsActualPayments() {
+        // 202609281105 - 验证短视频跨角色均分向上取整，作品实际总额可超过理论稿费。
+        List<FeeSubmitDTO.ContributorDTO> contributors = Arrays.asList(
+                contributor("SHOOTER"), contributor("EDITOR"), contributor("SHOOTER"));
+        List<BigDecimal> originalFees = service.calculateAutomaticFees(
+                "VIDEO", info("", "原创类短视频"), contributors);
+        assertFees(originalFees, "133.4", "133.4", "133.4");
+        assertEquals(new BigDecimal("400.2"), originalFees.stream().reduce(BigDecimal.ZERO, BigDecimal::add));
+        assertFees(service.calculateAutomaticFees("VIDEO", info("", "风景类系列短视频"), contributors),
+                "50.0", "50.0", "50.0");
+    }
+
+    @Test
+    void splitsShortVideoLikeAndRepostBonusesAcrossAllContributors() {
+        Map<String, Object> info = info("", "风景类系列短视频");
+        info.put("likeCount", 400);
+        info.put("isReposted", 1);
+        List<FeeSubmitDTO.ContributorDTO> contributors = Arrays.asList(
+                contributor("SHOOTER"), contributor("SHOOTER"), contributor("EDITOR"));
+        // 基础 150 + 点赞 100 + 转载 100 = 350，三人各 116.7。
+        assertFees(service.calculateAutomaticFees("VIDEO", info, contributors), "116.7", "116.7", "116.7");
+    }
+
+    @Test
+    void addsComplexEditingBonusOnlyToEditorsAfterCommonSplit() {
+        Map<String, Object> info = info("", "原创类短视频");
+        info.put("isComplexEdit", 1);
+        List<BigDecimal> fees = service.calculateAutomaticFees("VIDEO", info, Arrays.asList(
+                contributor("SHOOTER"), contributor("EDITOR"), contributor("SHOOTER")));
+        assertFees(fees, "133.4", "153.4", "133.4");
+        assertEquals(new BigDecimal("420.2"), fees.stream().reduce(BigDecimal.ZERO, BigDecimal::add));
+    }
+
+    @Test
+    void splitsComplexEditingBonusEquallyAmongEditors() {
+        Map<String, Object> info = info("", "原创类短视频");
+        info.put("isComplexEdit", 1);
+        assertFees(service.calculateAutomaticFees("VIDEO", info, Arrays.asList(
+                contributor("SHOOTER"), contributor("EDITOR"), contributor("EDITOR"))),
+                "133.4", "143.4", "143.4");
+    }
+
+    @Test
+    void keepsProportionalAllocationForLongOriginalVideo() {
+        assertFees(service.calculateAutomaticFees("VIDEO", info("", "原创类长视频"), Arrays.asList(
+                contributor("SHOOTER"), contributor("SHOOTER"), contributor("EDITOR"))),
+                "180.0", "180.0", "240.0");
+    }
+
+    @Test
+    void allowsShortVideosWithOnlyOneContributorRole() {
+        assertFees(service.calculateAutomaticFees("VIDEO", info("", "原创类短视频"),
+                Arrays.asList(contributor("SHOOTER"), contributor("SHOOTER"))), "200.0", "200.0");
+        assertFees(service.calculateAutomaticFees("VIDEO", info("", "风景类系列短视频"),
+                Arrays.asList(contributor("EDITOR"), contributor("EDITOR"))), "75.0", "75.0");
+    }
+
+    @Test
     void allowsVideoWithShootersOnly() {
         Map<String, Object> info = info("", "活动新闻类视频");
         assertFees(service.calculateAutomaticFees("VIDEO", info, Arrays.asList(contributor("SHOOTER"))), "400.0");
@@ -172,10 +231,12 @@ class FeeCalculationServiceTest {
     }
 
     @Test
-    void assignsComplexEditingBonusToShootersWhenNoEditorsExist() {
+    void rejectsComplexEditingWithoutEditors() {
         Map<String, Object> info = info("", "原创类短视频");
         info.put("isComplexEdit", 1);
-        assertFees(service.calculateAutomaticFees("VIDEO", info, Arrays.asList(contributor("SHOOTER"))), "420.0");
+        // 202609281105 - 修复了无剪辑人员时复杂剪辑奖励错误发给拍摄人员的问题。
+        assertThrows(com.sja.system.common.ApiException.class,
+                () -> service.calculateAutomaticFees("VIDEO", info, Arrays.asList(contributor("SHOOTER"))));
     }
 
     @Test

@@ -114,6 +114,7 @@ public class FeeCalculationService {
         String category = stringValue(info, "category");
         BigDecimal base;
         BigDecimal shootRatio;
+        boolean splitAcrossAllContributors = false;
         // 202608101042 - 修复了视频部类别和人员角色超出前端业务范围的问题。
         switch (category) {
             case "活动新闻类视频":
@@ -122,11 +123,13 @@ public class FeeCalculationService {
                 break;
             case "风景类系列短视频":
                 base = rule("VIDEO", "", category, "BASE_FEE", "150");
-                shootRatio = rule("VIDEO", "", category, "SHOOT_RATIO", "0.50");
+                shootRatio = BigDecimal.ZERO;
+                splitAcrossAllContributors = true;
                 break;
             case "原创类短视频":
                 base = rule("VIDEO", "", category, "BASE_FEE", "400");
-                shootRatio = rule("VIDEO", "", category, "SHOOT_RATIO", "0.50");
+                shootRatio = BigDecimal.ZERO;
+                splitAcrossAllContributors = true;
                 break;
             case "原创类长视频":
                 base = rule("VIDEO", "", category, "BASE_FEE", "600");
@@ -149,6 +152,28 @@ public class FeeCalculationService {
         BigDecimal repostBonus = isReposted(info)
                 ? rule("VIDEO", "", "", "REPRINT_BONUS", "100") : BigDecimal.ZERO;
         BigDecimal sharedTotal = base.add(likeBonus).add(repostBonus);
+
+        // 202609281105 - 完成了两类短视频基础稿费和公共奖励由全部拍摄、剪辑人员共同均分的规则调整。
+        if (splitAcrossAllContributors) {
+            List<BigDecimal> fees = splitEvenly(sharedTotal, contributors.size());
+            if (isShortVideo(category) && intValue(info, "isComplexEdit") == 1) {
+                if (editorCount == 0) {
+                    throw ApiException.badRequest("原创类短视频勾选复杂剪辑时必须有剪辑人员");
+                }
+                // 复杂剪辑奖励只在剪辑人员之间均分，不参与公共稿费的全员均分。
+                List<BigDecimal> editBonuses = splitEvenly(
+                        rule("VIDEO", "", "", "COMPLEX_EDIT_BONUS", "20"), editorCount);
+                int editorIndex = 0;
+                for (int index = 0; index < contributors.size(); index++) {
+                    if ("EDITOR".equals(contributors.get(index).getRoleInWork())) {
+                        fees.set(index, fees.get(index).add(editBonuses.get(editorIndex++)));
+                    }
+                }
+            }
+            return fees;
+        }
+
+        // 活动新闻和原创长视频仍先按角色比例分配，角色内部沿用向上取整的均分规则。
         BigDecimal shootTotal;
         BigDecimal editTotal;
         if (shooterCount > 0 && editorCount > 0) {
@@ -162,13 +187,6 @@ public class FeeCalculationService {
             editTotal = sharedTotal;
         }
 
-        if (isShortVideo(category) && intValue(info, "isComplexEdit") == 1) {
-            if (editorCount > 0) {
-                editTotal = editTotal.add(rule("VIDEO", "", "", "COMPLEX_EDIT_BONUS", "20"));
-            } else {
-                shootTotal = shootTotal.add(rule("VIDEO", "", "", "COMPLEX_EDIT_BONUS", "20"));
-            }
-        }
         List<BigDecimal> shooterFees = shooterCount > 0 ? splitEvenly(shootTotal, shooterCount) : Collections.emptyList();
         List<BigDecimal> editorFees = editorCount > 0 ? splitEvenly(editTotal, editorCount) : Collections.emptyList();
 
@@ -349,6 +367,7 @@ public class FeeCalculationService {
     private List<BigDecimal> splitEvenly(BigDecimal total, int count) {
         BigDecimal normalizedTotal = total.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
         // 202608111638 - 修复了多人平均分配稿费时最后一人因补差额导致个人金额不一致的问题。
+        // 202609281105 - 明确每人保留一位小数并向上取整；作品总额由保存层累加实际个人稿费，不在此处补尾差。
         BigDecimal perPerson = normalizedTotal.divide(BigDecimal.valueOf(count), MONEY_SCALE, RoundingMode.CEILING);
         return new ArrayList<>(Collections.nCopies(count, perPerson));
     }

@@ -1,6 +1,8 @@
 package com.sja.system.framework.security;
 
 import com.sja.system.dal.mysql.SysUserMapper;
+import com.sja.system.application.vo.fee.FeeDetailVO;
+import com.sja.system.service.fee.FeeApplicationService;
 import com.sja.system.service.auth.LoginCaptchaService;
 import com.sja.system.service.system.OperationLogService;
 import com.sja.system.service.user.UserRosterImportService;
@@ -15,8 +17,18 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.MvcResult;
 
+import jakarta.servlet.http.Cookie;
+import java.math.BigDecimal;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -45,6 +57,15 @@ class SecurityBoundaryIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JwtUtils jwtUtils;
+
+    @MockitoBean
+    private UserDetailsServiceImpl userDetailsServiceImpl;
+
+    @MockitoBean
+    private FeeApplicationService feeApplicationService;
 
     // 202608140858 - 隔离数据库以验证头像认证边界本身。
     @MockitoBean
@@ -226,6 +247,59 @@ class SecurityBoundaryIntegrationTest {
                         .with(authentication(authenticationForRole(0))))
                 .andExpect(status().isOk())
                 .andExpect(cookie().exists("XSRF-TOKEN"));
+    }
+
+    @Test
+    // 202609281440 - 隔离其他安全测试的csrf()辅助方法对共享过滤器令牌存储器造成的改写。
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.BEFORE_METHOD)
+    void keepsCsrfCookieAfterJwtAuthenticatedReadBeforeFeeCalculation() throws Exception {
+        // 202609281432 - 验证真实JWT请求经过稿费详情读取后仍保留CSRF Cookie，可继续提交稿费试算。
+        SjaUserPrincipal principal = new SjaUserPrincipal(99L, "security-test", "", 0, 0,
+                List.of(new SimpleGrantedAuthority("fee:view"), new SimpleGrantedAuthority("fee:audit")));
+        when(userDetailsServiceImpl.loadUserByUsername("security-test")).thenReturn(principal);
+        when(feeApplicationService.detail(eq(1L), eq("VIDEO"), any())).thenReturn(new FeeDetailVO());
+        when(feeApplicationService.calculate(any(), any())).thenReturn(List.of(new BigDecimal("100.0")));
+
+        Cookie accessCookie = new Cookie(AuthenticationCookieNames.ACCESS,
+                jwtUtils.generateAccessToken(99L, "security-test", 0));
+        MvcResult csrfResult = mockMvc.perform(get("/api/v1/auth/csrf").cookie(accessCookie))
+                .andExpect(status().isOk())
+                .andExpect(cookie().exists("XSRF-TOKEN"))
+                .andReturn();
+        Cookie csrfCookie = csrfResult.getResponse().getCookie("XSRF-TOKEN");
+        assertNotNull(csrfCookie);
+
+        MvcResult repeatedCsrfResult = mockMvc.perform(get("/api/v1/auth/csrf")
+                        .cookie(accessCookie, csrfCookie))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertTrue(repeatedCsrfResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE).stream()
+                .noneMatch(headerValue -> headerValue.startsWith("XSRF-TOKEN=;")),
+                "再次获取CSRF令牌不能先清除已有Cookie");
+
+        MvcResult detailResult = mockMvc.perform(get("/api/v1/fee/detail/VIDEO/1")
+                        .cookie(accessCookie, csrfCookie))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertTrue(detailResult.getResponse().getHeaders(HttpHeaders.SET_COOKIE).stream()
+                .noneMatch(headerValue -> headerValue.startsWith("XSRF-TOKEN=;")),
+                "读取稿费详情不能清除已签发的CSRF Cookie");
+
+        String calculateBody = "{\"workType\":\"VIDEO\",\"workInfo\":{},"
+                + "\"contributors\":[{\"userId\":99,\"roleInWork\":\"EDITOR\"}]}";
+        // 202609281438 - 确认调整过滤器顺序后，已登录的状态变更请求仍受CSRF保护。
+        mockMvc.perform(post("/api/v1/fee/calculate")
+                        .cookie(accessCookie)
+                        .contentType("application/json")
+                        .content(calculateBody))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/v1/fee/calculate")
+                        .cookie(accessCookie, csrfCookie)
+                        .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                        .contentType("application/json")
+                        .content(calculateBody))
+                .andExpect(status().isOk());
     }
 
     private UsernamePasswordAuthenticationToken authenticationForRole(int roleCode) {

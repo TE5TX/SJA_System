@@ -19,6 +19,16 @@
       title="修改标准不会追溯改变已经保存的历史稿费；新提交或重新编辑保存的任务将使用新标准。"
     />
 
+    <!-- 202609281105 - 明确两类短视频按全部参与人员均分，避免旧的拍摄比例造成误导。 -->
+    <el-alert
+      v-if="activeBusiness === 'ALL' || activeBusiness === 'VIDEO'"
+      class="scope-notice"
+      type="info"
+      :closable="false"
+      show-icon
+      title="风景类系列短视频和原创类短视频：基础稿费、点赞与转载奖励由全部拍摄和剪辑人员均分；原创短视频的复杂剪辑奖励仅分给剪辑人员。"
+    />
+
     <el-card class="standard-card" shadow="never">
       <div class="toolbar">
         <div class="business-filters" role="tablist" aria-label="稿费业务筛选">
@@ -245,7 +255,11 @@ const ruleNameMap = {
 const load = async () => {
   loading.value = true
   try {
-    standards.value = (await getFeeStandards()).data || []
+    // 202609281105 - 隐藏数据库升级前尚未停用的短视频旧拍摄比例，避免展示无效可编辑规则。
+    standards.value = ((await getFeeStandards()).data || []).filter(row => !(
+      row.deptCode === 'VIDEO' && row.ruleKey === 'SHOOT_RATIO' &&
+      ['风景类系列短视频', '原创类短视频'].includes(row.category)
+    ))
   } finally {
     loading.value = false
   }
