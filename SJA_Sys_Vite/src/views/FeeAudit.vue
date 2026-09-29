@@ -76,40 +76,45 @@
 
       <el-table
         ref="feeTableRef"
-        class="centered-data-table desktop-only"
+        class="centered-data-table fee-audit-table desktop-only"
         :data="records"
         v-loading="loading"
         border
         :row-key="feeRowKey"
+        :row-class-name="feeRowClassName"
+        @row-click="handleFeeRowClick"
         @selection-change="handleSelectionChange"
       >
         <!-- 202608111533 - 修复了稿费审核与导出列表没有任务勾选框和批量操作入口的问题。 -->
-        <el-table-column type="selection" width="48" fixed reserve-selection />
+        <!-- 202609290930 - 收敛列宽并移除固定列，让桌面端完整展示审核表格而不横向滚动。 -->
+        <el-table-column type="selection" width="42" reserve-selection />
         <!-- 202608131617 - 为稿费审核与导出列表增加了跨分页连续序号。 -->
-        <el-table-column label="序号" width="76" align="center" fixed>
+        <el-table-column label="序号" width="52" align="center">
           <template #default="{ $index }">{{ rowNumber($index) }}</template>
         </el-table-column>
-        <el-table-column prop="workType" label="类型" width="100">
+        <el-table-column prop="workType" label="类型" width="78">
           <template #default="{ row }">
             <el-tag>{{ workTypeName(row.workType) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="title" label="作品标题" min-width="220" show-overflow-tooltip />
-        <el-table-column label="发布时间" width="120">
+        <el-table-column prop="title" label="作品标题" min-width="180">
+          <template #default="{ row }"><span class="fee-audit-title">{{ row.title || '未命名作品' }}</span></template>
+        </el-table-column>
+        <el-table-column label="发布时间" width="105">
           <template #default="{ row }">{{ displayPublishDate(row.publishDate, row.isPublished) }}</template>
         </el-table-column>
-        <el-table-column v-if="canManageFeeAmount" label="金额" width="120">
+        <el-table-column v-if="canManageFeeAmount" label="金额" width="95">
           <template #default="{ row }">¥{{ money(row.totalAmount) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="110">
+        <el-table-column label="状态" width="86">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)">{{ statusName(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="170">
+        <el-table-column label="创建时间" width="145">
           <template #default="{ row }">{{ time(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column label="操作" width="210">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button link type="primary" :icon="View" @click="openDetail(row)">详情</el-button>
@@ -449,6 +454,7 @@ const videoPreviewLoading = ref(false)
 const currentRow = ref(null)
 const feeTableRef = ref(null)
 const selectedRecords = ref([])
+const highlightedFeeRowKey = ref('')
 const deptOptions = ref(fallbackDepts)
 const auditForm = reactive({ approved: true, opinion: '' })
 const editForm = reactive({ workType: '', workInfo: {}, contributors: [] })
@@ -656,6 +662,14 @@ const handleEditPlatformChange = () => {
 
 const feeRowKey = row => `${row.workType}:${row.id}`
 
+// 202609290937 - 点击任务行后保留悬停式高亮；再次点击同一行取消，且不干扰批量勾选。
+const feeRowClassName = ({ row }) => feeRowKey(row) === highlightedFeeRowKey.value ? 'fee-row-pinned' : ''
+const handleFeeRowClick = (row, column) => {
+  if (column?.type === 'selection' || column?.label === '操作') return
+  const key = feeRowKey(row)
+  highlightedFeeRowKey.value = highlightedFeeRowKey.value === key ? '' : key
+}
+
 const handleSelectionChange = selection => {
   selectedRecords.value = selection
 }
@@ -693,6 +707,7 @@ const loadList = async () => {
 const searchFees = () => {
   if (contributorSearchTimer) clearTimeout(contributorSearchTimer)
   clearSelection()
+  highlightedFeeRowKey.value = ''
   query.pageNum = 1
   loadList()
 }
@@ -705,6 +720,7 @@ const scheduleContributorSearch = () => {
 
 const resetQuery = () => {
   clearSelection()
+  highlightedFeeRowKey.value = ''
   Object.assign(query, { deptCode: '', publishDateRange: [], createDateRange: [], status: '', contributorName: '', pageNum: 1, pageSize: 10 })
   loadList()
 }
@@ -1037,6 +1053,54 @@ onMounted(() => {
   text-align: center;
 }
 
+.fee-audit-table {
+  width: 100%;
+}
+
+/* 202609290937 - 固定高亮采用轻蓝底和左侧标识，持续显示且与普通悬停区分。 */
+.fee-audit-table :deep(.el-table__body tr.fee-row-pinned > td.el-table__cell) {
+  background-color: #edf3ff !important;
+}
+
+/* 左侧蓝色选中标识 */
+/* .fee-audit-table :deep(.el-table__body tr.fee-row-pinned > td.el-table__cell:first-child) {
+  box-shadow: inset 3px 0 var(--primary-color);
+} */
+
+.fee-audit-table :deep(.el-table__body tr.fee-row-pinned:hover > td.el-table__cell) {
+  background-color: #e7efff !important;
+}
+
+/* 202609290930 - 标题按行换行，避免为了显示完整内容撑宽整张审核表。 */
+.fee-audit-title {
+  display: block;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 内容区不足以容纳全部列时沿用已有任务卡片，保证信息可见而非裁掉表格。 */
+@media (max-width: 1365px) {
+  .fee-audit :deep(.desktop-only) {
+    display: none !important;
+  }
+
+  .fee-audit :deep(.mobile-only) {
+    display: block !important;
+  }
+
+  .mobile-fee-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .mobile-fee-title strong {
+    overflow-wrap: anywhere;
+  }
+}
+
 .automatic-field-notice {
   margin-bottom: 18px;
 }
@@ -1135,9 +1199,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-wrap: nowrap;
-  gap: 10px;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  white-space: normal;
 }
 
 .action-buttons :deep(.el-button + .el-button) {

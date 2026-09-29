@@ -93,7 +93,17 @@ export function exportMonthlyFeeSummary(data) {
     url: '/v1/fee/monthly-summary/export',
     method: 'post',
     data,
-    responseType: 'blob'
+    responseType: 'blob',
+    skipGlobalError: true
+  })
+}
+
+// 202609281642 - 完成了月份稿费导出前的同源清单预览请求。
+export function previewMonthlyFeeSummary(data) {
+  return request({
+    url: '/v1/fee/monthly-summary/preview',
+    method: 'post',
+    data
   })
 }
 

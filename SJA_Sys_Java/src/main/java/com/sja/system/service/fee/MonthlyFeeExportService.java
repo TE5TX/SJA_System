@@ -10,6 +10,8 @@ import com.alibaba.excel.write.style.HorizontalCellStyleStrategy;
 import com.alibaba.excel.write.style.column.LongestMatchColumnWidthStyleStrategy;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.sja.system.application.model.FeeExportFile;
+import com.sja.system.application.vo.fee.MonthlyFeePreviewVO;
+import com.sja.system.application.vo.fee.MonthlyFeeParticipantVO;
 import com.sja.system.service.authorization.KnownRole;
 import com.sja.system.service.authorization.RoleAuthorizationPolicy;
 import com.sja.system.common.ApiException;
@@ -32,6 +34,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
@@ -41,6 +44,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -73,40 +79,14 @@ public class MonthlyFeeExportService {
      *
      * @return 与HTTP协议无关的Excel文件
      */
+    @Transactional(rollbackFor = Exception.class)
     public FeeExportFile export(MonthlyFeeExportDTO dto, Long operatorId, Integer roleCode,
                                 String operatorName) {
-        if (!RoleAuthorizationPolicy.canManageMonthlyFeeExport(roleCode)) {
-            throw ApiException.forbidden("只有管理员或秘书长可以导出月份稿费发放名单");
+        List<MemberRow> rows = buildStatement(dto, roleCode);
+        if (StringUtils.hasText(dto.getFingerprint())
+                && !dto.getFingerprint().equals(toPreview(dto, rows).getFingerprint())) {
+            throw ApiException.conflict("稿费数据已变化，请重新预览");
         }
-
-        YearMonth startMonth;
-        YearMonth endMonth;
-        try {
-            startMonth = YearMonth.parse(dto.getStartMonth(), DateTimeFormatter.ofPattern("yyyy-MM"));
-            endMonth = YearMonth.parse(dto.getEndMonth(), DateTimeFormatter.ofPattern("yyyy-MM"));
-        } catch (Exception e) {
-            throw ApiException.badRequest("导出月份格式必须为yyyy-MM");
-        }
-        // 202609100927 - 完成了月份区间顺序校验及包含首尾月份的汇总。
-        if (startMonth.isAfter(endMonth)) {
-            throw ApiException.badRequest("开始月份不能晚于结束月份");
-        }
-
-        List<MonthlyFeeComponentVO> components = monthlyFeeExportMapper.selectMonthlyComponents(
-                startMonth.atDay(1), endMonth.atEndOfMonth(), dto.getStartMonth(), dto.getEndMonth());
-        Map<Long, List<BigDecimal>> amountsByUser = components.stream()
-                .collect(Collectors.groupingBy(MonthlyFeeComponentVO::getUserId, LinkedHashMap::new,
-                        Collectors.mapping(MonthlyFeeComponentVO::getFeeAmount, Collectors.toList())));
-        Map<Long, Set<String>> subsidyCategoriesByUser = components.stream()
-                .filter(item -> StringUtils.hasText(item.getSubsidyCategory()))
-                .collect(Collectors.groupingBy(MonthlyFeeComponentVO::getUserId, LinkedHashMap::new,
-                        Collectors.mapping(MonthlyFeeComponentVO::getSubsidyCategory, Collectors.toSet())));
-        Map<Long, Set<String>> editorialPlatformsByUser = monthlyFeeExportMapper.selectEditorialPlatforms().stream()
-                .filter(item -> item.getUserId() != null && StringUtils.hasText(item.getPlatform()))
-                .collect(Collectors.groupingBy(MonthlyEditorialPlatformVO::getUserId, LinkedHashMap::new,
-                        Collectors.mapping(MonthlyEditorialPlatformVO::getPlatform, Collectors.toSet())));
-
-        List<MemberRow> rows = buildMemberRows(amountsByUser, subsidyCategoriesByUser, editorialPlatformsByUser);
         String monthRange = dto.getStartMonth() + "至" + dto.getEndMonth();
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         writeWorkbook(rows, outputStream);
@@ -117,9 +97,89 @@ public class MonthlyFeeExportService {
                 FeeExportFile.XLSX_CONTENT_TYPE, outputStream.toByteArray());
     }
 
-    private List<MemberRow> buildMemberRows(Map<Long, List<BigDecimal>> amountsByUser,
+    /** 返回与 Excel 同源的月份稿费清单，包含每笔金额对应的任务。 */
+    @Transactional(readOnly = true)
+    public MonthlyFeePreviewVO preview(MonthlyFeeExportDTO dto, Integer roleCode) {
+        // 202609281642 - 完成了月份稿费预览与导出共用清单生成流程。
+        return toPreview(dto, buildStatement(dto, roleCode));
+    }
+
+    private List<MemberRow> buildStatement(MonthlyFeeExportDTO dto, Integer roleCode) {
+        if (!RoleAuthorizationPolicy.canManageMonthlyFeeExport(roleCode)) {
+            throw ApiException.forbidden("只有管理员或秘书长可以查看月份稿费发放名单");
+        }
+        YearMonth startMonth;
+        YearMonth endMonth;
+        try {
+            startMonth = YearMonth.parse(dto.getStartMonth(), DateTimeFormatter.ofPattern("yyyy-MM"));
+            endMonth = YearMonth.parse(dto.getEndMonth(), DateTimeFormatter.ofPattern("yyyy-MM"));
+        } catch (Exception e) {
+            throw ApiException.badRequest("稿费月份格式必须为yyyy-MM");
+        }
+        // 202609100927 - 完成了月份区间顺序校验及包含首尾月份的汇总。
+        if (startMonth.isAfter(endMonth)) {
+            throw ApiException.badRequest("开始月份不能晚于结束月份");
+        }
+
+        List<MonthlyFeeComponentVO> components = monthlyFeeExportMapper.selectMonthlyComponents(
+                startMonth.atDay(1), endMonth.atEndOfMonth(), dto.getStartMonth(), dto.getEndMonth());
+        Map<Long, List<MonthlyFeeComponentVO>> componentsByUser = components.stream()
+                .collect(Collectors.groupingBy(MonthlyFeeComponentVO::getUserId, LinkedHashMap::new,
+                        Collectors.toList()));
+        Map<Long, Set<String>> subsidyCategoriesByUser = components.stream()
+                .filter(item -> StringUtils.hasText(item.getSubsidyCategory()))
+                .collect(Collectors.groupingBy(MonthlyFeeComponentVO::getUserId, LinkedHashMap::new,
+                        Collectors.mapping(MonthlyFeeComponentVO::getSubsidyCategory, Collectors.toSet())));
+        Map<Long, Set<String>> editorialPlatformsByUser = monthlyFeeExportMapper.selectEditorialPlatforms().stream()
+                .filter(item -> item.getUserId() != null && StringUtils.hasText(item.getPlatform()))
+                .collect(Collectors.groupingBy(MonthlyEditorialPlatformVO::getUserId, LinkedHashMap::new,
+                        Collectors.mapping(MonthlyEditorialPlatformVO::getPlatform, Collectors.toSet())));
+
+        Map<MonthlyFeeExportMapper.WorkRef, List<MonthlyFeePreviewVO.Participant>> participants =
+                loadParticipants(components);
+        return buildMemberRows(componentsByUser, subsidyCategoriesByUser, editorialPlatformsByUser, participants);
+    }
+
+    /** 任务按复合主键去重、分批查询，保留数据库参与记录顺序。 */
+    private Map<MonthlyFeeExportMapper.WorkRef, List<MonthlyFeePreviewVO.Participant>> loadParticipants(
+            List<MonthlyFeeComponentVO> components) {
+        List<MonthlyFeeExportMapper.WorkRef> refs = components.stream()
+                .filter(item -> item.getWorkType() != null && item.getWorkId() != null)
+                .map(item -> new MonthlyFeeExportMapper.WorkRef(item.getWorkType(), item.getWorkId()))
+                .distinct().collect(Collectors.toList());
+        Map<MonthlyFeeExportMapper.WorkRef, List<MonthlyFeePreviewVO.Participant>> result = new HashMap<>();
+        for (int index = 0; index < refs.size(); index += 200) {
+            List<MonthlyFeeParticipantVO> batch = monthlyFeeExportMapper.selectParticipants(
+                    refs.subList(index, Math.min(index + 200, refs.size())));
+            for (MonthlyFeeParticipantVO item : batch) {
+                MonthlyFeePreviewVO.Participant participant = new MonthlyFeePreviewVO.Participant();
+                participant.setName(item.getName());
+                participant.setRole(participantRoleName(item.getRole()));
+                // 202609281715 - 详情逐人展示已保存金额，不在页面重新分配稿费。
+                participant.setAmount(item.getFeeAmount());
+                result.computeIfAbsent(new MonthlyFeeExportMapper.WorkRef(item.getWorkType(), item.getWorkId()),
+                        key -> new ArrayList<>()).add(participant);
+            }
+        }
+        return result;
+    }
+
+    private String participantRoleName(String role) {
+        if (role == null) return "参与";
+        switch (role) {
+            case "AUTHOR": return "作者";
+            case "SHOOTER": return "拍摄";
+            case "EDITOR": return "剪辑";
+            case "DESIGNER": return "设计";
+            case "MEMBER": return "补贴人员";
+            default: return role;
+        }
+    }
+
+    private List<MemberRow> buildMemberRows(Map<Long, List<MonthlyFeeComponentVO>> componentsByUser,
                                             Map<Long, Set<String>> subsidyCategoriesByUser,
-                                            Map<Long, Set<String>> editorialPlatformsByUser) {
+                                            Map<Long, Set<String>> editorialPlatformsByUser,
+                                            Map<MonthlyFeeExportMapper.WorkRef, List<MonthlyFeePreviewVO.Participant>> participants) {
         List<SysDept> depts = sysDeptMapper.selectList(new QueryWrapper<SysDept>()
                 .eq("is_valid", 1).orderByAsc("sort_order", "id"));
         Map<Long, SysDept> deptById = depts.stream().collect(Collectors.toMap(SysDept::getId, item -> item));
@@ -143,9 +203,9 @@ public class MonthlyFeeExportService {
         List<MemberRow> rows = new ArrayList<>();
         List<SysUser> users = sysUserMapper.selectList(new QueryWrapper<SysUser>().eq("is_valid", 1).orderByAsc("id"));
         for (SysUser user : users) {
-            List<BigDecimal> amounts = amountsByUser.getOrDefault(user.getId(), Collections.emptyList());
+            List<MonthlyFeeComponentVO> userComponents = componentsByUser.getOrDefault(user.getId(), Collections.emptyList());
             // 202608121137 - 修复了月份稿费名单仍导出当月没有稿费人员的问题。
-            if (amounts.isEmpty()) continue;
+            if (userComponents.isEmpty()) continue;
             Set<Integer> roles = rolesByUser.getOrDefault(user.getId(), Collections.emptySet());
             Set<String> subsidyCategories = subsidyCategoriesByUser.getOrDefault(user.getId(), Collections.emptySet());
             Set<String> editorialPlatforms = editorialPlatformsByUser.getOrDefault(user.getId(), Collections.emptySet());
@@ -153,13 +213,17 @@ public class MonthlyFeeExportService {
                     deptsByUser.getOrDefault(user.getId(), Collections.emptyList()), roles,
                     subsidyCategories, editorialPlatforms);
             if (group == null) continue;
-            BigDecimal total = amounts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+            BigDecimal total = userComponents.stream().map(MonthlyFeeComponentVO::getFeeAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
                     .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            String calculation = amounts.stream().map(this::compactMoney).collect(Collectors.joining("+"));
+            String calculation = userComponents.stream().map(item -> compactMoney(item.getFeeAmount()))
+                    .collect(Collectors.joining("+"));
+            List<MonthlyFeePreviewVO.Term> terms = userComponents.stream()
+                    .map(item -> toTerm(item, participants)).collect(Collectors.toList());
             rows.add(new MemberRow(group.sectionOrder, group.departmentOrder, group.roleOrder,
                     group.name, user.getId(), user.getRealName(),
                     StringUtils.hasText(user.getIdCard()) ? user.getIdCard().trim() : "",
-                    calculation, amounts.isEmpty() ? null : total, group.remark));
+                    calculation, total, group.remark, terms));
         }
         // 202608121041 - 修复了月份稿费名单未按主席团、巡查小队、部员及部门角色顺序排列的问题。
         rows.sort(Comparator.comparingInt(MemberRow::getSectionOrder)
@@ -167,6 +231,86 @@ public class MonthlyFeeExportService {
                 .thenComparingInt(MemberRow::getRoleOrder)
                 .thenComparing(MemberRow::getUserId));
         return rows;
+    }
+
+    private MonthlyFeePreviewVO.Term toTerm(MonthlyFeeComponentVO item,
+            Map<MonthlyFeeExportMapper.WorkRef, List<MonthlyFeePreviewVO.Participant>> participants) {
+        MonthlyFeePreviewVO.Term term = new MonthlyFeePreviewVO.Term();
+        term.setContributorId(item.getContributorId());
+        term.setWorkType(item.getWorkType());
+        term.setWorkId(item.getWorkId());
+        term.setTitle(item.getTitle());
+        term.setAmount(item.getFeeAmount());
+        term.setAmountText(compactMoney(item.getFeeAmount()));
+        term.setPublished(Integer.valueOf(1).equals(item.getIsPublished()));
+        // 未发布作品的内部归属日期不作为发布日期展示。
+        term.setPublishDate(term.isPublished() ? item.getPublishDate() : null);
+        term.setSubsidyMonth(item.getSubsidyMonth());
+        List<MonthlyFeePreviewVO.Participant> workParticipants = participants.getOrDefault(
+                new MonthlyFeeExportMapper.WorkRef(item.getWorkType(), item.getWorkId()), Collections.emptyList());
+        term.setParticipants(workParticipants);
+        if (!workParticipants.isEmpty()) {
+            term.setWorkTotal(workParticipants.stream().map(MonthlyFeePreviewVO.Participant::getAmount)
+                    .filter(java.util.Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add));
+        }
+        return term;
+    }
+
+    private MonthlyFeePreviewVO toPreview(MonthlyFeeExportDTO dto, List<MemberRow> rows) {
+        MonthlyFeePreviewVO preview = new MonthlyFeePreviewVO();
+        preview.setStartMonth(dto.getStartMonth());
+        preview.setEndMonth(dto.getEndMonth());
+        List<MonthlyFeePreviewVO.Row> previewRows = new ArrayList<>();
+        BigDecimal grandTotal = BigDecimal.ZERO;
+        for (int index = 0; index < rows.size(); index++) {
+            MemberRow source = rows.get(index);
+            MonthlyFeePreviewVO.Row row = new MonthlyFeePreviewVO.Row();
+            row.setDepartment(index == 0 || !source.getGroupName().equals(rows.get(index - 1).getGroupName())
+                    ? source.getGroupName() : "");
+            row.setRealName(source.getRealName());
+            row.setIdCard(source.getIdCard());
+            row.setCalculation(source.getCalculation());
+            row.setTotal(source.getTotal());
+            row.setRemark(source.getRemark());
+            row.setTerms(source.getTerms());
+            previewRows.add(row);
+            grandTotal = grandTotal.add(source.getTotal());
+        }
+        preview.setRows(previewRows);
+        preview.setGrandTotal(grandTotal.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+        preview.setFingerprint(fingerprint(preview));
+        return preview;
+    }
+
+    /** 对可见列及溯源详情生成稳定指纹，阻止预览后静默下载变化的数据。 */
+    private String fingerprint(MonthlyFeePreviewVO preview) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            appendDigest(digest, preview.getStartMonth(), preview.getEndMonth(), preview.getGrandTotal());
+            for (MonthlyFeePreviewVO.Row row : preview.getRows()) {
+                appendDigest(digest, row.getDepartment(), row.getRealName(), row.getIdCard(),
+                        row.getCalculation(), row.getTotal(), row.getRemark());
+                for (MonthlyFeePreviewVO.Term term : row.getTerms()) {
+                    appendDigest(digest, term.getContributorId(), term.getWorkType(), term.getWorkId(),
+                            term.getTitle(), term.getAmount(), term.getPublishDate(), term.isPublished(),
+                            term.getSubsidyMonth(), term.getWorkTotal());
+                    for (MonthlyFeePreviewVO.Participant participant : term.getParticipants()) {
+                        appendDigest(digest, participant.getName(), participant.getRole(), participant.getAmount());
+                    }
+                }
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("当前环境不支持SHA-256", e);
+        }
+    }
+
+    private void appendDigest(MessageDigest digest, Object... values) {
+        for (Object value : values) {
+            byte[] bytes = String.valueOf(value).getBytes(StandardCharsets.UTF_8);
+            digest.update(java.nio.ByteBuffer.allocate(Integer.BYTES).putInt(bytes.length).array());
+            digest.update(bytes);
+        }
     }
 
     private Group classifyMember(List<SysDept> depts, Set<Integer> roles, Set<String> subsidyCategories,
@@ -321,5 +465,6 @@ public class MonthlyFeeExportService {
         private String calculation;
         private BigDecimal total;
         private String remark;
+        private List<MonthlyFeePreviewVO.Term> terms;
     }
 }

@@ -5,6 +5,8 @@ import com.sja.system.service.system.OperationLogService;
 import com.sja.system.application.model.FeeExportFile;
 import com.sja.system.common.ApiException;
 import com.sja.system.application.dto.fee.MonthlyFeeExportDTO;
+import com.sja.system.application.vo.fee.MonthlyFeePreviewVO;
+import com.sja.system.application.vo.fee.MonthlyFeeParticipantVO;
 import com.sja.system.dal.dataobject.SysDept;
 import com.sja.system.dal.dataobject.SysRole;
 import com.sja.system.dal.dataobject.SysUser;
@@ -193,8 +195,77 @@ class MonthlyFeeExportServiceTest {
         assertFalse(sql.contains("SUBMITTED"));
         assertEquals(5, sql.split("audit_status='APPROVED'", -1).length - 1);
         assertTrue(sql.contains("s.subsidy_month BETWEEN #{startMonth} AND #{endMonth}"));
-        // 202609151004 - 验证已通过但未发布的稿费任务也会进入月份导出。
-        assertEquals(4, sql.split("is_published=0 OR", -1).length - 1);
+        // 202609281642 - 验证未发布作品仅按创建日期进入选中的月份区间。
+        assertEquals(4, sql.split("is_published=0 AND DATE", -1).length - 1);
+        assertFalse(sql.contains("is_published=0 OR"));
+    }
+
+    @Test
+    void previewMatchesWorkbookAndRejectsChangedStatement() throws Exception {
+        MonthlyFeeExportMapper exportMapper = mock(MonthlyFeeExportMapper.class);
+        SysUserMapper userMapper = mock(SysUserMapper.class);
+        SysDeptMapper deptMapper = mock(SysDeptMapper.class);
+        SysUserDeptMapper userDeptMapper = mock(SysUserDeptMapper.class);
+        SysRoleMapper roleMapper = mock(SysRoleMapper.class);
+        SysUserRoleMapper userRoleMapper = mock(SysUserRoleMapper.class);
+        MonthlyFeeExportService service = new MonthlyFeeExportService(exportMapper, userMapper, deptMapper,
+                userDeptMapper, roleMapper, userRoleMapper, mock(OperationLogService.class));
+        when(deptMapper.selectList(any())).thenReturn(Collections.singletonList(dept(2L, "采编部", "EDITORIAL", 2)));
+        when(userMapper.selectList(any())).thenReturn(Collections.singletonList(user(3L, "成员", "440100000000000003")));
+        when(userDeptMapper.selectList(any())).thenReturn(Collections.singletonList(userDept(3L, 2L)));
+        when(roleMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(userRoleMapper.selectList(any())).thenReturn(Collections.emptyList());
+        MonthlyFeeComponentVO first = component(3L, "150.0", null);
+        first.setContributorId(11L);
+        first.setWorkType("EDITORIAL");
+        first.setWorkId(21L);
+        first.setTitle("新闻甲");
+        first.setIsPublished(0);
+        MonthlyFeeComponentVO second = component(3L, "150.0", null);
+        second.setContributorId(12L);
+        second.setWorkType("EDITORIAL");
+        second.setWorkId(22L);
+        second.setTitle("新闻乙");
+        second.setIsPublished(1);
+        second.setPublishDate(LocalDate.of(2026, 6, 10));
+        when(exportMapper.selectMonthlyComponents(any(), any(), any(), any()))
+                .thenReturn(Arrays.asList(first, second));
+        when(exportMapper.selectEditorialPlatforms()).thenReturn(Collections.emptyList());
+        MonthlyFeeParticipantVO participant = new MonthlyFeeParticipantVO();
+        participant.setWorkType("EDITORIAL");
+        participant.setWorkId(21L);
+        participant.setName("成员");
+        participant.setRole("AUTHOR");
+        participant.setFeeAmount(new BigDecimal("150.0"));
+        when(exportMapper.selectParticipants(any())).thenReturn(Collections.singletonList(participant));
+        MonthlyFeeExportDTO dto = new MonthlyFeeExportDTO();
+        dto.setStartMonth("2026-06");
+        dto.setEndMonth("2026-06");
+
+        MonthlyFeePreviewVO preview = service.preview(dto, 0);
+        assertEquals("150+150", preview.getRows().get(0).getCalculation());
+        assertEquals("新闻甲", preview.getRows().get(0).getTerms().get(0).getTitle());
+        assertEquals("新闻乙", preview.getRows().get(0).getTerms().get(1).getTitle());
+        assertEquals(null, preview.getRows().get(0).getTerms().get(0).getPublishDate());
+        assertEquals("作者", preview.getRows().get(0).getTerms().get(0).getParticipants().get(0).getRole());
+        assertEquals(new BigDecimal("150.0"), preview.getRows().get(0).getTerms().get(0).getWorkTotal());
+        assertEquals(new BigDecimal("300.0"), preview.getGrandTotal());
+        dto.setFingerprint(preview.getFingerprint());
+        FeeExportFile file = service.export(dto, 99L, 0, "管理员");
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(file.content()))) {
+            org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
+            assertEquals(preview.getRows().get(0).getDepartment(), sheet.getRow(1).getCell(0).getStringCellValue());
+            assertEquals(preview.getRows().get(0).getRealName(), sheet.getRow(1).getCell(1).getStringCellValue());
+            assertEquals(preview.getRows().get(0).getIdCard(), sheet.getRow(1).getCell(2).getStringCellValue());
+            assertEquals(preview.getRows().get(0).getCalculation(), sheet.getRow(1).getCell(3).getStringCellValue());
+            assertEquals(preview.getRows().get(0).getTotal().doubleValue(), sheet.getRow(1).getCell(4).getNumericCellValue());
+            assertEquals(preview.getRows().get(0).getRemark(), sheet.getRow(1).getCell(5).getStringCellValue());
+            assertEquals(preview.getGrandTotal().doubleValue(), sheet.getRow(2).getCell(4).getNumericCellValue());
+        }
+        // 202609281715 - 仅任务其他参与人的金额变化，也应使已预览清单失效。
+        participant.setFeeAmount(new BigDecimal("160.0"));
+        ApiException error = assertThrows(ApiException.class, () -> service.export(dto, 99L, 0, "管理员"));
+        assertEquals("稿费数据已变化，请重新预览", error.getMessage());
     }
 
     @Test

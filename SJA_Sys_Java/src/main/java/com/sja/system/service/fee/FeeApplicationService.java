@@ -13,6 +13,7 @@ import com.sja.system.application.vo.async.AsyncTaskAcceptedVO;
 import com.sja.system.application.vo.fee.FeeContributorVO;
 import com.sja.system.application.vo.fee.FeeDetailVO;
 import com.sja.system.application.vo.fee.FeeListVO;
+import com.sja.system.application.vo.fee.MonthlyFeePreviewVO;
 import com.sja.system.service.async.AsyncTaskQueueService;
 import com.sja.system.service.user.UserService;
 import lombok.RequiredArgsConstructor;
@@ -92,5 +93,11 @@ public class FeeApplicationService {
 
     public FeeExportFile exportMonthly(MonthlyFeeExportDTO dto, CurrentActor actor) {
         return monthlyFeeExportService.export(dto, actor.userId(), actor.roleCode(), actor.username());
+    }
+
+    /** 返回月份稿费预览；与导出使用相同的清单构建服务。 */
+    public MonthlyFeePreviewVO previewMonthly(MonthlyFeeExportDTO dto, CurrentActor actor) {
+        // 202609281642 - 完成了月份稿费预览用例的应用层转发。
+        return monthlyFeeExportService.preview(dto, actor.roleCode());
     }
 }

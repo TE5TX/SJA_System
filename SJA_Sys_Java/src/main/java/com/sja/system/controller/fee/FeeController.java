@@ -15,6 +15,7 @@ import com.sja.system.service.fee.FeeApplicationService;
 import com.sja.system.application.vo.fee.FeeContributorVO;
 import com.sja.system.application.vo.fee.FeeDetailVO;
 import com.sja.system.application.vo.fee.FeeListVO;
+import com.sja.system.application.vo.fee.MonthlyFeePreviewVO;
 import com.sja.system.application.vo.async.AsyncTaskAcceptedVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
@@ -147,6 +149,16 @@ public class FeeController {
     public ResponseEntity<byte[]> exportMonthlySummary(@RequestBody @Valid MonthlyFeeExportDTO dto,
                                                         CurrentActor actor) {
         return toDownloadResponse(feeApplicationService.exportMonthly(dto, actor));
+    }
+
+    /** 接收月份区间并返回不可缓存的敏感预览数据，不在控制器内计算稿费。 */
+    @PostMapping("/monthly-summary/preview")
+    @PreAuthorize("hasAuthority('fee:export')")
+    public ResponseEntity<Result<MonthlyFeePreviewVO>> previewMonthlySummary(
+            @RequestBody @Valid MonthlyFeeExportDTO dto, CurrentActor actor) {
+        // 202609281642 - 完成了与导出同权限的月份稿费预览接口。
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(Result.success(feeApplicationService.previewMonthly(dto, actor)));
     }
 
     /**
