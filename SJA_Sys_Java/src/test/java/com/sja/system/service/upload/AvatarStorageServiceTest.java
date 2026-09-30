@@ -3,6 +3,7 @@ package com.sja.system.service.upload;
 import com.sja.system.common.ApiException;
 import com.sja.system.framework.web.MultipartUploadedFile;
 import com.sja.system.dal.mysql.SysUserMapper;
+import com.sja.system.service.storage.StorageLocationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
@@ -15,6 +16,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -94,5 +96,20 @@ class AvatarStorageServiceTest {
                 () -> service.resolveReferencedFilename(filename));
 
         assertEquals(404, error.getStatus());
+    }
+
+    @Test
+    void readsAvatarFromHistoricalDirectoryAfterSwitch() throws Exception {
+        // 202609291708 - 切换后台保存目录不应让原有头像失效。
+        Path historical = Files.createDirectories(tempDirectory.resolve("avatars-old"));
+        String filename = "11111111-1111-1111-1111-111111111111.jpg";
+        Files.write(historical.resolve(filename), new byte[]{1, 2, 3});
+        StorageLocationService locations = mock(StorageLocationService.class);
+        when(locations.readableDirectories(StorageLocationService.AVATAR))
+                .thenReturn(List.of(tempDirectory.resolve("avatars-new"), historical));
+        AvatarStorageService service = new AvatarStorageService(mock(SysUserMapper.class),
+                tempDirectory.toString(), locations, 1_000_000L, 1_000, 64);
+
+        assertEquals(historical.resolve(filename), service.resolveFilename(filename));
     }
 }

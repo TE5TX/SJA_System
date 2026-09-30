@@ -92,9 +92,10 @@
         <el-table-column label="序号" width="52" align="center">
           <template #default="{ $index }">{{ rowNumber($index) }}</template>
         </el-table-column>
+        <!-- 202609291103 - 将稿费任务类型改为普通文字，移除蓝色标签边框。 -->
         <el-table-column prop="workType" label="类型" width="78">
           <template #default="{ row }">
-            <el-tag>{{ workTypeName(row.workType) }}</el-tag>
+            <span>{{ workTypeName(row.workType) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="title" label="作品标题" min-width="180">
@@ -118,13 +119,13 @@
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button link type="primary" :icon="View" @click="openDetail(row)">详情</el-button>
-              <el-button v-if="canEditFeeTask && (canManageFeeAmount || isEditableStatus(row.status))" link type="primary" :icon="Edit" @click="openEdit(row)">
+              <el-button v-if="canEditRecord(row)" link type="primary" :icon="Edit" @click="openEdit(row)">
                 {{ row.status === 'REJECTED' ? '修改重提' : '编辑' }}
               </el-button>
               <el-button v-if="canAuditFee && row.status === 'SUBMITTED'" link type="success" :icon="CircleCheck" @click="openAudit(row, true)">通过</el-button>
               <el-button v-if="canAuditFee && row.status === 'SUBMITTED'" link type="danger" :icon="CircleClose" @click="openAudit(row, false)">驳回</el-button>
               <el-button v-if="canAuditFee && row.status === 'APPROVED'" link type="warning" :icon="RefreshLeft" @click="handleResetAudit(row)">退回待审</el-button>
-              <el-button v-if="canEditFeeTask && row.status === 'REJECTED'" link type="danger" :icon="Delete" @click="handleInvalidate(row)">删除</el-button>
+              <el-button v-if="canInvalidateRecord(row)" link type="danger" :icon="Delete" @click="handleInvalidate(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -155,7 +156,7 @@
           <div class="mobile-record-card__actions fee-card-actions">
             <el-button type="primary" plain :icon="View" @click="openDetail(record)">详情</el-button>
             <el-button
-              v-if="canEditFeeTask && (canManageFeeAmount || isEditableStatus(record.status))"
+              v-if="canEditRecord(record)"
               type="primary"
               plain
               :icon="Edit"
@@ -164,7 +165,7 @@
             <el-button v-if="canAuditFee && record.status === 'SUBMITTED'" type="success" plain :icon="CircleCheck" @click="openAudit(record, true)">通过</el-button>
             <el-button v-if="canAuditFee && record.status === 'SUBMITTED'" type="danger" plain :icon="CircleClose" @click="openAudit(record, false)">驳回</el-button>
             <el-button v-if="canAuditFee && record.status === 'APPROVED'" type="warning" plain :icon="RefreshLeft" @click="handleResetAudit(record)">退回待审</el-button>
-            <el-button v-if="canEditFeeTask && record.status === 'REJECTED'" type="danger" plain :icon="Delete" @click="handleInvalidate(record)">删除</el-button>
+            <el-button v-if="canInvalidateRecord(record)" type="danger" plain :icon="Delete" @click="handleInvalidate(record)">删除</el-button>
           </div>
         </article>
       </div>
@@ -236,12 +237,8 @@
       />
       <el-form label-width="110px" class="edit-work-form mobile-form-top-label">
         <el-form-item v-for="field in editWorkFields" :key="field.key" :label="field.label">
-          <div v-if="field.readonly" class="readonly-field" aria-readonly="true">
-            <span>{{ formatReadonlyWorkField(field.key, editForm.workInfo[field.key]) }}</span>
-            <el-tag size="small" type="info" effect="plain">自动计算</el-tag>
-          </div>
           <el-select
-            v-else-if="field.key === 'platform'"
+            v-if="field.key === 'platform'"
             v-model="editForm.workInfo[field.key]"
             @change="handleEditPlatformChange"
           >
@@ -251,6 +248,7 @@
             v-else-if="field.key === 'category' && editCategoryOptions.length"
             v-model="editForm.workInfo[field.key]"
             placeholder="请选择类别"
+            @change="handleEditCategoryChange"
           >
             <el-option v-for="option in editCategoryOptions" :key="option" :label="option" :value="option" />
           </el-select>
@@ -259,6 +257,7 @@
             v-model="editForm.workInfo[field.key]"
             :active-value="1"
             :inactive-value="0"
+            @change="value => handleEditSwitchChange(field.key, value)"
           />
           <el-input-number
             v-else-if="stepThousandNumberFields.includes(field.key)"
@@ -273,7 +272,6 @@
             v-else-if="numberFieldKeys.includes(field.key)"
             v-model="editForm.workInfo[field.key]"
             :min="0"
-            :precision="field.key === 'authorAvgFee' ? 1 : undefined"
             controls-position="right"
             @focus="selectNumberInputText"
             @click="selectNumberInputText"
@@ -284,12 +282,6 @@
             :options="[2, 3]"
           />
           <!-- 202609281449 - 修复了编辑稿费任务时滚轮误改发布日期的问题，保留日期选择器与弹窗正常滚动。 -->
-          <!-- 202609281627 - 未发布任务的创建日期仅作内部归属，编辑弹窗不将其显示成实际发布时间。 -->
-          <div
-            v-else-if="field.key === 'publishDate' && String(editForm.workInfo.isPublished) === '0'"
-            class="readonly-field"
-            aria-readonly="true"
-          >-</div>
           <el-date-picker
             v-else-if="field.key === 'publishDate'"
             v-model="editForm.workInfo[field.key]"
@@ -319,39 +311,49 @@
           />
         </el-form-item>
       </el-form>
-      <h3 class="detail-title">{{ canManageFeeAmount ? '参与人员金额' : '参与人员' }}</h3>
+      <!-- 202609291624 - 完成了编辑页人员选择与作品数量调整，并限制金额列可见角色的任务。 -->
+      <div class="edit-contributor-heading">
+        <h3 class="detail-title">{{ canManageFeeAmount ? '参与人员金额' : '参与人员' }}（{{ editForm.contributors.length }} 人）</h3>
+        <el-button type="primary" plain @click="addEditContributor">添加人员</el-button>
+      </div>
       <el-table :data="editForm.contributors" border size="small" v-loading="videoPreviewLoading">
-        <el-table-column prop="realName" label="姓名" min-width="120" />
-        <el-table-column label="用户ID" width="110">
+        <el-table-column label="姓名" min-width="190">
           <template #default="{ row }">
-            <el-input v-model="row.userId" />
+            <el-select v-model="row.userId" filterable placeholder="请选择人员" aria-label="参与人员">
+              <el-option
+                v-for="person in editContributorOptions(row)"
+                :key="person.id"
+                :label="`${person.realName}（${person.studentNo || '-'}）`"
+                :value="Number(person.id)"
+              />
+            </el-select>
           </template>
         </el-table-column>
         <el-table-column label="角色" width="150">
           <template #default="{ row }">
-            <el-select v-model="row.roleInWork">
-              <el-option v-for="role in contributorRoles" :key="role.value" :label="role.label" :value="role.value" />
+            <el-select v-if="editForm.workType === 'VIDEO'" v-model="row.roleInWork" aria-label="任务角色">
+              <el-option label="拍摄" value="SHOOTER" />
+              <el-option label="剪辑" value="EDITOR" />
             </el-select>
+            <span v-else>{{ roleMap[row.roleInWork] || row.roleInWork || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="canManageFeeAmount" :label="isAutomaticEditType ? '金额（自动计算）' : '金额'" width="170">
+        <el-table-column v-if="canManageFeeAmount" label="金额（自动计算）" width="170">
           <template #default="{ row }">
-            <div v-if="isAutomaticEditType" class="readonly-money" aria-readonly="true">
+            <div class="readonly-money" aria-readonly="true">
               <span>¥{{ money(row.feeAmount) }}</span>
               <el-tag size="small" type="info" effect="plain">只读</el-tag>
             </div>
-            <el-input-number
-              v-else
-              v-model="row.feeAmount"
-              :min="0"
-              :precision="1"
-              controls-position="right"
-            />
           </template>
         </el-table-column>
         <el-table-column v-if="editShowsWorkCount" label="作品数量" width="130">
           <template #default="{ row }">
             <el-input-number v-model="row.workCount" :min="1" controls-position="right" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="70">
+          <template #default="{ $index }">
+            <el-button link type="danger" @click="editForm.contributors.splice($index, 1)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -394,7 +396,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ArrowDown, CircleCheck, CircleClose, Delete, Download, Edit, Refresh, RefreshLeft, Search, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { auditFee, batchAuditFee, calculateFee, exportFee, getFeeDetail, getFeeList, invalidateRejectedFee, resetFeeAudit, updateFeeDetail } from '@/api/fee'
+import { auditFee, batchAuditFee, calculateFee, exportFee, getFeeContributors, getFeeDetail, getFeeList, invalidateRejectedFee, resetFeeAudit, updateFeeDetail } from '@/api/fee'
 import { useUserStore } from '@/store/user'
 import ResponsiveDialog from '@/components/responsive/ResponsiveDialog.vue'
 import ResponsivePagination from '@/components/responsive/ResponsivePagination.vue'
@@ -422,7 +424,7 @@ const subsidyCategoryOptions = ['微信统筹编辑', '排版编辑', '校对', 
 const videoCategoryOptions = ['活动新闻类视频', '风景类系列短视频', '原创类短视频', '原创类长视频']
 const switchFieldKeys = ['isPublished', 'isSpecialNode', 'isReposted', 'isComplexEdit']
 const stepThousandNumberFields = ['readCount', 'wordCount']
-const numberFieldKeys = ['videoDurationSec', 'likeCount', 'authorCount', 'authorAvgFee']
+const numberFieldKeys = ['likeCount']
 
 // 202608111533 - 修复了稿费审核与导出列表单页不能选择100或200条的问题。
 // 202609091610 - 完成了列表与导出共用日期范围参数的转换。
@@ -458,17 +460,11 @@ const highlightedFeeRowKey = ref('')
 const deptOptions = ref(fallbackDepts)
 const auditForm = reactive({ approved: true, opinion: '' })
 const editForm = reactive({ workType: '', workInfo: {}, contributors: [] })
+const editUsers = ref([])
 const userStore = useUserStore()
 
 const workTypeMap = { EDITORIAL: '采编', PHOTO: '摄影', VIDEO: '视频', VISUAL: '视觉', SUBSIDY: '月度补贴' }
 const roleMap = { AUTHOR: '作者', SHOOTER: '拍摄', EDITOR: '编辑/剪辑', DESIGNER: '设计', MEMBER: '补贴人员' }
-const contributorRoles = [
-  { label: '作者', value: 'AUTHOR' },
-  { label: '拍摄', value: 'SHOOTER' },
-  { label: '编辑/剪辑', value: 'EDITOR' },
-  { label: '设计', value: 'DESIGNER' },
-  { label: '补贴人员', value: 'MEMBER' }
-]
 const exportFieldOptions = [
   { key: 'workType', label: '作品类型' },
   { key: 'deptName', label: '部门' },
@@ -554,12 +550,17 @@ const highestRoleCode = computed(() => roleCodes.value.length ? Math.min(...role
 const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
 const canAuditFee = computed(() => [0, 3].includes(highestRoleCode.value))
 const canEditFeeTask = computed(() => [0, 3, 4].includes(highestRoleCode.value))
-const automaticEditTypes = new Set(['EDITORIAL', 'PHOTO', 'VISUAL', 'VIDEO'])
+// 202609291058 - 部长可跨部门查看任务，但编辑和删除入口只针对其所属部门显示。
+const workTypeDeptCodes = { EDITORIAL: 'EDITORIAL', PHOTO: 'PHOTOGRAPHY', VIDEO: 'VIDEO', VISUAL: 'VISUAL', SUBSIDY: 'MANAGEMENT' }
+const canManageRecordDepartment = row => canManageFeeAmount.value
+  || (userStore.userInfo?.deptCodes || []).includes(workTypeDeptCodes[row.workType])
+const canEditRecord = row => canEditFeeTask.value && canManageRecordDepartment(row)
+  && (canManageFeeAmount.value || isEditableStatus(row.status))
+const canInvalidateRecord = row => canEditFeeTask.value && canManageRecordDepartment(row)
+  && row.status === 'REJECTED'
+const automaticEditTypes = new Set(['EDITORIAL', 'PHOTO', 'VISUAL', 'VIDEO', 'SUBSIDY'])
 const isAutomaticEditType = computed(() => automaticEditTypes.has(editForm.workType))
-const automaticReadonlyWorkFields = new Set(['authorCount', 'authorAvgFee'])
-const hasAutomaticReadOnlyFields = computed(() =>
-  isAutomaticEditType.value || editWorkFields.value.some(field => field.readonly)
-)
+const hasAutomaticReadOnlyFields = computed(() => isAutomaticEditType.value)
 const auditDialogTitle = computed(() => {
   const action = auditForm.approved ? '通过' : '驳回'
   return batchAuditMode.value ? `批量${action}稿费任务` : `审核${action}`
@@ -607,18 +608,34 @@ const workInfoRows = computed(() => {
       value: formatWorkInfoValue(key, value, info)
     }))
 })
-const amountSensitiveFields = new Set(['isSpecialNode', 'specialMultiplier', 'authorAvgFee'])
-const editWorkFields = computed(() => Object.keys(editForm.workInfo || {})
-  .filter(key => canManageFeeAmount.value || !amountSensitiveFields.has(key))
-  .filter(key => !(editForm.workType === 'VIDEO' && key === 'videoDurationSec'))
-  .filter(key => key !== 'specialMultiplier' || Number(editForm.workInfo?.isSpecialNode) === 1)
-  .map(key => ({
-    key,
-    label: fieldLabelMap[key] || key,
-    readonly: automaticReadonlyWorkFields.has(key)
-  })))
+// 202609291624 - 修复了编辑字段依赖详情返回键导致条件字段遗漏的问题。
+const editWorkFields = computed(() => {
+  const info = editForm.workInfo || {}
+  const type = editForm.workType
+  const fields = type === 'EDITORIAL'
+    ? ['title', 'platform', 'category', ...(info.platform === '微信' && Number(info.isPublished) === 1 ? ['readCount'] : []), ...(info.platform === '校报' ? ['wordCount'] : []), 'articleLink']
+    : type === 'PHOTO'
+      ? ['title', 'platform', ...(info.platform === '微信' ? ['readCount'] : []), 'articleLink']
+      : type === 'VIDEO'
+        ? ['videoTitle', 'category', 'likeCount', 'isReposted', ...(info.category === '原创类短视频' ? ['isComplexEdit'] : []), 'videoLink']
+        : type === 'VISUAL'
+          ? ['title', 'category', 'articleLink']
+          : ['title', 'category', 'subsidyMonth']
+  if (type !== 'SUBSIDY') {
+    fields.push('isPublished')
+    if (Number(info.isPublished) === 1) fields.push('publishDate')
+    if (canManageFeeAmount.value) {
+      fields.push('isSpecialNode')
+      if (Number(info.isSpecialNode) === 1) fields.push('specialMultiplier')
+    }
+  }
+  fields.push('remark')
+  return fields.map(key => ({ key, label: fieldLabelMap[key] || key }))
+})
 const detailShowsWorkCount = computed(() => (detail.value?.contributors || []).some(item => item.workCount != null))
-const editShowsWorkCount = computed(() => (editForm.contributors || []).some(item => item.workCount != null))
+const editShowsWorkCount = computed(() =>
+  (editForm.workType === 'PHOTO' && ['院网', '校报'].includes(editForm.workInfo.platform))
+  || (editForm.workType === 'VISUAL' && editForm.workInfo.category === '校园网首页大图'))
 const editCategoryOptions = computed(() => {
   if (editForm.workType === 'VIDEO') return videoCategoryOptions
   if (editForm.workType === 'VISUAL') return visualCategoryOptions
@@ -647,17 +664,70 @@ const selectNumberInputText = event => {
   }
 }
 
-const formatReadonlyWorkField = (key, value) => {
-  if (key === 'authorAvgFee') return `¥${money(value)}`
-  return value ?? '-'
-}
-
 const handleEditPlatformChange = () => {
   if (editForm.workType === 'EDITORIAL') {
     editForm.workInfo.category = editCategoryOptions.value[0] || ''
   } else if (editForm.workType === 'PHOTO') {
     editForm.workInfo.category = editForm.workInfo.platform === '微信' ? photoCategoryOptions[0] : ''
   }
+  editForm.contributors.forEach(item => { item.workCount = 1 })
+}
+
+const handleEditCategoryChange = () => {
+  // 202609291624 - 修复了切换视频类别后隐藏的复杂剪辑状态仍影响作品信息的问题。
+  if (editForm.workType === 'VIDEO' && editForm.workInfo.category !== '原创类短视频') {
+    editForm.workInfo.isComplexEdit = 0
+  }
+  if (editForm.workType === 'VISUAL' && editForm.workInfo.category === '校园网首页大图') {
+    editForm.contributors.forEach(item => { item.workCount = Number(item.workCount) > 0 ? item.workCount : 1 })
+  }
+  if (editForm.workType === 'SUBSIDY') {
+    ElMessage.info('补贴类型已变更，请核对参与人员名单')
+  }
+}
+
+const handleEditSwitchChange = (key, value) => {
+  // 202609291624 - 修复了未发布任务改为已发布时沿用隐藏创建日期作为实际发布日期的问题。
+  if (key === 'isPublished' && Number(value) === 1 && Number(detail.value?.workInfo?.isPublished) === 0) {
+    editForm.workInfo.publishDate = ''
+  }
+}
+
+const defaultEditRole = () => ({ VIDEO: 'SHOOTER', VISUAL: 'DESIGNER', SUBSIDY: 'MEMBER' }[editForm.workType] || 'AUTHOR')
+const addEditContributor = () => {
+  editForm.contributors.push({ userId: null, roleInWork: defaultEditRole(), workCount: 1, feeAmount: null, remark: '' })
+}
+const editContributorOptions = row => {
+  const options = editUsers.value.filter(person => person.isValid !== 0)
+  if (row.userId == null || options.some(person => Number(person.id) === Number(row.userId))) return options
+  return [{ id: row.userId, realName: row.realName || '原参与人员', studentNo: row.studentNo || '', isValid: 1 }, ...options]
+}
+
+/** 编辑入参只允许提交页同样的有效字段，防止切换平台后沿用不相关的旧数据。 */
+const editWorkInfoForSave = () => {
+  const info = { ...editForm.workInfo }
+  if (editForm.workType !== 'SUBSIDY' && Number(info.isPublished) !== 1) delete info.publishDate
+  if (editForm.workType === 'EDITORIAL' && info.platform === '微信' && Number(info.isPublished) !== 1) delete info.readCount
+  return info
+}
+
+const validateEdit = () => {
+  const info = editForm.workInfo
+  if (!String((editForm.workType === 'VIDEO' ? info.videoTitle : info.title) || '').trim()) return '请填写任务标题'
+  if (editForm.workType !== 'PHOTO' && !info.category) return '请选择类别'
+  if (['EDITORIAL', 'PHOTO'].includes(editForm.workType) && !info.platform) return '请选择发布平台'
+  if (editForm.workType === 'SUBSIDY' && !info.subsidyMonth) return '请选择补贴月份'
+  if (editForm.workType !== 'SUBSIDY' && Number(info.isPublished) === 1 && !info.publishDate) return '请选择发布时间'
+  if (editForm.workType === 'EDITORIAL' && info.platform === '校报' && Number(info.wordCount) <= 0) return '校报文章字数必须大于 0'
+  if (canManageFeeAmount.value && Number(info.isSpecialNode) === 1 && ![2, 3].includes(Number(info.specialMultiplier))) return '请选择特殊节点发放倍数'
+  if (!editForm.contributors.length) return '请添加至少一名参与人员'
+  if (editForm.contributors.some(item => !item.userId || !item.roleInWork)) return '请补全参与人员和角色'
+  if (editShowsWorkCount.value && editForm.contributors.some(item => Number(item.workCount) <= 0)) return '请填写每位人员对应的作品数量'
+  const identities = editForm.contributors.map(item => `${item.userId}:${item.roleInWork}`)
+  if (new Set(identities).size !== identities.length) return '同一人员不能以相同角色重复参与'
+  if (editForm.workType === 'VIDEO' && info.category === '原创类短视频' && Number(info.isComplexEdit) === 1
+    && !editForm.contributors.some(item => item.roleInWork === 'EDITOR')) return '复杂剪辑须有剪辑人员'
+  return ''
 }
 
 const feeRowKey = row => `${row.workType}:${row.id}`
@@ -725,13 +795,15 @@ const resetQuery = () => {
   loadList()
 }
 
-const openDetail = async row => {
+const openDetail = async (row, showDrawer = true) => {
   currentRow.value = row
-  detailVisible.value = true
+  detail.value = null
+  if (showDrawer) detailVisible.value = true
   detailLoading.value = true
   try {
     const res = await getFeeDetail(row.workType, row.id)
     detail.value = res.data
+    return res.data
   } finally {
     detailLoading.value = false
   }
@@ -788,10 +860,15 @@ const requestBatchPassword = async actionName => {
 }
 
 const openEdit = async row => {
-  await openDetail(row)
-  editForm.workType = detail.value.workType
-  editForm.workInfo = { ...(detail.value.workInfo || {}), remark: detail.value.remark || '' }
-  editForm.contributors = (detail.value.contributors || []).map(item => ({ ...item }))
+  if (!canEditRecord(row)) return
+  // 202609291624 - 修复了直接编辑任务时先打开详情抽屉且可能沿用上次详情的问题。
+  const task = await openDetail(row, false)
+  // 202609291624 - 完成了编辑页复用提交页参与人员接口的任务。
+  const usersResponse = await getFeeContributors()
+  editUsers.value = usersResponse.data || []
+  editForm.workType = task.workType
+  editForm.workInfo = { ...(task.workInfo || {}), remark: task.remark || '' }
+  editForm.contributors = (task.contributors || []).map(item => ({ ...item }))
   editVisible.value = true
   if (isAutomaticEditType.value && canManageFeeAmount.value) {
     scheduleAutomaticFeePreview()
@@ -801,7 +878,9 @@ const openEdit = async row => {
 let feePreviewSequence = 0
 let feePreviewTimer
 const refreshAutomaticFeePreview = async () => {
-  if (!editVisible.value || !isAutomaticEditType.value || !canManageFeeAmount.value || !editForm.contributors.length) return
+  if (!editVisible.value || !isAutomaticEditType.value || !canManageFeeAmount.value || !editForm.contributors.length
+    || editForm.contributors.some(item => !item.userId || !item.roleInWork)
+    || (editForm.workType !== 'PHOTO' && !editForm.workInfo.category)) return
   const sequence = ++feePreviewSequence
   videoPreviewLoading.value = true
   try {
@@ -845,16 +924,22 @@ watch(
 
 const handleSaveEdit = async () => {
   if (!currentRow.value) return
+  const validationMessage = validateEdit()
+  if (validationMessage) {
+    ElMessage.warning(validationMessage)
+    return
+  }
   saving.value = true
   try {
     await updateFeeDetail(currentRow.value.workType, currentRow.value.id, {
       workType: currentRow.value.workType,
-      workInfo: { ...editForm.workInfo },
+      workInfo: editWorkInfoForSave(),
       contributors: editForm.contributors.map(item => ({
         userId: Number(item.userId),
         roleInWork: item.roleInWork,
-        feeAmount: canManageFeeAmount.value ? Number(item.feeAmount || 0) : null,
-        workCount: item.workCount == null ? null : Number(item.workCount),
+        // 202609291624 - 修复了编辑请求可能将页面金额当作权威计价结果的问题。
+        feeAmount: null,
+        workCount: editShowsWorkCount.value ? Number(item.workCount || 1) : null,
         remark: item.remark || ''
       }))
     })
@@ -905,6 +990,7 @@ const handleResetAudit = async row => {
 }
 
 const handleInvalidate = async row => {
+  if (!canInvalidateRecord(row)) return
   await ElMessageBox.confirm(
     `确定删除已驳回的任务“${row.title}”吗？删除后不会出现在任务列表和稿费导出中，数据库记录仍会保留。`,
     '删除稿费任务',
@@ -1048,6 +1134,20 @@ onMounted(() => {
   width: 100%;
 }
 
+/* 202609291624 - 完成了编辑人员操作区域在窄弹窗中换行展示的任务。 */
+.edit-contributor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.edit-contributor-heading .detail-title {
+  margin: 0;
+}
+
 /* 202608131646 - 统一了稿费审核与导出主表各列的居中对齐样式。 */
 .centered-data-table :deep(.el-table__cell .cell) {
   text-align: center;
@@ -1105,7 +1205,6 @@ onMounted(() => {
   margin-bottom: 18px;
 }
 
-.readonly-field,
 .readonly-money {
   display: flex;
   align-items: center;

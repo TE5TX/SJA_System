@@ -1,6 +1,7 @@
 package com.sja.system.service.fee;
 
 import com.sja.system.application.dto.fee.FeeSubmitDTO;
+import com.sja.system.common.ApiException;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.sja.system.dal.dataobject.BizEditorialArticle;
 import com.sja.system.dal.dataobject.BizVideoWork;
@@ -37,9 +38,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -249,11 +252,71 @@ class FeeServiceImplVideoRecalculationTest {
                 .findFirst().orElseThrow(AssertionError::new).getTotalAmount());
     }
 
+    @Test
+    void editAllowsChangedContributorAndRecalculatesAmount() {
+        // 202609291624 - 完成了编辑参与人员后忽略请求旧金额并重新计价的测试。
+        BizVideoWork existing = new BizVideoWork();
+        existing.setId(8L);
+        existing.setIsValid(1);
+        when(videoMapper.selectById(8L)).thenReturn(existing);
+        when(accessService.canManageAmount(0)).thenReturn(true);
+        when(stateService.auditStatus("VIDEO", 8L)).thenReturn("SUBMITTED");
+        when(queryService.detail(8L, "VIDEO", 1L, 0))
+                .thenReturn(detail("VIDEO", "原稿", new BigDecimal("400.0")),
+                        detail("VIDEO", "新稿", new BigDecimal("200.0")));
+
+        FeeSubmitDTO dto = new FeeSubmitDTO();
+        dto.setWorkType("VIDEO");
+        Map<String, Object> info = new HashMap<>();
+        info.put("videoTitle", "新稿");
+        info.put("category", "原创类短视频");
+        info.put("isPublished", 1);
+        dto.setWorkInfo(info);
+        FeeSubmitDTO.ContributorDTO contributor = new FeeSubmitDTO.ContributorDTO();
+        contributor.setUserId(99L);
+        contributor.setRoleInWork("EDITOR");
+        contributor.setFeeAmount(new BigDecimal("999.0"));
+        dto.setContributors(List.of(contributor));
+        when(feeCalculationService.calculateAutomaticFees("VIDEO", info, dto.getContributors()))
+                .thenReturn(List.of(new BigDecimal("200.0")));
+
+        feeService.update(8L, "VIDEO", dto, 1L, "管理员", "0", 0);
+        ArgumentCaptor<BizWorkContributor> saved = ArgumentCaptor.forClass(BizWorkContributor.class);
+        verify(contributorMapper).insert(saved.capture());
+        assertEquals(99L, saved.getValue().getUserId());
+        assertEquals("EDITOR", saved.getValue().getRoleInWork());
+        assertEquals(new BigDecimal("200.0"), saved.getValue().getFeeAmount());
+    }
+
+    @Test
+    void editRejectsDuplicateContributorRoleBeforeWriting() {
+        // 202609291624 - 完成了编辑接口拒绝同一人员同一角色重复计费的测试。
+        FeeSubmitDTO dto = new FeeSubmitDTO();
+        dto.setWorkType("VIDEO");
+        dto.setWorkInfo(new HashMap<>());
+        FeeSubmitDTO.ContributorDTO first = new FeeSubmitDTO.ContributorDTO();
+        first.setUserId(20L);
+        first.setRoleInWork("SHOOTER");
+        FeeSubmitDTO.ContributorDTO second = new FeeSubmitDTO.ContributorDTO();
+        second.setUserId(20L);
+        second.setRoleInWork("SHOOTER");
+        dto.setContributors(List.of(first, second));
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> feeService.update(8L, "VIDEO", dto, 1L, "管理员", "0", 0));
+
+        assertEquals(400, error.getStatus());
+        verifyNoInteractions(videoMapper, contributorMapper);
+    }
+
     private FeeDetailVO detail(String workType, String title, BigDecimal total) {
         FeeDetailVO detail = new FeeDetailVO();
         detail.setWorkType(workType);
         detail.setWorkInfo(new HashMap<>(Map.of("title", title)));
-        detail.setContributors(Collections.emptyList());
+        FeeDetailVO.ContributorVO contributor = new FeeDetailVO.ContributorVO();
+        contributor.setUserId("VIDEO".equals(workType) ? 20L : 21L);
+        contributor.setRoleInWork("VIDEO".equals(workType) ? "SHOOTER" : "AUTHOR");
+        detail.setContributors(List.of(contributor));
         detail.setStatus("SUBMITTED");
         detail.setTotalAmount(total);
         return detail;

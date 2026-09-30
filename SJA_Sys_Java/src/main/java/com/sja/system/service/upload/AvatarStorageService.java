@@ -6,7 +6,9 @@ import com.sja.system.application.model.AvatarFile;
 import com.sja.system.application.model.UploadedFile;
 import com.sja.system.dal.dataobject.SysUser;
 import com.sja.system.dal.mysql.SysUserMapper;
+import com.sja.system.service.storage.StorageLocationService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -20,6 +22,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
@@ -37,22 +40,32 @@ public class AvatarStorageService {
     private static final Set<String> SUPPORTED_FORMATS = Set.of("JPEG", "JPG", "PNG", "GIF");
 
     private final Path avatarDirectory;
+    private final StorageLocationService storageLocations;
     private final SysUserMapper sysUserMapper;
     private final long maxPixels;
     private final int maxDimension;
     private final int outputDimension;
 
+    @Autowired
     public AvatarStorageService(
             SysUserMapper sysUserMapper,
             @Value("${sja.upload.avatar-dir}") String avatarDirectory,
+            StorageLocationService storageLocations,
             @Value("${sja.upload.max-pixels}") long maxPixels,
             @Value("${sja.upload.max-dimension}") int maxDimension,
             @Value("${sja.upload.output-dimension}") int outputDimension) {
         this.sysUserMapper = sysUserMapper;
         this.avatarDirectory = Path.of(avatarDirectory).toAbsolutePath().normalize();
+        this.storageLocations = storageLocations;
         this.maxPixels = maxPixels;
         this.maxDimension = maxDimension;
         this.outputDimension = outputDimension;
+    }
+
+    /** 保持既有单元测试构造方式；运行时使用注入存储位置服务的构造器。 */
+    public AvatarStorageService(SysUserMapper mapper, String directory, long pixels,
+                                int dimension, int outputDimension) {
+        this(mapper, directory, null, pixels, dimension, outputDimension);
     }
 
     public String store(UploadedFile file) {
@@ -98,13 +111,16 @@ public class AvatarStorageService {
             String outputFormat = hasAlpha ? "PNG" : "JPEG";
             String filename = UUID.randomUUID() + "." + extension;
 
-            Files.createDirectories(avatarDirectory);
-            Path temporary = Files.createTempFile(avatarDirectory, "avatar-", ".tmp");
+            // 202609291708 - 新照片写入后台当前目录，旧照片仍可从历史目录读取。
+            Path writableDirectory = storageLocations == null ? avatarDirectory
+                    : storageLocations.writableDirectory(StorageLocationService.AVATAR);
+            Files.createDirectories(writableDirectory);
+            Path temporary = Files.createTempFile(writableDirectory, "avatar-", ".tmp");
             try {
                 if (!ImageIO.write(sanitized, outputFormat, temporary.toFile())) {
                     throw new IOException("No ImageIO writer for " + outputFormat);
                 }
-                Files.move(temporary, resolveFile(filename),
+                Files.move(temporary, writableDirectory.resolve(filename),
                         StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } finally {
                 Files.deleteIfExists(temporary);
@@ -122,12 +138,20 @@ public class AvatarStorageService {
         if (!isManagedUrl(photoUrl)) {
             throw ApiException.badRequest("照片路径不合法");
         }
-        return resolveFile(photoUrl.substring(URL_PREFIX.length()));
+        return resolveFilename(photoUrl.substring(URL_PREFIX.length()));
     }
 
     public Path resolveFilename(String filename) {
         if (filename == null || !FILE_NAME.matcher(filename).matches()) {
             throw ApiException.notFound("照片不存在");
+        }
+        // 202609291708 - 路径切换后按当前、历史和旧版目录顺序查找头像。
+        if (storageLocations != null) {
+            for (Path directory : storageLocations.readableDirectories(StorageLocationService.AVATAR)) {
+                Path candidate = directory.resolve(filename).normalize();
+                if (candidate.startsWith(directory)
+                        && Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) return candidate;
+            }
         }
         return resolveFile(filename);
     }
@@ -135,7 +159,7 @@ public class AvatarStorageService {
     public Path resolveReferencedFilename(String filename) {
         // 202608140858 - 阻止通过猜测文件名读取未绑定到任何用户的头像。
         Path path = resolveFilename(filename);
-        if (!Files.isRegularFile(path)) {
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             throw ApiException.notFound("照片不存在");
         }
         String photoUrl = URL_PREFIX + filename;
@@ -163,7 +187,7 @@ public class AvatarStorageService {
     }
 
     public void validateStoredAvatar(String photoUrl) {
-        if (!isManagedUrl(photoUrl) || !Files.isRegularFile(resolveUrl(photoUrl))) {
+        if (!isManagedUrl(photoUrl) || !Files.isRegularFile(resolveUrl(photoUrl), LinkOption.NOFOLLOW_LINKS)) {
             throw ApiException.badRequest("照片不存在或路径不合法，请重新上传");
         }
     }

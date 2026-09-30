@@ -7,6 +7,10 @@ import com.sja.system.service.auth.LoginCaptchaService;
 import com.sja.system.service.system.OperationLogService;
 import com.sja.system.service.user.UserRosterImportService;
 import com.sja.system.service.recruitment.RecruitmentService;
+import com.sja.system.service.storage.StorageLocationService;
+import com.sja.system.service.storage.ImportArchiveService;
+import com.sja.system.application.vo.user.UserRosterImportResultVO;
+import com.sja.system.common.PageResult;
 import com.sja.system.application.vo.recruitment.RecruitmentStatusVO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +32,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -82,6 +87,13 @@ class SecurityBoundaryIntegrationTest {
 
     @MockitoBean
     private UserRosterImportService userRosterImportService;
+
+    // 202609291708 - 安全边界测试隔离文件存储和归档数据库，只验证HTTP授权行为。
+    @MockitoBean
+    private StorageLocationService storageLocationService;
+
+    @MockitoBean
+    private ImportArchiveService importArchiveService;
 
     @Test
     void allowsConfiguredFrontendPreflight() throws Exception {
@@ -163,6 +175,9 @@ class SecurityBoundaryIntegrationTest {
     @Test
     void limitsRosterConfirmationToImportOperators() throws Exception {
         // 202609181147 - 验证确认接口只允许管理员、主席和秘书长使用。
+        // 202609291708 - 安全测试中的导入服务返回最小结果，避免归档状态编排读取空Mock。
+        when(userRosterImportService.confirm(anyString(), anyString(), any(), anyString(), any(), anyString()))
+                .thenReturn(new UserRosterImportResultVO(0, 0, 0, 0, false, null, List.of(), null));
         String body = "{\"importToken\":\"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG\","
                 + "\"currentPassword\":\"current-password\"}";
         for (int roleCode : new int[]{0, 1, 3}) {
@@ -247,6 +262,31 @@ class SecurityBoundaryIntegrationTest {
                         .with(authentication(authenticationForRole(0))))
                 .andExpect(status().isOk())
                 .andExpect(cookie().exists("XSRF-TOKEN"));
+    }
+
+    @Test
+    void limitsStorageSettingsToAdministratorAndSecretaryAndArchivesToImportOperators() throws Exception {
+        // 202609301034 - 验证管理员、秘书长可以查看保存路径，主席、教师、部长及游客均被拒绝。
+        when(importArchiveService.page(eq(1), eq(20), any()))
+                .thenReturn(new PageResult<>(List.of(), 0, 1, 20));
+        for (int roleCode : new int[]{0, 3}) {
+            mockMvc.perform(get("/api/v1/system/storage")
+                            .with(authentication(authenticationForRole(roleCode))))
+                    .andExpect(status().isOk());
+        }
+        for (int roleCode : new int[]{1, 2, 4, 13}) {
+            mockMvc.perform(get("/api/v1/system/storage")
+                            .with(authentication(authenticationForRole(roleCode))))
+                    .andExpect(status().isForbidden());
+        }
+        for (int roleCode : new int[]{0, 1, 3}) {
+            mockMvc.perform(get("/api/v1/users/import/archives")
+                            .with(authentication(authenticationForRole(roleCode))))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/v1/users/import/archives")
+                        .with(authentication(authenticationForRole(13))))
+                .andExpect(status().isForbidden());
     }
 
     @Test

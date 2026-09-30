@@ -16,8 +16,6 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 @Slf4j
@@ -82,10 +80,9 @@ public class FailedOperationAuditFilter extends OncePerRequestFilter {
         String contentType = response.getContentType();
         if (contentType == null || !contentType.toLowerCase().contains("json")) return null;
         try {
-            Charset charset = response.getCharacterEncoding() == null
-                    ? StandardCharsets.UTF_8
-                    : Charset.forName(response.getCharacterEncoding());
-            JsonNode messageNode = objectMapper.readTree(new String(content, charset)).get("message");
+            // 202609291633 - 修复了未声明charset的UTF-8 JSON响应按Servlet默认字符集解码后使失败日志中文乱码的问题。
+            // JSON解析器直接读取原始字节，可识别JSON编码，避免依赖响应包装器的默认字符集。
+            JsonNode messageNode = objectMapper.readTree(content).get("message");
             return messageNode != null && messageNode.isTextual()
                     ? normalizeReason(messageNode.asText())
                     : null;

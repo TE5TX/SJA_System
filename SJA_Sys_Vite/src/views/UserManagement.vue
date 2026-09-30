@@ -149,7 +149,7 @@
       </div>
     </el-card>
 
-    <ResponsiveDialog v-model="editVisible" :title="isCreating ? '新增人员' : '编辑人员信息'" desktop-width="720px" :close-on-click-modal="false" @closed="clearAvatarPreview">
+    <ResponsiveDialog v-model="editVisible" :title="isCreating ? '新增人员' : '编辑人员信息'" class="user-edit-dialog" desktop-width="720px" :close-on-click-modal="false" @closed="clearAvatarPreview">
       <el-form ref="userFormRef" class="mobile-form-top-label" :model="editForm" :rules="userFormRules" label-width="96px">
         <el-row :gutter="16">
           <el-col :xs="24" :sm="12">
@@ -852,6 +852,24 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 202609290958 - 修复了人员编辑弹窗的栅格负边距触发横向滚动的问题。 */
+:global(.user-edit-dialog .el-dialog__body) {
+  overflow-x: hidden;
+}
+
+:global(.user-edit-dialog .el-row) {
+  margin-inline: 0 !important;
+}
+
+:global(.user-edit-dialog .el-col),
+:global(.user-edit-dialog .el-form-item__content) {
+  min-width: 0;
+}
+
+:global(.user-edit-dialog .el-radio-group) {
+  flex-wrap: wrap;
+}
+
 .page-title p {
   margin: 0;
   color: #6b7280;

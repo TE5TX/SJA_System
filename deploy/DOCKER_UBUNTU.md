@@ -342,3 +342,44 @@ docker compose logs --tail=100 web
 ```
 
 状态为 `Exited`、`Restarting` 或 `unhealthy` 时，优先查看对应服务日志。
+
+## 后台文件存储设置与人员导入原件
+
+<!-- 202609291708 - 完成了跨Windows与Ubuntu的后台目录配置和XLSX归档部署说明。 -->
+
+升级现有数据库时，先做好 MySQL 和头像卷备份，再执行
+`sql/20260929_文件存储与人员导入原件归档升级.sql`。全新部署导入基础 SQL 后也执行
+此升级脚本；脚本对已存在的表和默认目录作了存在性检查，可重复执行而不覆盖后台设置。
+**先完成数据库升级，再启动新版后端镜像**，否则存储位置表不存在会导致上传和头像读取失败。
+
+<!-- 202609301034 - 同步了文件保存路径仅管理员和秘书长可查看、配置的权限说明。 -->
+在“系统管理 → 文件保存路径”中，仅管理员和秘书长可以查看、编辑、检测照片和原始 XLSX 的完整保存路径，
+但路径必须位于后端授权的存储根目录下。页面显示的是后端容器内路径。Docker Compose 将 `SJA_STORAGE_ROOT`
+设为 `/app/uploads`，照片和原始 XLSX 都保存在现有 `avatar_data` 持久化卷中；
+修改后台子目录不需要重建镜像，但旧文件不会自动移动，应用会保留旧目录的读取能力。
+通过预览的原始 XLSX 仅在服务器端归档；后台不提供原件列表页面，原件默认不自动删除。
+
+要把文件放到服务器上可见的指定目录，可在**备份并迁移旧 `avatar_data` 卷内容后**，
+在 `.env` 中设置 `SJA_STORAGE_HOST_DIR=/srv/sja-system/storage`，并叠加
+`deploy/docker-compose.storage.bind.yml`。例如：
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.storage.bind.yml config --quiet
+docker compose -f docker-compose.yml -f deploy/docker-compose.storage.bind.yml up -d
+```
+
+先使用 `docker volume inspect` 确认旧卷名，
+停后端写入后复制全部旧照片，核对数量和头像可访问性，再切换挂载；
+不要运行 `docker compose down -v`，也不要删除旧卷。目标目录必须允许容器中的
+`sja` 用户写入，不要设置为 `777`。MySQL、Redis 仍使用各自独立的数据卷。
+
+Windows 直接运行 Java 后端时，默认根目录为
+`C:/ProgramData/SJA-System/uploads`；可通过进程环境变量 `SJA_STORAGE_ROOT`
+改为当前账户可写的绝对目录。Ubuntu 直接运行 Java 后端时，默认根目录为
+`/var/lib/sja-system/uploads`，也可设置同一环境变量。Windows Docker 与 Ubuntu Docker
+的后台页面统一填写**容器内根目录下的相对路径**，不能填写 `C:\...` 或服务器上未挂载的路径。
+Windows Docker 若采用上述绑定挂载，在 `.env` 中可填写如
+`SJA_STORAGE_HOST_DIR=C:/SJA-System/storage` 的主机绝对路径，并先确认 Docker Desktop
+允许访问该磁盘目录。
+备份时必须同时备份 MySQL 与整个上传根目录，归档文件含姓名、学号等个人信息，不应通过
+Nginx 静态目录公开。

@@ -18,7 +18,8 @@ class UserApplicationServiceTest {
         UserService userService = mock(UserService.class);
         UserApplicationService applicationService = new UserApplicationService(
                 userService, mock(UserImportService.class), mock(UserRosterImportService.class),
-                mock(UserExportService.class), mock(AsyncTaskQueueService.class));
+                mock(UserExportService.class), mock(AsyncTaskQueueService.class),
+                mock(com.sja.system.service.storage.ImportArchiveService.class));
         UserDeleteDTO dto = new UserDeleteDTO();
         dto.setCurrentPassword("current-password");
         CurrentActor actor = new CurrentActor(1L, "管理员", 0);

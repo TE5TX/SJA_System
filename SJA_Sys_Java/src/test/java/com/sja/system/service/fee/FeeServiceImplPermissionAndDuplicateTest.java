@@ -32,14 +32,17 @@ import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class FeeServiceImplPermissionAndDuplicateTest {
@@ -67,6 +70,36 @@ class FeeServiceImplPermissionAndDuplicateTest {
 
     @InjectMocks
     private FeeQueryService queryService;
+
+    @Test
+    void ministerMayEditOnlyTasksInTheirDepartment() {
+        // 202609291058 - 验证部长保留跨部门查看权限，但不能修改非所属部门稿费任务。
+        SysUserDept relation = new SysUserDept();
+        relation.setUserId(93L);
+        relation.setDeptId(7L);
+        when(sysUserDeptMapper.selectList(any())).thenReturn(List.of(relation));
+        when(sysDeptMapper.selectBatchIds(any()))
+                .thenReturn(List.of(SysDept.builder().id(7L).deptCode("EDITORIAL").build()));
+        FeeAccessService feeAccessService = new FeeAccessService(sysDeptMapper, sysUserDeptMapper);
+
+        assertDoesNotThrow(() -> feeAccessService.ensureCanEditTask(93L, 4, "EDITORIAL"));
+        ApiException error = assertThrows(ApiException.class,
+                () -> feeAccessService.ensureCanEditTask(93L, 4, "VISUAL"));
+        assertEquals(403, error.getStatus());
+    }
+
+    @Test
+    void administratorAndSecretaryGeneralMayEditAcrossDepartments() {
+        FeeAccessService feeAccessService = new FeeAccessService(sysDeptMapper, sysUserDeptMapper);
+
+        assertDoesNotThrow(() -> feeAccessService.ensureCanEditTask(1L, 0, "VISUAL"));
+        assertDoesNotThrow(() -> feeAccessService.ensureCanEditTask(2L, 3, "EDITORIAL"));
+        // 202609291624 - 完成了编辑权限与金额可见权限分离的测试。
+        assertFalse(feeAccessService.canManageAmount(4));
+        org.junit.jupiter.api.Assertions.assertTrue(feeAccessService.canManageAmount(0));
+        org.junit.jupiter.api.Assertions.assertTrue(feeAccessService.canManageAmount(3));
+        verifyNoInteractions(sysDeptMapper, sysUserDeptMapper);
+    }
 
     @Test
     void ministerCanViewAnyDepartmentButNeverReceivesAmounts() {

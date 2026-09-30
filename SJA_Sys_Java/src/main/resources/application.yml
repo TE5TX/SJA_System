@@ -61,6 +61,9 @@ jwt:
   refresh-expiration: ${SJA_JWT_REFRESH_EXPIRATION:604800000}
 
 sja:
+  # 202609291708 - 文件根目录由运行环境指定，后台仅管理该目录下的相对子目录。
+  storage:
+    root: ${SJA_STORAGE_ROOT:}
   # 202608210907 - 增加了XLSX批量注册预览令牌、文件大小和行数限制。
   user-import:
     key-prefix: ${SJA_USER_IMPORT_KEY_PREFIX:sja:user-import:preview}

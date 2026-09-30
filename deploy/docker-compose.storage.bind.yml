@@ -1,0 +1,8 @@
+# 202609291708 - 完成了Windows与Linux可选的显式主机目录挂载配置。
+# 先备份并迁移现有avatar_data卷，再通过 -f 叠加此文件；切勿直接切换导致旧头像不可见。
+services:
+  backend:
+    volumes:
+      - type: bind
+        source: ${SJA_STORAGE_HOST_DIR:?请设置服务器或Windows主机的绝对存储目录}
+        target: /app/uploads

@@ -48,6 +48,7 @@ public class FeeCommandService {
         Map<String, Object> workInfo = dto.getWorkInfo();
         List<FeeSubmitDTO.ContributorDTO> contributors = dto.getContributors();
         accessService.ensureCanSubmit(userId, roleCode, workType);
+        ensureValidContributors(workType, contributors);
         normalizeUnpublishedDate(workType, workInfo);
         FeeWorkAdapter adapter = adapterRegistry.require(workType);
         ensureNotDuplicate(adapter, workInfo, contributors, null);
@@ -84,18 +85,25 @@ public class FeeCommandService {
     @Transactional(rollbackFor = Exception.class)
     public void update(Long id, String workType, FeeSubmitDTO dto, Long operatorId,
                        String operatorName, String operatorRole, Integer roleCode) {
-        accessService.ensureCanEdit(roleCode);
+        accessService.ensureCanEditTask(operatorId, roleCode, workType);
         accessService.ensureCanView(operatorId, roleCode, workType);
         if (!workType.equals(dto.getWorkType())) throw ApiException.badRequest("作品类型不能变更");
+        // 202609291624 - 修复了编辑参与人员时可绕过页面约束重复计费的问题。
+        ensureValidContributors(workType, dto.getContributors());
         boolean canManageAmount = accessService.canManageAmount(roleCode);
         String originalStatus = stateService.auditStatus(workType, id);
         if (!canManageAmount && !"SUBMITTED".equals(originalStatus) && !"REJECTED".equals(originalStatus)) {
             throw ApiException.badRequest("部长只能修改待审核或已驳回的稿费任务");
         }
         FeeDetailVO before = queryService.detail(id, workType, operatorId, roleCode);
+        // 202609291624 - 完成了编辑任务时调整参与人员及角色并由服务端重新计价的任务。
         FeeWorkAdapter adapter = adapterRegistry.require(workType);
         Map<String, Object> info = canManageAmount ? dto.getWorkInfo()
                 : adapter.preserveRestrictedFields(id, dto.getWorkInfo());
+        // 202609291624 - 修复了视觉稿件编辑参与人员后作品表人数不同步的问题。
+        if (adapter.supports() == FeeWorkType.VISUAL) {
+            info.put("authorCount", dto.getContributors().size());
+        }
         normalizeUnpublishedDate(workType, info);
         ensureNotDuplicate(adapter, info, dto.getContributors(), id);
         adapter.update(id, info);
@@ -119,6 +127,30 @@ public class FeeCommandService {
     public List<BigDecimal> calculate(FeeSubmitDTO dto, Integer roleCode) {
         accessService.ensureCanManageAmount(roleCode, "计算并查看稿费金额");
         return calculationService.calculateAutomaticFees(dto.getWorkType(), dto.getWorkInfo(), dto.getContributors());
+    }
+
+    /** 提交和编辑共用参与人员约束；视频允许同一人分别承担拍摄与剪辑。 */
+    private void ensureValidContributors(String workType, List<FeeSubmitDTO.ContributorDTO> contributors) {
+        if (contributors == null || contributors.isEmpty()) {
+            throw ApiException.badRequest("参与人员不能为空");
+        }
+        Set<String> identities = new LinkedHashSet<>();
+        for (FeeSubmitDTO.ContributorDTO contributor : contributors) {
+            if (contributor == null || contributor.getUserId() == null) {
+                throw ApiException.badRequest("参与人员不能为空");
+            }
+            String role = contributor.getRoleInWork();
+            boolean validRole = switch (FeeWorkType.require(workType)) {
+                case EDITORIAL, PHOTO -> "AUTHOR".equals(role);
+                case VIDEO -> "SHOOTER".equals(role) || "EDITOR".equals(role);
+                case VISUAL -> "DESIGNER".equals(role);
+                case SUBSIDY -> "MEMBER".equals(role);
+            };
+            if (!validRole) throw ApiException.badRequest("参与人员角色与作品类型不匹配");
+            if (!identities.add(contributor.getUserId() + ":" + role)) {
+                throw ApiException.badRequest("同一人员不能以相同角色重复参与");
+            }
+        }
     }
 
     private void normalizeUnpublishedDate(String workType, Map<String, Object> info) {

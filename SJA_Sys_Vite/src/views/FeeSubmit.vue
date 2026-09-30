@@ -1,7 +1,7 @@
 <template>
   <div class="fee-submit">
     <div class="page-title">
-      <h1>稿费提交</h1>
+      <h1>任务提交</h1>
       <p>按部门和发布平台录入作品信息与作者。</p>
     </div>
 

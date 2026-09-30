@@ -60,4 +60,32 @@ class FailedOperationAuditFilterTest {
         assertFalse(detailCaptor.getValue().contains("never-log-this"));
         assertEquals(responseJson, response.getContentAsString(StandardCharsets.UTF_8));
     }
+
+    @Test
+    void recordsUtf8JsonMessageWhenResponseOmitsCharset() throws Exception {
+        // 202609291633 - 完成了无charset响应仍以UTF-8正确记录中文失败原因的回归测试。
+        OperationLogService operationLogService = mock(OperationLogService.class);
+        FailedOperationAuditFilter filter = new FailedOperationAuditFilter(
+                operationLogService, new ObjectMapper());
+        SjaUserPrincipal principal = new SjaUserPrincipal(7L, "2023030103052", "", 3, 0,
+                List.of(new SimpleGrantedAuthority("ROLE_3")));
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("PUT", "/api/v1/user/profile/password");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        String responseJson = "{\"code\":400,\"message\":\"新密码不能与原密码相同\"}";
+
+        filter.doFilter(request, response, (servletRequest, servletResponse) -> {
+            servletResponse.setContentType("application/json");
+            ((jakarta.servlet.http.HttpServletResponse) servletResponse).setStatus(400);
+            servletResponse.getOutputStream().write(responseJson.getBytes(StandardCharsets.UTF_8));
+        });
+
+        ArgumentCaptor<String> detailCaptor = ArgumentCaptor.forClass(String.class);
+        verify(operationLogService).logFailure(eq(7L), eq("2023030103052"), eq("3"),
+                eq("PUT"), eq("USER"), detailCaptor.capture());
+        assertEquals("请求失败，HTTP状态码=400，原因=新密码不能与原密码相同", detailCaptor.getValue());
+        assertEquals(responseJson, response.getContentAsString(StandardCharsets.UTF_8));
+    }
 }

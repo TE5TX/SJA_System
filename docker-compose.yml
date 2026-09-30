@@ -94,6 +94,8 @@ services:
       SJA_USER_IMPORT_MAX_FILE_BYTES: ${SJA_USER_IMPORT_MAX_FILE_BYTES:-2097152}
       SJA_USER_IMPORT_MAX_ROWS: ${SJA_USER_IMPORT_MAX_ROWS:-500}
       SJA_AVATAR_DIR: /app/uploads/avatars
+      # 202609291708 - 头像和人员导入原件共用持久化卷，后台只切换卷内子目录。
+      SJA_STORAGE_ROOT: /app/uploads
       SJA_TRUSTED_PROXY_REGEX: '10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+'
     volumes:
       - avatar_data:/app/uploads

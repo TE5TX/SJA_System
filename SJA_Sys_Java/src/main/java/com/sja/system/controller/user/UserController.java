@@ -23,11 +23,12 @@ import com.sja.system.application.vo.user.UserRosterPreviewVO;
 import com.sja.system.application.vo.user.UserRosterImportResultVO;
 import com.sja.system.application.vo.user.UserImportResultVO;
 import com.sja.system.application.vo.user.UserVO;
+import com.sja.system.application.vo.user.ImportArchiveVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -163,6 +165,24 @@ public class UserController {
             @RequestBody @Valid UserImportConfirmDTO dto,
             CurrentActor actor) {
         return Result.success("人员批量注册成功", userApplicationService.confirmImport(dto, actor));
+    }
+
+    // 202609291708 - 提供受权限保护的原始XLSX归档查询和下载；Controller仅转换HTTP响应。
+    @GetMapping("/users/import/archives")
+    @PreAuthorize("@roleAuthorization.canImportUsers(authentication)")
+    public Result<PageResult<ImportArchiveVO>> getImportArchives(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "20") int pageSize, CurrentActor actor) {
+        return Result.success(userApplicationService.importArchives(pageNum, pageSize, actor));
+    }
+
+    @GetMapping("/users/import/archives/{id}/file")
+    @PreAuthorize("@roleAuthorization.canImportUsers(authentication)")
+    public ResponseEntity<byte[]> downloadImportArchive(@PathVariable String id, CurrentActor actor) {
+        ResponseEntity<byte[]> file = DownloadResponseFactory.create(userApplicationService.importArchive(id, actor));
+        // 202609291708 - 原始名单包含个人信息，下载响应禁止浏览器和中间代理缓存。
+        return ResponseEntity.ok().headers(file.getHeaders())
+                .cacheControl(CacheControl.noStore()).body(file.getBody());
     }
 
     @PostMapping("/users/export")

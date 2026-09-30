@@ -116,6 +116,7 @@ class UserControllerExportTest {
     private UserApplicationService applicationServiceWithTemplates() {
         return new UserApplicationService(mock(UserService.class), templateService(),
                 mock(UserRosterImportService.class), mock(UserExportService.class),
-                mock(AsyncTaskQueueService.class));
+                mock(AsyncTaskQueueService.class),
+                mock(com.sja.system.service.storage.ImportArchiveService.class));
     }
 }

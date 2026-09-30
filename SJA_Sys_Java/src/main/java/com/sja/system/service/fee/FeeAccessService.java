@@ -67,6 +67,18 @@ public class FeeAccessService {
         }
     }
 
+    /**
+     * 校验任务修改范围：管理员、秘书长可跨部门修改；部长只能修改其当前所属部门的任务。
+     */
+    public void ensureCanEditTask(Long userId, Integer roleCode, String workTypeCode) {
+        // 202609291058 - 修复了部长可借由跨部门查看权限修改其他部门稿费任务的问题。
+        ensureCanEdit(roleCode);
+        String departmentCode = FeeWorkType.require(workTypeCode).departmentCode();
+        if (!canManageAmount(roleCode) && !userDepartmentCodes(userId).contains(departmentCode)) {
+            throw ApiException.forbidden("不能修改其他部门的稿费任务");
+        }
+    }
+
     private Set<String> userDepartmentCodes(Long userId) {
         QueryWrapper<SysUserDept> query = new QueryWrapper<>();
         query.eq("user_id", userId);

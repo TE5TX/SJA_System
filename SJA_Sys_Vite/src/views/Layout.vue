@@ -20,6 +20,7 @@
           </el-icon>
         </button>
         <div class="logo">
+          <img class="logo-mark" src="/logo.png" alt="校记者团徽标" width="36" height="36" />
           <span class="logo-text">校记者团管理系统</span>
         </div>
       </div>
@@ -119,7 +120,12 @@
               <el-icon><UploadFilled /></el-icon>
               <template #title>人员批量导入</template>
             </el-menu-item>
-            <el-menu-item index="/app/logs">
+            <!-- 202609301034 - 修复了秘书长看不到文件保存路径入口的问题，仅管理员和秘书长可见。 -->
+            <el-menu-item v-if="canManageStorage" index="/app/storage-settings">
+              <el-icon><Setting /></el-icon>
+              <template #title>文件保存路径</template>
+            </el-menu-item>
+            <el-menu-item v-if="canViewOperationLogs" index="/app/logs">
               <el-icon><Tickets /></el-icon>
               <template #title>操作日志</template>
             </el-menu-item>
@@ -178,7 +184,11 @@ const isInfoManager = computed(() => [0, 1, 2, 3].includes(highestRoleCode.value
 const isMinister = computed(() => roleCodes.value.includes(4))
 const canManageUsers = computed(() => isInfoManager.value)
 const canManageRecruitment = computed(() => [0, 1, 3].includes(highestRoleCode.value))
+// 202609301034 - 完成了文件保存路径菜单与后端管理员、秘书长权限的同步。
+const canManageStorage = computed(() => [0, 3].includes(highestRoleCode.value))
 const canManageFeeAmount = computed(() => [0, 3].includes(highestRoleCode.value))
+// 202609291000 - 修复了非管理员、非秘书长仍能看到操作日志菜单的问题。
+const canViewOperationLogs = computed(() => [0, 3].includes(highestRoleCode.value))
 const canSubmitFee = computed(() => canManageFeeAmount.value || isMinister.value)
 const canViewFeeTasks = computed(() => canManageFeeAmount.value || isMinister.value)
 const canUseFee = computed(() => canSubmitFee.value || canViewFeeTasks.value)
@@ -258,6 +268,15 @@ const handleCommand = (command) => {
 </script>
 
 <style scoped>
+/* 202609291003 - 为顶部系统名称使用提供的字库，并在名称旁展示记者团徽标。 */
+@font-face {
+  font-family: 'Xiniu Zhonghei';
+  src: url('/fonts/xiniu-zhonghei.ttf') format('truetype');
+  font-style: normal;
+  font-weight: Thin;
+  font-display: swap;
+}
+
 .layout-container {
   min-height: 100vh;
   min-height: 100dvh;
@@ -288,13 +307,27 @@ const handleCommand = (command) => {
 .logo {
   display: flex;
   align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.logo-mark {
+  display: block;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .logo-text {
-  font-size: 22px;
-  font-weight: 700;
+  /* 202609291036 - 修复了顶部标题加粗过度的问题，仅用轻微描边增强原字体。 */
+  font-size: 23px;
+  font-weight: 400;
   color: var(--secondary-color);
-  font-family: 'Nunito', sans-serif;
+  font-family: 'Xiniu Zhonghei', 'Microsoft YaHei', sans-serif;
+  -webkit-text-stroke: 0.25px currentColor;
+  /* 202609291028 - 拉大了顶部系统名称的字间距，提升标题辨识度。 */
+  letter-spacing: 0.1em;
 }
 
 .toggle-sidebar-btn {
@@ -580,6 +613,15 @@ const handleCommand = (command) => {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 17px;
+  }
+
+  .logo {
+    gap: 7px;
+  }
+
+  .logo-mark {
+    width: 30px;
+    height: 30px;
   }
 
   .nav-profile {

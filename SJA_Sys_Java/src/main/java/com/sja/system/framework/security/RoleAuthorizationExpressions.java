@@ -24,6 +24,11 @@ public class RoleAuthorizationExpressions {
         return hasAuthorizedRole(authentication, RoleAuthorizationPolicy::canManageRecruitment);
     }
 
+    // 202609301034 - 修复了秘书长无法查询和配置文件保存路径的问题，统一使用业务授权策略。
+    public boolean canManageStorage(Authentication authentication) {
+        return hasAuthorizedRole(authentication, RoleAuthorizationPolicy::canManageStorage);
+    }
+
     private boolean hasAuthorizedRole(Authentication authentication, Predicate<Integer> policy) {
         if (authentication == null || !authentication.isAuthenticated()) {
             return false;

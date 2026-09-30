@@ -74,11 +74,18 @@ const routes = [
         component: () => import('@/views/UserBatchImport.vue'),
         meta: { title: '人员批量导入', allowedRoleCodes: [0, 1, 3] }
       },
+      // 202609301034 - 完成了管理员和秘书长文件保存路径页面的访问控制。
+      {
+        path: 'storage-settings',
+        name: 'StorageSettings',
+        component: () => import('@/views/StorageSettings.vue'),
+        meta: { title: '文件保存路径', allowedHighestRoleCodes: [0, 3] }
+      },
       {
         path: 'logs',
         name: 'OperationLogs',
         component: () => import('@/views/OperationLogs.vue'),
-        meta: { title: '操作日志' }
+        meta: { title: '操作日志', allowedHighestRoleCodes: [0, 3] }
       },
       {
         path: 'recruitment',
@@ -104,9 +111,13 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore()
   const allowedRoleCodes = to.meta.allowedRoleCodes
+  // 202609291000 - 阻止非管理员、非秘书长通过直接输入地址进入操作日志页。
+  const allowedHighestRoleCodes = to.meta.allowedHighestRoleCodes
   if (to.meta.requiresAuth && !userStore.sessionInitialized) {
     await userStore.initializeSession()
   }
+  // 202609301034 - 修复了刷新页面时在会话恢复前读取角色，导致管理员无法进入文件保存路径页的问题。
+  const highestRoleCode = Math.min(...(userStore.userInfo?.roleCodes || []))
   if (to.meta.requiresAuth && !userStore.authenticated) {
     next('/login')
   } else if (userStore.authenticated && userStore.mustChangePassword && to.path !== '/change-password') {
@@ -116,6 +127,9 @@ router.beforeEach(async (to, from, next) => {
   } else if (Array.isArray(allowedRoleCodes)
     && !allowedRoleCodes.some(code => userStore.userInfo?.roleCodes?.includes(code))) {
     // 202608312329 - 防止无招新管理权限的已登录用户直接输入管理页地址。
+    next('/app/profile')
+  } else if (Array.isArray(allowedHighestRoleCodes)
+    && !allowedHighestRoleCodes.includes(highestRoleCode)) {
     next('/app/profile')
   } else {
     next()

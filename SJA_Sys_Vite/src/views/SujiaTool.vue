@@ -36,7 +36,8 @@
               <el-tag type="primary">{{ rows.length }} 人</el-tag>
             </div>
           </template>
-          <el-table class="desktop-only" :data="rows" border height="390">
+          <!-- 202609291001 - 修复了空名单时表格内置提示与页面空状态重复显示的问题。 -->
+          <el-table v-if="rows.length > 0" class="desktop-only" :data="rows" border height="390">
             <el-table-column prop="index" label="#" width="70" />
             <el-table-column prop="name" label="姓名" min-width="120" />
             <el-table-column prop="studentNo" label="学号" min-width="150" />
@@ -46,7 +47,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="mobile-only sujia-results">
+          <div v-if="rows.length > 0" class="mobile-only sujia-results">
             <article v-for="row in rows" :key="`${row.index}-${row.name}`" class="mobile-record-card">
               <div class="mobile-record-card__header">
                 <strong>{{ row.index }}. {{ row.name }}</strong>

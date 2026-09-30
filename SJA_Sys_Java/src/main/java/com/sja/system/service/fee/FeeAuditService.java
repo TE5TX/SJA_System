@@ -81,7 +81,8 @@ public class FeeAuditService {
     @Transactional(rollbackFor = Exception.class)
     public void invalidateRejected(Long id, String workType, Long operatorId, String operatorName,
                                    String operatorRole, Integer roleCode) {
-        accessService.ensureCanEdit(roleCode);
+        // 202609291058 - 禁止部长将其他部门已驳回的稿费任务设为无效。
+        accessService.ensureCanEditTask(operatorId, roleCode, workType);
         accessService.ensureCanView(operatorId, roleCode, workType);
         if (!"REJECTED".equals(stateService.auditStatus(workType, id))) {
             throw ApiException.badRequest("只有已驳回的稿费任务可以删除");

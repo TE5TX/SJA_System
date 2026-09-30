@@ -26,6 +26,9 @@ public final class RoleAuthorizationPolicy {
             KnownRole.TEACHER, KnownRole.SECRETARY_GENERAL);
     private static final Set<KnownRole> USER_IMPORT_MANAGERS = EnumSet.of(
             KnownRole.ADMINISTRATOR, KnownRole.CHAIRMAN, KnownRole.SECRETARY_GENERAL);
+    // 202609301034 - 完成了文件保存路径仅管理员和秘书长可查看、配置的独立授权策略。
+    private static final Set<KnownRole> STORAGE_MANAGERS = EnumSet.of(
+            KnownRole.ADMINISTRATOR, KnownRole.SECRETARY_GENERAL);
 
     private RoleAuthorizationPolicy() {
     }
@@ -68,6 +71,11 @@ public final class RoleAuthorizationPolicy {
 
     public static boolean canImportUsers(Integer roleCode) {
         return belongsTo(roleCode, USER_IMPORT_MANAGERS);
+    }
+
+    /** 文件存储路径的查询、检测与修改共用同一权限边界。 */
+    public static boolean canManageStorage(Integer roleCode) {
+        return belongsTo(roleCode, STORAGE_MANAGERS);
     }
 
     /** 使用显式授权等级判断角色分配，禁止再比较角色码数值大小。 */
